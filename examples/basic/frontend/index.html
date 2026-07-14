@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mullion Basic</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      The title bar carries both drag paths:
+
+      * data-mullion-drag  - the fallback. mullion injects a mousedown listener
+        that starts a system drag when the press lands inside this selector.
+      * app-region: drag (in style.css) - the real one. When the WebView2 runtime
+        supports non-client regions, this element reports HTCAPTION to the shell,
+        so drag, double-click-to-maximise, snap-on-drag-to-edge and the title bar
+        right-click system menu are all handled by Windows itself.
+
+      Interactive children must opt out of both, or they would be swallowed by
+      the caption: app-region: no-drag plus data-mullion-no-drag.
+    -->
+    <header id="titlebar" data-mullion-drag>
+      <div class="title">
+        <span class="dot"></span>
+        Mullion Basic
+      </div>
+
+      <div class="controls" data-mullion-no-drag>
+        <button class="control" id="minimise" title="Minimise" aria-label="Minimise">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" /></svg>
+        </button>
+        <button class="control" id="maximise" title="Maximise" aria-label="Maximise">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" /></svg>
+        </button>
+        <button class="control close" id="close" title="Close" aria-label="Close">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <h1>A window the application owns</h1>
+      <p class="lede">
+        No local port is open. The page you are reading was served straight out of
+        an <code>fs.FS</code> over an in-process virtual host.
+      </p>
+
+      <section class="panel">
+        <h2>Bridge</h2>
+        <dl>
+          <dt>Ping</dt>
+          <dd id="ping">calling...</dd>
+          <dt>Title bar path</dt>
+          <dd id="path">detecting...</dd>
+          <dt>Window state</dt>
+          <dd id="state">...</dd>
+        </dl>
+        <button class="action" id="now">Ask Go for the time</button>
+        <p class="result" id="now-result"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Try it</h2>
+        <ul>
+          <li>Drag the title bar. Double-click it to maximise.</li>
+          <li>Drag a maximised window downwards to restore it.</li>
+          <li>Grab any edge or corner to resize.</li>
+          <li>Right-click the title bar for the system menu.</li>
+          <li>Press <kbd>Win</kbd> + <kbd>&larr;</kbd> to snap.</li>
+        </ul>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
