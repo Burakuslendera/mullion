@@ -255,6 +255,18 @@ mullion.tabTitlebar;    // true when the native non-client region path is active
 go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor
 ```
 
+That is the whole command — nothing is installed, and `go run` fetches, builds
+and runs it in one step. To keep it, install it instead:
+
+```
+go install github.com/Burakuslendera/mullion/cmd/mullion@latest
+mullion doctor
+```
+
+`go install` puts the binary in `$(go env GOPATH)/bin`. **That directory has to
+be on your `PATH`** or the bare `mullion doctor` will not be found — Go does not
+put it there for you.
+
 No checkout, no PowerShell. It prints the environment a window bug report needs
 — Windows build, GPUs, every monitor with its **physical** resolution and
 scaling — and then the question a registry lookup cannot answer: **which

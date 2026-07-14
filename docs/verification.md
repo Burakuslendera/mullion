@@ -262,6 +262,7 @@ that cannot be reproduced.
 ```
 go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor   # no checkout needed
 go run -buildvcs=true ./cmd/mullion doctor                           # from a checkout
+go install ./cmd/mullion                                             # keep it: $(go env GOPATH)/bin
 ```
 
 It prints a paste-ready block: Windows build (corrected — the registry still says
@@ -279,8 +280,8 @@ was never there. The command declares per-monitor awareness before it measures.
 
 Mind the `-buildvcs=true` from a checkout: `go run` does not stamp the revision
 into the binary, so without it the version line reads a bare `devel` and
-identifies nothing. The report says so when that happens rather than letting the
-line pass as an answer.
+identifies nothing. `go install` and `go build` do stamp it. The report says so
+when it happens rather than letting the line pass as an answer.
 
 **The build identifies itself.** `Run` logs `mullion: version=…` at startup, read
 out of the binary's own build info: a tag (`v0.1.0`), a pseudo-version carrying

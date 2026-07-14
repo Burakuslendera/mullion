@@ -68,5 +68,15 @@ Usage:
   mullion help      Print this message.
 
 doctor exits 0 when mullion can start on this machine, and 1 when it cannot.
+
+Run it without installing anything:
+  go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor
+
+Install it, which puts the binary in $(go env GOPATH)/bin - a directory that has
+to be on your PATH for the bare name to work:
+  go install github.com/Burakuslendera/mullion/cmd/mullion@latest
+
+From a checkout, "go install ./cmd/mullion" stamps the commit into the binary
+and "go run" does not, which is why the version line there says so.
 `)
 }
