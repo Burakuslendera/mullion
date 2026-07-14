@@ -263,9 +263,11 @@ go install github.com/Burakuslendera/mullion/cmd/mullion@latest
 mullion doctor
 ```
 
-`go install` puts the binary in `$(go env GOPATH)/bin`. **That directory has to
-be on your `PATH`** or the bare `mullion doctor` will not be found — Go does not
-put it there for you.
+`go install` puts the binary in `$(go env GOPATH)/bin`, and the bare
+`mullion doctor` works only when that directory is on your `PATH`. On a stock
+Windows install it already is: the Go installer adds the default
+`%USERPROFILE%\go\bin` for you. What breaks it is a relocated `GOPATH` — the
+binaries move with it, and the installer's `PATH` entry does not.
 
 No checkout, no PowerShell. It prints the environment a window bug report needs
 — Windows build, GPUs, every monitor with its **physical** resolution and
