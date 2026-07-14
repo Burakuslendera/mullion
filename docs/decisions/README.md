@@ -28,6 +28,7 @@ These files are that record.
 | [0005](./0005-queryinterface-not-version.md) | Capability detection is `QueryInterface`, never a version compare | Accepted |
 | [0006](./0006-tests-stay-headless.md) | No test creates a window | Accepted |
 | [0007](./0007-non-windows-stub.md) | Other platforms compile and return `ErrUnsupportedPlatform` | Accepted |
+| [0008](./0008-doctor-is-a-go-command.md) | The environment report is a Go command, not a script | Accepted |
 
 ## When to write one
 

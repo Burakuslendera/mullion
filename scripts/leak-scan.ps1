@@ -56,6 +56,7 @@ $skip = @(
 # (Example User, Alice O'Brien) - that is the fixture, not a leak.
 $pathFixtures = @(
     "internal/logsafe/logsafe_test.go",
+    "internal/doctor/doctor_test.go",
     "diagnostics_windows_test.go"
 )
 

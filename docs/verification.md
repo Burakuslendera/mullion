@@ -260,18 +260,27 @@ that cannot be reproduced.
 **Do not gather the environment by hand. Run it:**
 
 ```
-pwsh scripts/diagnostics.ps1
+go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor   # no checkout needed
+go run -buildvcs=true ./cmd/mullion doctor                           # from a checkout
 ```
 
 It prints a paste-ready block: Windows build (corrected — the registry still says
 "Windows 10" on Windows 11), GPUs, every monitor with its **physical** resolution,
-scaling and work area, the WebView2 runtime, and the Go toolchain.
+scaling and work area, and the WebView2 runtime — not the one the registry
+advertises, but **the one mullion would actually load**, together with whether it
+still exports the entry point the host calls. Exit code 0 means mullion can start
+on that machine. See [decisions/0008](./decisions/0008-doctor-is-a-go-command.md).
 
-The monitor section is why the script exists rather than a checklist. Windows
+The monitor section is why this is a command rather than a checklist. Windows
 reports a *virtualised* resolution to a process that is not DPI-aware, so a
 reporter reading their own settings panel writes "1536x864" for a 1920x1080
 monitor at 125% — and the reader spends an afternoon chasing a scaling bug that
-was never there. The script declares per-monitor awareness before it measures.
+was never there. The command declares per-monitor awareness before it measures.
+
+Mind the `-buildvcs=true` from a checkout: `go run` does not stamp the revision
+into the binary, so without it the version line reads a bare `devel` and
+identifies nothing. The report says so when that happens rather than letting the
+line pass as an answer.
 
 **The build identifies itself.** `Run` logs `mullion: version=…` at startup, read
 out of the binary's own build info: a tag (`v0.1.0`), a pseudo-version carrying

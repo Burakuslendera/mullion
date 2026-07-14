@@ -84,8 +84,10 @@ space, and `label:P0` matches nothing.
 A frame or DPI report cannot be investigated without its environment. Apply
 `needs-repro` until the issue contains:
 
-- the output of **`scripts/diagnostics.ps1`** - Windows build, GPUs, every monitor
-  with its physical resolution and scaling, the WebView2 runtime, the Go toolchain;
+- the output of **`mullion doctor`** - Windows build, GPUs, every monitor with its
+  physical resolution and scaling, and the WebView2 runtime this machine would
+  actually load, including whether it still exports the entry point mullion calls.
+  It needs no checkout: `go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor`;
 - **which monitor** the window was on, and whether it had been dragged there;
 - the **build**, from the `mullion: version=` line the library logs at startup: a
   tag, a pseudo-version carrying the commit hash, or a disclosed `replace`;

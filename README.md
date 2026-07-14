@@ -249,6 +249,25 @@ mullion.ready();        // stops the render watchdog; call after the first paint
 mullion.tabTitlebar;    // true when the native non-client region path is active
 ```
 
+## Diagnostics
+
+```
+go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor
+```
+
+No checkout, no PowerShell. It prints the environment a window bug report needs
+— Windows build, GPUs, every monitor with its **physical** resolution and
+scaling — and then the question a registry lookup cannot answer: **which
+WebView2 runtime this machine would actually load, and whether it still exports
+the entry point mullion calls.** It starts no browser and opens no window. Exit
+code `0` means mullion can start here; `1` means it cannot, and the block says
+why.
+
+Monitors are measured with per-monitor DPI awareness declared first. Windows
+reports a *virtualised* resolution to a process that has not asked, so a
+hand-written "1536x864" for a 1920x1080 monitor at 125% is the one number a DPI
+report must not contain — which is why this is a command and not a checklist.
+
 ## Known limitations
 
 - **WebView2 does not render while the window is hidden.** With `StartHidden`, the
@@ -257,8 +276,9 @@ mullion.tabTitlebar;    // true when the native non-client region path is active
 - **The environment is created through the runtime's own client DLL**, not
   through the SDK loader (which the Evergreen runtime does not even ship).
   Microsoft documents that entry point as subject to change. If it ever does, the
-  failure is a clean error at startup, not a crash — and a test asserts the
-  export still exists.
+  failure is a clean error at startup, not a crash — a test asserts the export
+  still exists, and `mullion doctor` answers the same question on any machine, in
+  one command, without a checkout.
 - **Windows only**, by construction.
 
 ## Status

@@ -11,7 +11,8 @@ body:
         The environment fields are not bureaucracy. On a scaled multi-monitor
         setup, the runtime version, the scaling factor and which monitor the
         window was on each change the answer to a frame or DPI report. Without
-        them the issue cannot be investigated, only guessed at.
+        them the issue cannot be investigated, only guessed at. One command
+        produces all of it - see the Environment field below.
 
   - type: textarea
     id: what-happened
@@ -87,33 +88,42 @@ body:
     attributes:
       label: Environment
       description: >-
-        Run this and paste the whole block. It collects the Windows build, the GPUs,
-        every monitor with its real resolution and scaling, the WebView2 Runtime
-        version and the Go toolchain. Nothing is sent anywhere - it prints to your
-        console and you decide what to paste.
+        Run this and paste the whole block. No checkout of mullion is needed - if you
+        can build against the library, you can run this:
 
 
-        `pwsh scripts/diagnostics.ps1`
+        `go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor`
 
 
-        Do not retype this from memory. The script measures the monitors with
+        (From a checkout: `go run -buildvcs=true ./cmd/mullion doctor`. The flag is
+        not decoration - without it the version line cannot name the commit.)
+
+
+        It collects the Windows build, the GPUs, every monitor with its real
+        resolution and scaling, and the WebView2 runtime your machine would actually
+        load - including whether that runtime still exports the entry point mullion
+        calls, which is the difference between "a runtime is installed" and "mullion
+        can start". It opens no window and starts no browser. Nothing is sent
+        anywhere: it prints to your console and you decide what to paste. Paths under
+        your home directory come out as %USERPROFILE%.
+
+
+        Do not retype it from memory. The command measures the monitors with
         per-monitor DPI awareness; Windows reports a virtualised resolution to a
         process that does not, so a hand-written "1536x864" is the number a DPI bug
         report must not contain, and it sends the reader hunting a bug that is not
         there.
-
-
-        No checkout of mullion? Then paste the environment you can gather by hand,
-        and make sure the log below includes the `mullion: version=` line - the
-        library reads its own version out of the binary at startup, which is more
-        reliable than anything you can look up.
       render: text
       placeholder: |
-        Windows:   Windows 11 Pro 24H2 (build 26100.0)
-        Arch:      AMD64
-        WebView2:  131.0.2903.99
-        Go:        go version go1.22.5 windows/amd64
         mullion:   v0.1.0
+        OS:        Windows 11 Pro 24H2 (build 26100.1234)
+        Arch:      amd64
+        Go:        go1.22.5
+
+        WebView2:  131.0.2903.99 (Evergreen)
+                   found via HKLM EdgeUpdate (32-bit view)
+                   folder C:\Program Files (x86)\Microsoft\EdgeWebView\Application\131.0.2903.99
+                   exports CreateWebViewEnvironmentWithOptionsInternal: yes
 
         GPU:       Example Graphics Adapter (driver 1.2.3.4)
 

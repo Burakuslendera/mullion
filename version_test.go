@@ -68,6 +68,50 @@ func fakeRevision() string {
 	return "abcdef1" + strings.Repeat("0", 33)
 }
 
+// The command is run straight out of the module - "go run .../cmd/mullion@v0.1.0" -
+// which makes mullion the main module *and* gives it a real version. A module
+// fetched from the proxy carries no VCS stamp, so reading the revision would
+// report "devel" for a tagged release: a version line that identifies nothing,
+// in the one report that exists to identify the build.
+func TestVersionFromInstalledCommandReportsItsRelease(t *testing.T) {
+	info := &debug.BuildInfo{
+		Main: debug.Module{Path: modulePath, Version: "v0.1.0"},
+	}
+	if got := versionFrom(info); got != "v0.1.0" {
+		t.Fatalf("versionFrom() = %q, want v0.1.0", got)
+	}
+}
+
+// A build from a working tree. The fixture is what the toolchain actually
+// produces, which is the point of it: since Go 1.24 the main module's version
+// is a *synthesized* pseudo-version built from the VCS stamp, not the "(devel)"
+// older toolchains wrote. It reads exactly like a released pseudo-version.
+// Reporting it verbatim would tell a reporter they are running a release of
+// mullion when they are running their own working tree - so the presence of the
+// stamp, not the shape of the string, decides.
+func TestVersionFromDevelBuildReportsRevisionNotTheSynthesizedVersion(t *testing.T) {
+	info := &debug.BuildInfo{
+		Main: debug.Module{Path: modulePath, Version: "v0.0.0-20060102150405-abcdef123456"},
+		Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: fakeRevision()},
+			{Key: "vcs.modified", Value: "false"},
+		},
+	}
+	if got := versionFrom(info); got != "devel (abcdef1)" {
+		t.Fatalf("versionFrom() = %q, want devel (abcdef1)", got)
+	}
+}
+
+// "go run" stamps no VCS information - only "go build", "go install" and an
+// explicit "go run -buildvcs=true" do. There is then nothing to identify the
+// build with, and the honest answer is to say so rather than to invent one.
+func TestVersionFromAnUnstampedLocalBuildAdmitsIt(t *testing.T) {
+	info := &debug.BuildInfo{Main: debug.Module{Path: modulePath, Version: "(devel)"}}
+	if got := versionFrom(info); got != "devel" {
+		t.Fatalf("versionFrom() = %q, want devel", got)
+	}
+}
+
 func TestVersionFromDevelBuildReportsRevision(t *testing.T) {
 	info := &debug.BuildInfo{
 		Main: debug.Module{Path: modulePath, Version: "(devel)"},
@@ -86,7 +130,9 @@ func TestVersionFromDevelBuildReportsRevision(t *testing.T) {
 // reproduce, and the reporter would never know why.
 func TestVersionFromDirtyTreeSaysModified(t *testing.T) {
 	info := &debug.BuildInfo{
-		Main: debug.Module{Path: modulePath, Version: "(devel)"},
+		// The toolchain marks the synthesized version "+dirty" too. It is not
+		// read: vcs.modified is the field that means it.
+		Main: debug.Module{Path: modulePath, Version: "v0.0.0-20060102150405-abcdef123456+dirty"},
 		Settings: []debug.BuildSetting{
 			{Key: "vcs.revision", Value: fakeRevision()},
 			{Key: "vcs.modified", Value: "true"},
