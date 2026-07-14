@@ -1,0 +1,78 @@
+name: Enhancement
+description: A new capability, or a better way to do one that exists.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **You do not need to pick labels.** Priority and area are assigned during
+        triage.
+
+        One thing to know before you write: this is a library, not an
+        application. Every exported name is a promise to somebody else's program,
+        and a Config field that turns out to be wrong cannot simply be renamed
+        later. The bar for adding to the API is therefore higher than the bar for
+        adding to an app.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: >-
+        The problem, not the solution. "I cannot X" is useful; "add a Config field
+        for Y" skips the step where we find out whether Y is the right shape.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Does this belong in the library, or in the application?
+      description: >-
+        mullion owns the window, the frame and the transport. What is drawn inside
+        the window, and what the bridge methods mean, belongs to the application.
+        Say why this one crosses the line.
+      options:
+        - "It is about the window, the frame, the DPI behaviour or the shell integration"
+        - "It is about the WebView2 layer, the loader or the COM bindings"
+        - "It is about the asset pipeline or the bridge transport"
+        - "It is about tooling, tests, examples or docs"
+        - "I am not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What do you do today instead
+      description: >-
+        If there is a workaround, describe it. A working workaround is not an
+        argument against the change, but it does tell us how much the absence
+        actually costs.
+    validations:
+      required: false
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: Proposed shape, if you have one
+      description: >-
+        A Config field, a Host method, a callback. Sketch the signature. Say what
+        the default is, and what happens on a WebView2 runtime too old to support
+        it - degrading cleanly is a requirement here, not a nice-to-have.
+      render: go
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: homework
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues.
+          required: true
+        - label: >-
+            I skimmed docs/lessons-and-dead-ends.md. Several redesigns of the
+            frame, the hit-test and the asset pipeline have already been tried
+            and have already failed.
+          required: true

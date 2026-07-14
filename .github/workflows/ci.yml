@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: gofmt
+        shell: bash
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      # The wider hygiene net (leak_test.go covers only the narrow, portable
+      # subset). Scans tracked files and commit messages for anything that must
+      # never be published.
+      - name: leak-scan
+        run: pwsh scripts/leak-scan.ps1
+
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+      # The Host runs timers on their own goroutines; the race detector is not
+      # ceremony here.
+      - run: go test -race ./...
+
+      # Plain `go build ./...` never compiles a tagged file. Without these two
+      # steps the diagnostic builds rot silently.
+      - run: go build -tags mullion_dwm_caption_diag ./...
+      - run: go test -tags mullion_dwm_caption_diag ./...
+      - run: go build -tags mullion_caption_passthrough_diag ./...
+      - run: go test -tags mullion_caption_passthrough_diag ./...
+
+  portable:
+    # The non-Windows stub exists so that `go get` and a cross-platform build
+    # work. This job is what keeps it honest.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+      - name: cross-compile for Windows
+        run: GOOS=windows GOARCH=amd64 go build ./...
+      - name: cross-compile for darwin
+        run: GOOS=darwin GOARCH=arm64 go build ./...

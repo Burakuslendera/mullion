@@ -1,0 +1,16 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Question about using mullion
+    url: https://github.com/Burakuslendera/mullion/discussions
+    about: >-
+      Ask in Discussions. A question is not tracked work, and it gets an answer
+      faster there. If the answer turns out to be a defect, a bug report is
+      opened from it and linked.
+
+  - name: Read the documentation first
+    url: https://github.com/Burakuslendera/mullion/tree/main/docs
+    about: >-
+      Frame, hit-test, DPI and snap behaviour is documented, including the
+      approaches that were tried and abandoned. lessons-and-dead-ends.md in
+      particular will save you a redesign proposal that has already failed.
