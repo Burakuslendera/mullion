@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A quiet week is not evidence the runtime still exports the entry point
+  # mullion calls. The weekly run turns the doctor probe below into a standing
+  # early-warning wire. Scheduled runs use the default branch's workflow.
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
 
 jobs:
   windows:
@@ -31,6 +36,17 @@ jobs:
       # The Host runs timers on their own goroutines; the race detector is not
       # ceremony here.
       - run: go test -race ./...
+
+      # Measure the silent-skip gap: the two machine tests in internal/webview2
+      # skip when no WebView2 runtime is installed, so a green suite does not by
+      # itself prove the export mullion calls was checked. The shipped diagnostic
+      # loads the client DLL and resolves that export exactly as the host does.
+      # This step does not fail the job (continue-on-error): its conclusion and
+      # output report whether THIS runner exposes a usable runtime, which is what
+      # decides how the check gets enforced next.
+      - name: "Probe: does this runner expose a usable WebView2 runtime? (non-fatal)"
+        continue-on-error: true
+        run: go run ./cmd/mullion doctor
 
       # Plain `go build ./...` never compiles a tagged file. Without these two
       # steps the diagnostic builds rot silently.
