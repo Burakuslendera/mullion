@@ -1,0 +1,29 @@
+mullion
+Copyright (c) 2026 Burak Bakir
+Licensed under the MIT License (see LICENSE).
+
+--------------------------------------------------------------------------------
+Third-party code
+--------------------------------------------------------------------------------
+
+golang.org/x/sys
+https://cs.opensource.google/go/x/sys
+Copyright (c) 2009 The Go Authors.
+Licensed under the BSD 3-Clause License.
+
+This is the only third-party dependency.
+
+--------------------------------------------------------------------------------
+WebView2
+--------------------------------------------------------------------------------
+
+mullion does not bundle, redistribute or derive from any WebView2 binding.
+
+The COM layer in internal/webview2 - runtime discovery, environment creation, the
+interface definitions and the event handlers - is written against Microsoft's
+published WebView2 interface definitions. No binary is embedded and no loader DLL
+is shipped.
+
+The Microsoft Edge WebView2 Runtime itself is a system component that must be
+present on the target machine. mullion locates the installed runtime and calls
+into it; it does not distribute it.

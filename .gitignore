@@ -1,0 +1,19 @@
+# Build output
+*.exe
+*.exe~
+*.dll
+*.syso
+/bin/
+/dist/
+
+# Test and profiling output
+*.test
+*.out
+coverage.*
+
+# Editors and local tooling
+.idea/
+.vscode/
+.obsidian/
+*.swp
+.DS_Store
