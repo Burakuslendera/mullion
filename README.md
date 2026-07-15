@@ -57,34 +57,34 @@ sliver after a style change, or everything is subtly blurry on a 150% monitor.
 This package is the result of chasing each of those to its root cause. The code
 is one half of it; [`docs/`](docs/) is the other.
 
-## What you get
+## What it does
 
-- **A frame you own.** Custom title bar, caption buttons, eight resize zones,
+- **The frame is yours.** Custom title bar, caption buttons, eight resize zones,
   system menu, snap. `WM_NCCALCSIZE`, `WM_NCHITTEST`, `WM_GETMINMAXINFO` and
-  `WM_DPICHANGED` are handled; you write CSS.
-- **Non-client region support** where the runtime has it (WebView2 131+), so CSS
-  `app-region: drag` produces a real `HTCAPTION` and the shell handles dragging.
-  Older runtimes fall back to an injected JavaScript drag path automatically.
-- **No port.** Assets come from `fs.FS` via `WebResourceRequested` and an
-  `IStream`. Scheme, host and path traversal are all rejected at the boundary. Or
-  opt in: point `Config.URL` at a loopback origin you serve yourself (a dev
-  server) — mullion still opens no socket, and if that load fails it shows a
-  controllable fallback rather than the browser's error page.
-- **A bridge that already works.** `window.mullion.invoke("Method", ...args)`
-  returns a `Promise`; window controls are reserved and never reach your code.
-- **Diagnostics that answer the real question.** A render watchdog fires if the
-  frontend never paints, and reports whether the document arrived, whether its
-  stylesheets and scripts arrived, and what the last bridge call was.
-- **Pure Go, and its own WebView2 layer.** The runtime is located, loaded and
-  driven from `internal/webview2`: the COM interfaces, the event handlers and the
-  environment bootstrap are all written here, against Microsoft's published
-  interface definitions. There is no C toolchain, no bundled loader DLL, and no
-  third-party browser binding to keep in step with. The only dependency in
-  `go.mod` is `golang.org/x/sys`.
+  `WM_DPICHANGED` are handled for you; you write the CSS.
+- Where the runtime supports it (WebView2 131+), the non-client region is real:
+  CSS `app-region: drag` becomes an actual `HTCAPTION` and the shell handles the
+  dragging. Older runtimes fall back to an injected JavaScript drag path
+  automatically.
+- **No port.** Assets come from an `fs.FS`, served over `WebResourceRequested`
+  and an `IStream`; scheme, host and path traversal are all rejected at the
+  boundary. Or run your own dev server instead: point `Config.URL` at a loopback
+  origin you serve yourself — mullion still opens no socket, and a failed load
+  lands on a fallback you control rather than the browser's error page.
+- The bridge is `window.mullion.invoke("Method", ...args)`, which returns a
+  `Promise`. Window controls are reserved and never reach your code.
+- A render watchdog fires if the frontend never paints, and reports what it saw:
+  whether the document arrived, whether the stylesheets and scripts arrived, and
+  what the last bridge call was.
+- **Pure Go.** The runtime is located, loaded and driven from `internal/webview2`
+  — the COM interfaces, the event handlers and the environment bootstrap are all
+  written here, against Microsoft's published interface definitions. There is no C
+  toolchain, no bundled loader DLL, and no third-party browser binding to keep in
+  step with. The only dependency in `go.mod` is `golang.org/x/sys`.
 
 ## The frame contract
 
-Three `Config` values must match your CSS. The native hit test is computed from
+Three `Config` values must match your CSS. The native hit-test is computed from
 them; the visible title bar is drawn from the CSS. If they disagree, the two
 drift apart and part of your title bar stops dragging.
 
@@ -184,7 +184,7 @@ list, because it is the reason this repository exists:
 | Document                                                             | What it covers                                                                   |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | [architecture.md](docs/architecture.md)                               | Bootstrap order, threading model, asset serving without a port, the bridge        |
-| [frame-and-dpi.md](docs/frame-and-dpi.md)                             | `WM_NCCALCSIZE`, hit testing, per-monitor DPI, restore flicker                    |
+| [frame-and-dpi.md](docs/frame-and-dpi.md)                             | `WM_NCCALCSIZE`, hit-testing, per-monitor DPI, restore flicker                    |
 | [snap-and-nonclient-region.md](docs/snap-and-nonclient-region.md)     | What WebView2 can and cannot do with Windows 11 snap, and the COM binding for it  |
 | [snap-sources.md](docs/snap-sources.md)                               | The 40 primary and secondary sources those findings rest on                       |
 | [lessons-and-dead-ends.md](docs/lessons-and-dead-ends.md)             | Approaches that were tried and abandoned, and why                                 |
@@ -216,13 +216,13 @@ type Config struct {
 
 	DragSelector     string  // "[data-mullion-drag]" (fallback drag path)
 	BackgroundColour Colour  // painted before the first frame
-	DevTools         bool    // keep F12 / context menu / accelerators
 
 	ShowTimeout   time.Duration // 7s;  wait for shellReady() before showing
 	RenderTimeout time.Duration // 16s; watchdog if the frontend never paints
 
 	UserDataFolder   string // WebView2 profile dir; default under %LocalAppData%
 	BrowserArguments string // extra Chromium command-line flags
+	DevTools         bool   // keep F12 / context menu / accelerators
 
 	Logger Logger                 // default: discard
 	Bridge func(string) string    // optional: your methods only
