@@ -1,6 +1,7 @@
 package host
 
 import (
+	_ "embed"
 	"html"
 	"net/url"
 	"strconv"
@@ -48,7 +49,10 @@ func errorPageURL(config Config, failedURL string) string {
 		"__FG__", contrastColour(config.BackgroundColour),
 		"__ORIGIN__", origin,
 	)
-	document := replacer.Replace(errorPageTemplate)
+	// errorpage.html ends with a newline, as a text file should - and an edit
+	// could leave it with more than one - so trim them all: the data: payload is
+	// exactly the document and nothing after it. errorpage_test.go locks this.
+	document := replacer.Replace(strings.TrimRight(errorPageTemplate, "\n"))
 	return "data:text/html," + url.PathEscape(document)
 }
 
@@ -74,9 +78,11 @@ func contrastColour(colour Colour) string {
 	return "#f2f2f2"
 }
 
-// errorPageTemplate is the fallback surface, rendered by errorPageURL. It is
-// deliberately self-contained (inline CSS, inline SVG glyphs, no external asset) so
-// it needs no server, and ASCII-only so it passes TestNoNonASCIIInSource.
+// errorPageTemplate is the fallback surface, rendered by errorPageURL. It lives in
+// errorpage.html so it reads and edits as plain HTML, and is embedded at compile
+// time - at run time it is still self-contained (inline CSS, inline SVG glyphs, no
+// external asset) and needs no server. It stays ASCII-only: scripts/leak-scan.ps1
+// holds .html source to the same ASCII rule as .go files.
 //
 // The title bar carries app-region: drag AND data-__NS__-drag: the first gives a
 // real HTCAPTION on runtimes with non-client region support (native drag,
@@ -84,40 +90,6 @@ func contrastColour(colour Colour) string {
 // script (host/js.go dragTemplateJS, which matches the default [data-<ns>-drag]
 // selector) drag the window on older runtimes. The caption buttons and Retry carry
 // app-region: no-drag and data-__NS__-no-drag so both paths treat them as clickable.
-const errorPageTemplate = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Couldn't load</title>
-<style>
-*{box-sizing:border-box}
-html,body{margin:0;height:100%}
-body{background:__BG__;color:__FG__;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;min-height:100vh}
-.titlebar{height:__TITLEBAR_H__px;flex:0 0 auto;display:flex;justify-content:flex-end;align-items:stretch;user-select:none;app-region: drag;-webkit-app-region:drag}
-.caption{width:__CONTROLS_W__px;display:flex;align-items:stretch;app-region:no-drag;-webkit-app-region:no-drag}
-.caption button{flex:1 1 0;border:0;margin:0;padding:0;background:transparent;color:inherit;cursor:default;display:inline-flex;align-items:center;justify-content:center;app-region:no-drag;-webkit-app-region:no-drag}
-.caption button:hover{background:rgba(127,127,127,0.2)}
-.caption button.close:hover{background:#e81123;color:#fff}
-.content{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:14px}
-.title{font-size:16px;font-weight:600}
-.origin{opacity:0.75;word-break:break-all}
-.retry{app-region:no-drag;-webkit-app-region:no-drag;display:inline-block;margin-top:6px;padding:8px 22px;font:inherit;color:inherit;text-decoration:none;cursor:default;border:1px solid currentColor;border-radius:6px;opacity:0.85}
-.retry:hover{opacity:1;background:rgba(127,127,127,0.15)}
-</style>
-</head>
-<body>
-<div class="titlebar" data-__NS__-drag>
-<div class="caption">
-<button type="button" class="min" title="Minimise" aria-label="Minimise" data-__NS__-no-drag onclick="window.__NS__.window.minimise()"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5 H10" stroke="currentColor" stroke-width="1" fill="none"/></svg></button>
-<button type="button" class="max" title="Maximise" aria-label="Maximise" data-__NS__-no-drag onclick="window.__NS__.window.toggleMaximise()"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" stroke-width="1" fill="none"/></svg></button>
-<button type="button" class="close" title="Close" aria-label="Close" data-__NS__-no-drag onclick="window.__NS__.window.close()"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0 L10 10 M10 0 L0 10" stroke="currentColor" stroke-width="1" fill="none"/></svg></button>
-</div>
-</div>
-<main class="content">
-<div class="title">Couldn't load</div>
-<div class="origin">__ORIGIN__</div>
-<a class="retry" href="__ORIGIN__" data-__NS__-no-drag>Retry</a>
-</main>
-</body>
-</html>`
+//
+//go:embed errorpage.html
+var errorPageTemplate string

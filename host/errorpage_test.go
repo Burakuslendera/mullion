@@ -19,6 +19,10 @@ import (
 // decodeErrorPageHTML strips the data:text/html, prefix and percent-decodes the
 // payload back to the HTML the WebView would parse. A decode failure means the
 // builder did not produce a valid data: URL.
+//
+// It also asserts the payload ends exactly at the document: the template lives in
+// errorpage.html, whose trailing newline(s) the builder must trim, and this is the
+// one place every test passes through, so a regression cannot slip past it.
 func decodeErrorPageHTML(t *testing.T, page string) string {
 	t.Helper()
 	if !strings.HasPrefix(page, "data:text/html,") {
@@ -30,6 +34,9 @@ func decodeErrorPageHTML(t *testing.T, page string) string {
 	decoded, err := url.PathUnescape(strings.TrimPrefix(page, "data:text/html,"))
 	if err != nil {
 		t.Fatalf("error page payload is not valid percent-encoding: %v", err)
+	}
+	if strings.HasSuffix(decoded, "\n") {
+		t.Errorf("error page payload carries a trailing newline; the builder must trim the template file's")
 	}
 	return decoded
 }
