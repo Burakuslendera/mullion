@@ -92,3 +92,44 @@ func TestDPITransitionNoCompoundingAcrossRepeats(t *testing.T) {
 		}
 	}
 }
+
+// The WebView2 content scale (devicePixelRatio) is DPI/96: the runtime's own
+// monitor-scale detection is off, so the host owns this value and must set it on
+// every DPI change. These pin the mapping and, more importantly, that it depends
+// only on the absolute current DPI - which is what stops it compounding across
+// monitor hops the way a delta-based scale would. The scales are exact in float64
+// (120/96 = 1.25, etc.), so == is safe.
+
+func TestRasterizationScaleForDPIMatchesMonitorScale(t *testing.T) {
+	cases := []struct {
+		name string
+		dpi  uint32
+		want float64
+	}{
+		{"96 = 100%", 96, 1.0},
+		{"120 = 125% (the bug report's primary monitor)", 120, 1.25},
+		{"144 = 150%", 144, 1.5},
+		{"192 = 200%", 192, 2.0},
+		{"zero falls back to the default, not a 0 scale", 0, 1.0},
+	}
+	for _, tc := range cases {
+		if got := rasterizationScaleForDPI(tc.dpi); got != tc.want {
+			t.Fatalf("%s: rasterizationScaleForDPI(%d) = %v, want %v", tc.name, tc.dpi, got, tc.want)
+		}
+	}
+}
+
+func TestRasterizationScaleDependsOnlyOnCurrentDPI(t *testing.T) {
+	// Shuttling 120<->96 three times must yield the same scale on every visit: the
+	// value is a function of the absolute DPI, never of the previous scale, so it
+	// cannot drift. This is the content-scale analogue of
+	// TestDPITransitionNoCompoundingAcrossRepeats for the window rect.
+	for i := 0; i < 3; i++ {
+		if got := rasterizationScaleForDPI(120); got != 1.25 {
+			t.Fatalf("visit %d to 120 DPI: scale = %v, want 1.25 (no compounding)", i, got)
+		}
+		if got := rasterizationScaleForDPI(96); got != 1.0 {
+			t.Fatalf("visit %d to 96 DPI: scale = %v, want 1.0 (no hysteresis)", i, got)
+		}
+	}
+}

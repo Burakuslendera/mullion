@@ -134,6 +134,32 @@ func (browser *Browser) applyBoundsPolicy() {
 	}
 }
 
+// SetRasterizationScale updates the scale WebView2 rasterizes content at - the
+// devicePixelRatio the frontend renders against.
+//
+// applyBoundsPolicy turns the runtime's own monitor-scale detection off, so the
+// runtime never revises this scale on its own. After the host moves the window to
+// a monitor with a different DPI it must set the new scale here, or the content
+// keeps rendering at the scale of the monitor the controller was created on - too
+// large on a lower-DPI monitor, too small on a higher one. The matching bounds are
+// fed separately, in raw pixels, by the host's own DPI handling; the two do not
+// compound because only the host drives either.
+//
+// The scale lives on ICoreWebView2Controller3. An older runtime without it is a
+// warning to the caller, not a crash, exactly as in applyBoundsPolicy.
+func (browser *Browser) SetRasterizationScale(scale float64) error {
+	controller := browser.Controller()
+	if controller == nil {
+		return errors.New("webview2: controller unavailable")
+	}
+	controller3, err := controller.QueryController3()
+	if err != nil {
+		return err
+	}
+	defer controller3.Release()
+	return controller3.PutRasterizationScale(scale)
+}
+
 // addEvent registers one handler and immediately drops the package's reference
 // to it.
 //

@@ -85,6 +85,10 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		return 1
 	case wmDPIChanged:
 		if host.applyDPIChangedRect(hwnd, wParam, lParam) {
+			// The window rect is now the new monitor's; the WebView2 content scale
+			// must move with it, or the frontend keeps rendering at the old
+			// monitor's DPI. wParam's low word carries the new DPI.
+			host.syncRasterizationScale("wm_dpi_changed", uint32(wParam&0xffff))
 			host.syncWebViewBounds("wm_dpi_changed")
 			return 0
 		}

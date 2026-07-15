@@ -79,6 +79,11 @@ func (host *Host) createWebView() error {
 	background := host.config.BackgroundColour
 	host.warnIf("background colour", browser.SetBackgroundColour(background.R, background.G, background.B, background.A))
 	host.applyWebViewHardening(browser)
+	// Pin the content scale to the window's monitor up front. The runtime picks a
+	// scale when the controller is created and then never revises it (monitor-scale
+	// detection is off), so setting it here makes the first paint correct even when
+	// the window opened on a non-primary monitor at a different DPI.
+	host.syncRasterizationScale("embed", dpiForWindow(host.window()))
 	host.syncWebViewBounds("embed")
 
 	host.log.Debug("mullion: webresource filter registered")

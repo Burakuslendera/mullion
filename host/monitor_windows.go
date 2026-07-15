@@ -98,6 +98,24 @@ func dpiRescaleLength(length int32, fromDPI, toDPI uint32) int32 {
 	return int32(int64(length) * int64(toDPI) / int64(fromDPI))
 }
 
+// rasterizationScaleForDPI maps a window DPI to the WebView2 rasterization scale -
+// the frontend's devicePixelRatio - that the content must render at: 96 DPI is 1.0,
+// 120 is 1.25, 144 is 1.5, 192 is 2.0.
+//
+// The controller runs in raw-pixel bounds mode with the runtime's own monitor-scale
+// detection turned off (webview2.applyBoundsPolicy), so nothing revises this scale
+// when the window crosses to a monitor with a different DPI unless the host does.
+// The value is a function of the *absolute* current DPI, never of the previous
+// scale, so shuttling across a monitor pair cannot compound - unlike the window
+// rect, which trusts the OS-suggested delta. A zero DPI falls back to the default
+// rather than collapsing the scale to zero and blanking the content.
+func rasterizationScaleForDPI(dpi uint32) float64 {
+	if dpi == 0 {
+		dpi = defaultWindowDPI
+	}
+	return float64(dpi) / float64(defaultWindowDPI)
+}
+
 // logDPIChangedTransition records a DPI transition so a visible scaling regression
 // can be diagnosed from a log alone. Metrics only - DPI values and rect extents,
 // never paths or tokens - so the log stays safe to hand over.

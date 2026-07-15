@@ -69,6 +69,32 @@ func (host *Host) syncWebViewBounds(source string) {
 	}
 }
 
+// syncRasterizationScale pushes the WebView2 content scale (the frontend's
+// devicePixelRatio) for the window's current DPI. It is the sibling of
+// syncWebViewBounds: bounds place the surface in raw pixels, this sets the scale
+// the surface renders at.
+//
+// The controller runs with the runtime's monitor-scale detection off
+// (webview2.applyBoundsPolicy), so nothing revises this scale on a monitor hop but
+// the host. Without it the frontend keeps rendering at the previous monitor's
+// scale after crossing a DPI boundary: content overflows with a scrollbar on a
+// lower-DPI monitor and shrinks on a higher one. The DPI is passed in - from the
+// WM_DPICHANGED wParam on a hop, from the window on the initial embed - rather than
+// read here, because on WM_DPICHANGED GetDpiForWindow already reports the new value.
+func (host *Host) syncRasterizationScale(source string, dpi uint32) {
+	if host.browser == nil {
+		return
+	}
+	scale := rasterizationScaleForDPI(dpi)
+	if err := host.browser.SetRasterizationScale(scale); err != nil {
+		host.log.Warn("mullion: rasterization scale sync skipped, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
+		return
+	}
+	host.log.Debug("mullion: rasterization scale applied, source=" + logsafe.Message(source) +
+		", dpi=" + strconv.FormatUint(uint64(dpi), 10) +
+		", scale=" + strconv.FormatFloat(scale, 'f', 2, 64))
+}
+
 func readControllerBounds(controller *webview2.ICoreWebView2Controller) (int32, int32) {
 	bounds, err := controller.GetBounds()
 	if err != nil {
