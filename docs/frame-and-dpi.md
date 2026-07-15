@@ -17,8 +17,9 @@
 
 How mullion builds a frameless window out of a perfectly ordinary Win32 window,
 and why almost every line of that code exists because of a specific bug. Read this
-before changing `hittest_windows.go`, `nccalc_windows.go`, `monitor_windows.go`,
-`dpi_windows.go` or `style_windows.go`. The rules below look arbitrary and are
+before changing `host/hittest_windows.go`, `host/nccalc_windows.go`,
+`host/monitor_windows.go`, `host/dpi_windows.go` or `host/style_windows.go`. The
+rules below look arbitrary and are
 not; each one is written as **symptom -> root cause -> fix**.
 
 Relevant config: `TitlebarHeight` (default 36), `CaptionControlsWidth` (138),
@@ -307,3 +308,5 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Content offset after a drag or DPI change | a missing bounds-sync trigger (§9) |
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
+
+> Last updated: 2026-07-15 | Editor: Claude (Opus 4.8) | Change: repoint the five source-file references to `host/` after the package moved out of the module root (docs/decisions/0009).

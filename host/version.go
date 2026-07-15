@@ -13,7 +13,7 @@ const modulePath = "github.com/Burakuslendera/mullion"
 // version of every module in the binary itself, so this reads the truth rather
 // than a promise:
 //
-//   - a tagged release reads as "v0.1.0";
+//   - a tagged release reads as "v0.0.1";
 //   - an untagged commit reads as its pseudo-version,
 //     "v0.0.0-20060102150405-abcdef123456", which carries the commit hash;
 //   - a local replace directive says so, because a bug report from a patched

@@ -104,7 +104,7 @@ touching hit-testing or the non-client area.
 - Windows-only code lives in a file ending `_windows.go` **and** carries an
   explicit `//go:build windows` line. Both. The suffix alone is easy to lose in a
   rename, and the tag alone hides the platform from a reader scanning the tree.
-- Portable files (`config.go`, `internal/logsafe`) must not import the Win32
+- Portable files (`host/config.go`, `internal/logsafe`) must not import the Win32
   shims, must not reference an `HWND`, and must compile on Linux.
 - One concern per file, matching the existing layout. When a file grows past
   roughly 250 lines it has usually acquired a second concern; split it there.
@@ -146,4 +146,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-07-15 | Editor: Claude (Opus 4.8) | Change: carve one documented opt-in (`MULLION_REQUIRE_WEBVIEW2`) into the headless invariant, so CI fails rather than silently skips the WebView2 export check; rationale in docs/decisions/0010.
+> Last updated: 2026-07-15 | Editor: Claude (Opus 4.8) | Change: carve one documented opt-in (`MULLION_REQUIRE_WEBVIEW2`) into the headless invariant (docs/decisions/0010); repoint the portable-file example to `host/config.go` after the package move (0009).
