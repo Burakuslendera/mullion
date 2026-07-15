@@ -88,6 +88,17 @@ everywhere. Only `loopback.go`/`loopback_test.go` may name the loopback hosts, a
 only to reject non-loopback URLs. A future contributor who adds `net.Listen`
 anywhere still fails the build.
 
+**A failed navigation shows a controllable surface, not Edge's error page.** With
+`Config.URL` set, if the caller's loopback server is down (or not up yet at launch)
+the WebView would otherwise land on Edge's chromeless network-error page - not the
+frontend, so no custom title bar and no caption buttons, and with the native caption
+removed the frameless window looks broken. A failed load now navigates to mullion's
+own self-contained `data:` page instead - no socket, consistent with the no-port
+guarantee above - carrying a drag title bar, working caption buttons (the injected
+bridge runs on that page too), the redacted origin and a Retry. Guarded against
+recursion. Found live in PR #4; tracked as the finding on issue #3, and built by
+`host/errorpage.go` with the failure wired in `host/webview_windows.go`.
+
 ## What would change our mind
 
 - **A way to withhold the bridge from an external origin** — a per-origin gate on the

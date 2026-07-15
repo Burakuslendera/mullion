@@ -32,6 +32,37 @@ func main() {
 
 	host := host.New(host.Config{
 		Assets: assets,
+
+		// URL is an opt-in (docs/decisions/0012). Instead of serving the embedded
+		// Assets over the in-process virtual host, it points the WebView at a
+		// loopback origin you serve yourself - a dev server with hot reload, say, or
+		// a runtime that already speaks HTTP. mullion still opens no socket: you run
+		// the server, it only navigates there. When URL is set, Assets is optional
+		// and is not served, but window.mullion (the bridge and the window controls)
+		// is still injected, which is why URL is pinned to loopback.
+		//
+		// If that server is down - not running, or not up yet when the window
+		// launches - the navigation fails. Rather than strand the user on Edge's
+		// chromeless "can't reach this page" (which is not your frontend, so it has
+		// no title bar and no caption buttons, and the frameless window looks
+		// broken), mullion shows its OWN controllable fallback surface: a draggable
+		// title bar, working minimise / maximise / close, a "Couldn't load <origin>"
+		// message with the path and any token dropped, and a Retry that re-navigates
+		// to the origin. It is a self-contained data: URL, so no socket is opened for
+		// it either. See host/errorpage.go and issue #3.
+		//
+		// To watch the fallback appear, uncomment the line below and `go run .` with
+		// nothing listening on that port - it shows at once. Then serve something on
+		// the same origin in another terminal and click Retry to recover, e.g. the
+		// demo frontend over the IPv6 loopback:
+		//
+		//	cd frontend && python -m http.server 39517 --bind ::1
+		//
+		// (any loopback origin works; [::1] is used here only because it is a literal
+		// this repository's no-socket test permits inside an example - see leak_test.)
+		//
+		// URL: "http://[::1]:39517",
+
 		Title:  "Mullion Basic",
 		Width:  980,
 		Height: 640,
