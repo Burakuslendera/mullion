@@ -44,10 +44,20 @@ skipping it silently; CI runs it on every push.
 
 ## Tests stay headless
 
-**No test may call `Run()`, create an `HWND`, require the WebView2 Runtime, or
-require a display.** This is not a style preference — it is what makes the suite
-runnable in CI and on a contributor's machine of any OS, and a test nobody can
-run is a test that stops being true.
+**No test may call `Run()`, create an `HWND`, or require a display, and no test
+requires the WebView2 Runtime by default.** This is not a style preference — it
+is what makes the suite runnable in CI and on a contributor's machine of any OS,
+and a test nobody can run is a test that stops being true.
+
+The one opt-in, and only for a machine that is meant to have a runtime:
+`MULLION_REQUIRE_WEBVIEW2=1` turns the two runtime-dependent tests in
+`internal/webview2` — that a runtime is discoverable, and that it still exports
+the entry point the host calls — from *skip when absent* into *fail when absent*.
+It is unset by default, so `go test ./...` still runs anywhere with nothing
+installed; it is set only where a runtime is guaranteed (CI, whose runner ships
+one), so a green windows job proves that export was checked rather than quietly
+skipped. Why a skip there is dangerous enough to earn the one exception is in
+[docs/decisions/0010](./docs/decisions/0010-ci-requires-the-runtime.md).
 
 The consequence for design: window-affine logic must be factored into pure
 functions that take plain values and return decisions. The hit-test resolver, the
@@ -136,4 +146,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-07-14 | Editor: Claude (Fable 5) | Change: add the second diagnostic tag and the leak-scan gate to the ladder; document that -race needs a C toolchain on Windows while the library stays CGo-free.
+> Last updated: 2026-07-15 | Editor: Claude (Opus 4.8) | Change: carve one documented opt-in (`MULLION_REQUIRE_WEBVIEW2`) into the headless invariant, so CI fails rather than silently skips the WebView2 export check; rationale in docs/decisions/0010.

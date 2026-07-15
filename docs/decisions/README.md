@@ -30,6 +30,7 @@ These files are that record.
 | [0007](./0007-non-windows-stub.md) | Other platforms compile and return `ErrUnsupportedPlatform` | Accepted |
 | [0008](./0008-doctor-is-a-go-command.md) | The environment report is a Go command, not a script | Accepted |
 | [0009](./0009-public-package-at-host.md) | The public package lives at /host, not the module root | Accepted |
+| [0010](./0010-ci-requires-the-runtime.md) | CI requires the WebView2 runtime, so the export check cannot silently skip | Accepted |
 
 ## When to write one
 

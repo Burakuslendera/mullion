@@ -5,14 +5,21 @@ on:
     branches: [main]
   pull_request:
   # A quiet week is not evidence the runtime still exports the entry point
-  # mullion calls. The weekly run turns the doctor probe below into a standing
-  # early-warning wire. Scheduled runs use the default branch's workflow.
+  # mullion calls. The weekly run makes the required WebView2 check below a
+  # standing early-warning wire. Scheduled runs use the default branch's workflow.
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
 
 jobs:
   windows:
     runs-on: windows-latest
+    # The windows-latest runner ships the Evergreen WebView2 runtime (measured
+    # via the doctor probe: v149.0.4022.98), so the two machine tests in
+    # internal/webview2 must run, not skip. This turns their "no runtime" skip
+    # into a failure, so a green windows job proves the export mullion calls was
+    # actually checked rather than quietly stepped over. See docs/decisions/0010.
+    env:
+      MULLION_REQUIRE_WEBVIEW2: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -36,17 +43,6 @@ jobs:
       # The Host runs timers on their own goroutines; the race detector is not
       # ceremony here.
       - run: go test -race ./...
-
-      # Measure the silent-skip gap: the two machine tests in internal/webview2
-      # skip when no WebView2 runtime is installed, so a green suite does not by
-      # itself prove the export mullion calls was checked. The shipped diagnostic
-      # loads the client DLL and resolves that export exactly as the host does.
-      # This step does not fail the job (continue-on-error): its conclusion and
-      # output report whether THIS runner exposes a usable runtime, which is what
-      # decides how the check gets enforced next.
-      - name: "Probe: does this runner expose a usable WebView2 runtime? (non-fatal)"
-        continue-on-error: true
-        run: go run ./cmd/mullion doctor
 
       # Plain `go build ./...` never compiles a tagged file. Without these two
       # steps the diagnostic builds rot silently.
