@@ -1,6 +1,7 @@
 <!--
-Labels are applied during review: the priority of the issue this closes, plus the
-areas it touches. You do not need to set them.
+Labels are applied during review: the priority of the issue this closes,
+`regression` if it fixes one, plus the areas it touches. You do not need to set
+them.
 -->
 
 ## What changed, and why
@@ -25,7 +26,7 @@ e.g. go test ./... (new: TestHitTestCaptionBandFollowsConfig)
 [docs/verification.md](../docs/verification.md), on what display setup:
 
 <!--
-Required if this touches the frame, the hit test, DPI or snap. "It compiles" is
+Required if this touches the frame, the hit-test, DPI or snap. "It compiles" is
 not acceptance in this architecture: a window that opens, renders, and has a
 four-pixel-dead title bar compiles perfectly.
 

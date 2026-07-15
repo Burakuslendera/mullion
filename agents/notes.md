@@ -67,9 +67,9 @@ a trap: it reads as authoritative and there is no way to discover that it is not
 - **Length is capped, and the cap depends on who reads the file.** A rule file is
   loaded into context at the start of every session; a reference document is read
   once, on purpose. Rule files (`AGENTS.md`, `agents/*.md`, `CONTRIBUTING.md`):
-  **250 lines, hard** — past ~230 stop adding sections, past ~245 split before
-  writing anything new. Reference documents (`docs/*.md`): **400 lines, hard**,
-  with a table of contents required past 250. `README.md` is exempt. The splitting
+  **250 lines, hard** — past ~230, stop adding sections and split. Reference
+  documents (`docs/*.md`): **400 lines, hard**, with a table of contents required
+  past 250. `README.md` is exempt. The splitting
   rules live in [AGENTS.md](../AGENTS.md) and are not restated here: two copies of
   a rule is how one of them goes stale.
 - Filenames are ASCII and topic-based. No dates in filenames — a date belongs in a

@@ -19,8 +19,8 @@ area cannot be routed.
 | Label | Ladder |
 | --- | --- |
 | `P0: blocker` | Crash, hang, deadlock, COM lifetime bug, a window that shows nothing, a breach of the asset-serving boundary, a released API that is wrong. |
-| `P1: window defect` | Broken hit-testing, wrong DPI behaviour, a snap regression, flicker, a leak that grows without bound. |
-| `P2: quality` | Missing test coverage for existing behaviour, a diagnostic that cannot separate two root causes, structural debt. |
+| `P1: window defect` | Broken hit-testing, wrong DPI behaviour, snap regression, flicker, a leak that grows without bound. |
+| `P2: quality` | Missing test coverage for existing behaviour, a diagnostic that cannot distinguish two root causes, structural debt. |
 | `P3: docs & tooling` | Documentation, examples, scripts, CI. |
 | `P4: exploration` | Nice-to-have, research, an idea that is not scoped yet. |
 

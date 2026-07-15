@@ -98,7 +98,7 @@ SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
 
 ## 4. `WM_NCHITTEST`
 
-The hit test is the entire interaction contract of a frameless window. It runs on
+The hit-test is the entire interaction contract of a frameless window. It runs on
 the **native** side, against the window rect, in physical pixels.
 
 **Resize band.** `ResizeBorder` is 8 *logical* px, scaled by the active window's
@@ -338,7 +338,7 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | --- | --- |
 | Content in a tiny corner (~46x39 client) | `SWP_FRAMECHANGED` without `SWP_NOMOVE\|SWP_NOSIZE` (§3) |
 | Title bar clipped when maximized | `WM_NCCALCSIZE` work-area clamp (§2) |
-| Caption buttons not clickable | hit test returns `HTCAPTION` over the button cluster (§4) |
+| Caption buttons not clickable | hit-test returns `HTCAPTION` over the button cluster (§4) |
 | Maximized window restores when dragging content | unclamped delegated `HTCAPTION` (§4) |
 | Text heavy/blurry, layout too big | DPI awareness not PMv2, or set too late (§6) |
 | Window grows across monitors / hysteresis | double-scaling the suggested rect (§7) |
@@ -348,4 +348,4 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-07-15 | Editor: Claude (Opus 4.8) | Change: repoint the five source-file references to `host/` after the package moved out of the module root (docs/decisions/0009).
+> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: normalise "hit test" to the canonical "hit-test" (agents/policy.md terminology rule) in two spots.

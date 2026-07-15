@@ -2,7 +2,7 @@
 
 An archive of **things that did not work** while building a frameless Win32 + WebView2 window host.
 
-Hosting a browser surface in a custom-framed window that still behaves like a real Windows app — draggable titlebar, resize borders, Snap, DPI changes, maximize/restore — looks like a weekend of Win32 plumbing. It is not. Most of the time goes into discovering that an obvious fix does nothing, or fixes a symptom in the wrong layer.
+Hosting a browser surface in a custom-framed window that still behaves like a real Windows app — draggable title bar, resize borders, Snap, DPI changes, maximize/restore — looks like a weekend of Win32 plumbing. It is not. Most of the time goes into discovering that an obvious fix does nothing, or fixes a symptom in the wrong layer.
 
 Everything below was built, run, and failed. Each entry: **what was tried → why it looked reasonable → why it failed → what was done instead.**
 
@@ -10,13 +10,13 @@ Working rule throughout: a claim is only "verified" if it was observed at runtim
 
 ---
 
-## 1. The bug that forced us to own the window: maximized titlebar drag-down restore
+## 1. The bug that forced us to own the window: maximized title bar drag-down restore
 
-**Tried.** The host began on top of an existing Go desktop GUI framework, with a custom HTML titlebar drawn over the framework's window. The bug: maximize, grab the custom titlebar, drag down. The OS restore-and-move gesture fires, the frame restores correctly — and the WebView2 content does not follow. White gap top-left, content shifted bottom-right, still broken after mouse-up.
+**Tried.** The host began on top of an existing Go desktop GUI framework, with a custom HTML title bar drawn over the framework's window. The bug: maximize, grab the custom title bar, drag down. The OS restore-and-move gesture fires, the frame restores correctly — and the WebView2 content does not follow. White gap top-left, content shifted bottom-right, still broken after mouse-up.
 
 Each of these was implemented and measured. None fixed it:
 
-- **Native `WM_NCHITTEST` → `HTCAPTION` titlebar adapter** (let Win32 own the drag instead of CSS). It *regressed* mouse-move and titlebar double-click, and never touched the offset.
+- **Native `WM_NCHITTEST` → `HTCAPTION` title bar adapter** (let Win32 own the drag instead of CSS). It *regressed* mouse-move and title bar double-click, and never touched the offset.
 - **`RedrawWindow` on parent + children at `WM_EXITSIZEMOVE`** (it looks like a stale paint, so invalidate everything). The redraw logged every time; nothing changed. A repaint cannot fix a surface whose *bounds* are wrong.
 - **Child HWND bounds resync at `WM_EXITSIZEMOVE`.** No effect — and the expected log line sometimes never appeared, which made the child-discovery code itself suspect.
 - **A runtime 1px size nudge** (if a real size *change* drives the resize chain, fake one). Logged, no permanent drift, no flicker, no fix.
@@ -61,7 +61,7 @@ Each of these was implemented and measured. None fixed it:
 
 ## 4. WebView2 does not render while hidden — "hide until ready, then show" is impossible
 
-**Tried.** Keep the window hidden until the frontend signals ready, then show it fully rendered: no flash of an empty frame, no titlebar during loading. The initial show was deferred from "shell ready" to "frontend ready".
+**Tried.** Keep the window hidden until the frontend signals ready, then show it fully rendered: no flash of an empty frame, no title bar during loading. The initial show was deferred from "shell ready" to "frontend ready".
 
 **Looked reasonable because** it is a standard desktop pattern, and exactly what Electron does (`show: false`, then show on `ready-to-show`).
 
@@ -77,17 +77,17 @@ Each of these was implemented and measured. None fixed it:
 
 ## 5. Letting `DefWindowProc` handle `WM_NCCALCSIZE` — better numbers, broken product
 
-**Tried.** The custom frame returns `0` from `WM_NCCALCSIZE` unconditionally, so the client area covers the whole window and the HTML titlebar can live in it. Hypothesis: that is also why maximize/restore *animation* looks less fluid than a standard Win32 window. So: an A/B variant behind a build tag — same style bits, `WM_NCCALCSIZE` delegated to `DefWindowProc`.
+**Tried.** The custom frame returns `0` from `WM_NCCALCSIZE` unconditionally, so the client area covers the whole window and the HTML title bar can live in it. Hypothesis: that is also why maximize/restore *animation* looks less fluid than a standard Win32 window. So: an A/B variant behind a build tag — same style bits, `WM_NCCALCSIZE` delegated to `DefWindowProc`.
 
 **Looked reasonable because** it was a testable hypothesis, a one-line change, gated so production could not regress.
 
-**Failed because** — and this is the point — **the measurement supported the hypothesis.** The delegated variant produced meaningfully more intermediate maximize frames than the control. It was rejected anyway: handing `WM_NCCALCSIZE` back to `DefWindowProc` brings the native caption back, so the app rendered a native titlebar *and* the custom HTML titlebar, with the client surface shifted. Two titlebars. Ship-blocking.
+**Failed because** — and this is the point — **the measurement supported the hypothesis.** The delegated variant produced meaningfully more intermediate maximize frames than the control. It was rejected anyway: handing `WM_NCCALCSIZE` back to `DefWindowProc` brings the native caption back, so the app rendered a native title bar *and* the custom HTML title bar, with the client surface shifted. Two title bars. Ship-blocking.
 
 **Instead.** The control variant stayed the default; the diagnostic stayed inactive behind its tag. Motion was addressed separately with a *bounded* `WM_NCCALCSIZE` adjustment rather than by giving the frame back.
 
-**Lesson — the important one.** *A metric moving in the right direction is not acceptance.* "More frames" was real, reproducible and completely irrelevant once the visual gate failed. Define the hard gates (no double titlebar, no surface shift, Snap works, restore-drag aligned) **before** running the experiment, and let them veto the metric.
+**Lesson — the important one.** *A metric moving in the right direction is not acceptance.* "More frames" was real, reproducible and completely irrelevant once the visual gate failed. Define the hard gates (no double title bar, no surface shift, Snap works, restore-drag aligned) **before** running the experiment, and let them veto the metric.
 
-**Sibling defect.** Returning `0` for *all* `WM_NCCALCSIZE` cases has a second cost: when Windows maximizes a window it extends the outer rect past the work area by the width of the (now invisible) resize frame. If the whole outer rect becomes client area, the web content inherits that overhang and the top of the custom titlebar lands off-screen. Fix: keep the outer-rect overhang (correct Windows behaviour — do not fight it), but when `IsZoomed(hwnd)` is true, intersect the first `WM_NCCALCSIZE` rect with the monitor work area. Restore and Snap paths untouched.
+**Sibling defect.** Returning `0` for *all* `WM_NCCALCSIZE` cases has a second cost: when Windows maximizes a window it extends the outer rect past the work area by the width of the (now invisible) resize frame. If the whole outer rect becomes client area, the web content inherits that overhang and the top of the custom title bar lands off-screen. Fix: keep the outer-rect overhang (correct Windows behaviour — do not fight it), but when `IsZoomed(hwnd)` is true, intersect the first `WM_NCCALCSIZE` rect with the monitor work area. Restore and Snap paths untouched.
 
 ---
 
@@ -97,13 +97,13 @@ Each of these was implemented and measured. None fixed it:
 
 **Looked reasonable because** `DefWindowProc` knows where the caption buttons are; delegating gets minimize/maximize/close hit-testing and Snap behaviour for free.
 
-**Failed because** when maximized, the native caption is *taller* than a titlebar looks — noticeably taller than the ~32 logical px strip you expect — and `DefWindowProc` reports `HTCAPTION` for **all** of it. The caption had been themed to the app background with no icon and no title text, so its lower band looked exactly like page content. Users grabbed what they believed was content, and the window moved or restored.
+**Failed because** when maximized, the native caption is *taller* than a title bar looks — noticeably taller than the ~32 logical px strip you expect — and `DefWindowProc` reports `HTCAPTION` for **all** of it. The caption had been themed to the app background with no icon and no title text, so its lower band looked exactly like page content. Users grabbed what they believed was content, and the window moved or restored.
 
 **Instead.** Clamp the delegated result: keep `HTCAPTION` only within the top *N* logical pixels (DPI-scaled) below the window top; below that, return `HTCLIENT`. `HTMAXBUTTON` / `HTMINBUTTON` / `HTCLOSE` and the resize borders pass through untouched, so Snap keeps working.
 
 **Warning about this very fix.** In one configuration the clamp was a **runtime no-op** — the trace showed the parent's `WM_NCHITTEST` returning only resize-border codes, never `HTCAPTION`; the clamp never fired once. The drag came from somewhere else entirely: an injected `position: fixed` resize-edge overlay *inside the web content*, sitting directly below the caption, catching the pointer and starting a top-edge resize that looked like a drag. The clamp was correct, harmless and irrelevant. Only the trace log proved it.
 
-> Background: with a fully extended client area, a custom `WM_NCHITTEST` returning `HTMAXBUTTON` does **not** produce the Snap flyout; it appears to require a real DWM-managed non-client caption. Chromium-based shells get around this because the renderer lives in the window hierarchy the shell owns, so its hit-test can cooperate with `DwmDefWindowProc`. WebView2 lives in a *separate* child HWND that masks the top-level hit-test on hover. A fully custom HTML titlebar **plus** native Snap may simply not be reachable in a WebView2 host.
+> Background: with a fully extended client area, a custom `WM_NCHITTEST` returning `HTMAXBUTTON` does **not** produce the Snap flyout; it appears to require a real DWM-managed non-client caption. Chromium-based shells get around this because the renderer lives in the window hierarchy the shell owns, so its hit-test can cooperate with `DwmDefWindowProc`. WebView2 lives in a *separate* child HWND that masks the top-level hit-test on hover. A fully custom HTML title bar **plus** native Snap may simply not be reachable in a WebView2 host.
 
 ---
 
@@ -125,7 +125,7 @@ The most expensive lesson here, and the least technical.
 
 **Why it took so long.** The symptom *looked* native — black system-style balloon, drawn over the frame, correlated with maximize state — so every hypothesis was a native hypothesis: DWM, `WS_CAPTION`, `WM_NCCALCSIZE`, caption tooltips. The web layer was never seriously suspected because it "obviously" was not a web problem. It obviously was.
 
-**The rule now, and it is a rule:** on any titlebar/caption visual regression, **search the titlebar DOM first.** Open a `WS_CAPTION` / `WM_NCCALCSIZE` / DWM spike **only after** the DOM is proven clean.
+**The rule now, and it is a rule:** on any title bar/caption visual regression, **search the title bar DOM first.** Open a `WS_CAPTION` / `WM_NCCALCSIZE` / DWM spike **only after** the DOM is proven clean.
 
 Corollary: none of the automated harnesses — Go tests, frontend tests, build matrix, cursor smoke, resize smoke — could see this bug. They all passed, the whole time. When the suite is green and the user is still looking at a broken window, the suite is measuring the wrong thing.
 
@@ -180,7 +180,7 @@ Not a dead end — a method, recorded because several misleading measurements pr
 
 ## 11. Injected mouse input never reaches the WebView2 child
 
-**Tried.** GUI smokes that drive the app as a user would: `SetCursorPos` + `mouse_event` to click buttons, drag the titlebar, exercise the web UI.
+**Tried.** GUI smokes that drive the app as a user would: `SetCursorPos` + `mouse_event` to click buttons, drag the title bar, exercise the web UI.
 
 **Looked reasonable because** synthetic input is the standard way to automate a Windows GUI, and it works on ordinary Win32 controls.
 
@@ -208,8 +208,6 @@ Read the binding's source before optimizing — whether it is a third-party one 
 **Treat it as an experiment, not a config tweak.** Browser args change production behaviour and invalidate any memory baseline you hold. The discipline that worked: (1) put the args behind a diagnostic gate or build tag; (2) A/B them against the existing baseline with a memory harness — measuring working set *and* private bytes, for the host **and** the distribution across WebView2's child processes, because measuring only the host process will mislead you; (3) only then decide.
 
 Also cheap and worth doing: Chromium user zoom (Ctrl+scroll) is an *uncontrolled* scale source sitting underneath all your DPI math. If the host does its own scaling, disable it (`PutIsZoomControlEnabled(false)`). Two builds once differed on exactly this, and the discrepancy stayed invisible until someone went looking for why they scaled differently.
-
----
 
 ---
 
@@ -245,3 +243,5 @@ It is more code, and the ABI parts of it fail by crashing rather than by returni
 7. **When five fixes produce clean logs and no change, the ownership model is wrong** — not the message handling. (§1)
 8. **No listening sockets in a desktop app.** Intercept the resource request instead. (§8)
 9. **Count your escape hatches into a dependency.** When you have forked it once and bypassed it once, the abstraction is already gone; owning the binding is cheaper than pretending otherwise. (§13)
+
+> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: normalise "titlebar" to the two-word "title bar" used everywhere else (agents/policy.md terminology rule); collapse a doubled section divider before §13.

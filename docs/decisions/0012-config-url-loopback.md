@@ -118,9 +118,9 @@ recursion. Found live in PR #4; tracked as the finding on issue #3, and built by
   direction.
 - `host/loopback.go`: `validateURL` (empty ok; http/https; loopback-only),
   `urlOrigin` (path/query dropped for logs), `assetSourceSummary` (the startup line).
-- `host/config.go`: the `URL` field and `startURL` preferring it; `host_windows.go`:
+- `host/config.go`: the `URL` field and `startURL` preferring it; `host/host_windows.go`:
   validation + the always-on log line + skipping the asset provider when URL is set;
-  `webview_windows.go`: the filter and callback registered only when serving the
+  `host/webview_windows.go`: the filter and callback registered only when serving the
   embedded FS.
 - `host/loopback_test.go`: loopback-only accepted, remote/LAN/wrong-scheme rejected,
   `startURL` selection, and that the log line drops the path.

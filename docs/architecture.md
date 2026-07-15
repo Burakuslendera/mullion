@@ -10,6 +10,7 @@
   - [Finding the runtime, and skipping the loader DLL](#finding-the-runtime-and-skipping-the-loader-dll)
   - [Event handlers are COM objects we implement](#event-handlers-are-com-objects-we-implement)
 - [Asset serving without a port](#asset-serving-without-a-port)
+  - [Serving from a caller URL instead (`Config.URL`)](#serving-from-a-caller-url-instead-configurl)
   - [COM stream lifetime](#com-stream-lifetime)
 - [Bridge protocol](#bridge-protocol)
 - [Startup gates and watchdog](#startup-gates-and-watchdog)
@@ -65,12 +66,11 @@ dependencies are process-wide and irreversible.
    first frame instead of being corrected afterwards.
 
 6. **WebView2 embed.** The controller is created as a child of an `HWND` that already
-   exists and is already DPI-aware. Every callback (web message, web resource
-   requested, navigation completed, process failed) and every injected startup script
-   is registered **before** the first `Navigate`; a callback registered after
-   navigation begins can miss the requests and messages the first document produces —
-   a race that reproduces only on fast machines, or only on slow ones, depending on
-   where the gap lands.
+   exists and is already DPI-aware. Every callback (web message, web resource requested,
+   navigation completed, process failed) and every injected startup script is registered
+   **before** the first `Navigate`; a callback registered after navigation begins can
+   miss the requests and messages the first document produces — a race that reproduces
+   only on fast machines, or only on slow ones, depending on where the gap lands.
 
 7. **Show.** Parent window and WebView2 controller are both made visible explicitly.
    Showing the parent alone is not enough: the controller has an independent
@@ -221,9 +221,8 @@ three of the four are fatal when violated.
   one `NewCallback` for the whole process, and the per-instance IID lives in the object.
 - **Keep a GC root.** Once a Go object's address has been handed to COM, the Go garbage
   collector cannot see the reference: the runtime holds an integer, not a Go pointer. A
-  package-level map keyed by the interface pointer is what keeps the object reachable,
-  and the entry is deleted when the COM refcount reaches zero — so the map is a root, not
-  a leak.
+  package-level map keyed by the interface pointer is what keeps the object reachable, and
+  the entry is deleted when the COM refcount reaches zero — so the map is a root, not a leak.
 - **Release *after* registering, never before.** `add_*` takes its own reference on the
   handler. Dropping ours before that call is a use-after-free; never dropping it is a
   leak. The correct order is: create with refcount 1, register, then release our one
@@ -239,8 +238,7 @@ three of the four are fatal when violated.
 ## Asset serving without a port
 
 Assets come from an `fs.FS` — typically a `go:embed` FS — served on a synthetic origin
-derived from `Config.VirtualHost` (`https://mullion.local` by default). The host
-registers
+derived from `Config.VirtualHost` (`https://mullion.local` by default). The host registers
 `AddWebResourceRequestedFilter(origin+"/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)`
 and answers every request inside `WebResourceRequestedCallback`. Nothing binds a
 socket; the request never leaves the process. Because that callback is the only
@@ -344,8 +342,8 @@ Go-side dispatch splits the method namespace. A reserved set is answered by the 
 and never reaches the application:
 
 ```
-WindowStartDrag   WindowStartResize   WindowMinimise
-WindowToggleMaximise   WindowIsMaximised   (diagnostics)
+WindowShow   WindowHide   WindowClose   WindowMinimise   WindowToggleMaximise
+WindowIsMaximised   WindowStartDrag   WindowStartResize   (diagnostics)
 ```
 
 Everything else is handed to `Config.Bridge` as the raw request JSON; it returns the raw
@@ -370,8 +368,7 @@ worse than the flash it prevents, so the fallback is not optional.
 
 **Render watchdog.** Armed before `Navigate`, cancelled by `Host.MarkFrontendReady()` —
 the frontend's `ready()` call, made only after it has actually rendered. If
-`Config.RenderTimeout` elapses first, the host logs an error carrying everything it
-knows:
+`Config.RenderTimeout` elapses first, the host logs an error carrying everything it knows:
 
 ```
 phase=<last frontend phase>   asset=<last asset served>
@@ -398,3 +395,5 @@ window is actually shown. An application that starts in a tray must treat the fi
 **Windows only.** The package is behind `//go:build windows`; `Run` returns
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
+
+> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: complete the reserved bridge set (WindowShow/WindowHide/WindowClose were intercepted but undocumented); add the missing `Config.URL` TOC entry.
