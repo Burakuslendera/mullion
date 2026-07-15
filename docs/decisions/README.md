@@ -29,6 +29,7 @@ These files are that record.
 | [0006](./0006-tests-stay-headless.md) | No test creates a window | Accepted |
 | [0007](./0007-non-windows-stub.md) | Other platforms compile and return `ErrUnsupportedPlatform` | Accepted |
 | [0008](./0008-doctor-is-a-go-command.md) | The environment report is a Go command, not a script | Accepted |
+| [0009](./0009-public-package-at-host.md) | The public package lives at /host, not the module root | Accepted |
 
 ## When to write one
 

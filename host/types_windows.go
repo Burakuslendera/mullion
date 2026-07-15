@@ -1,0 +1,157 @@
+//go:build windows
+
+package host
+
+import "golang.org/x/sys/windows"
+
+type windowHandle = windows.Handle
+
+const (
+	cwUseDefault = 0x80000000
+
+	htClient      = 1
+	htCaption     = 2
+	htMinButton   = 8
+	htMaxButton   = 9
+	htLeft        = 10
+	htRight       = 11
+	htTop         = 12
+	htTopLeft     = 13
+	htTopRight    = 14
+	htBottom      = 15
+	htBottomLeft  = 16
+	htBottomRight = 17
+	htClose       = 20
+
+	monitorDefaultToNearest = 0x00000002
+
+	swHide     = 0
+	swShow     = 5
+	swMinimize = 6
+	swMaximize = 3
+	swRestore  = 9
+
+	swpNoZOrder        = 0x0004
+	swpNoMove          = 0x0002
+	swpNoSize          = 0x0001
+	swpNoActivate      = 0x0010
+	swpFrameChanged    = 0x0020
+	gwlStyle           = -16
+	gwlExStyle         = -20
+	wsOverlapped       = 0x00000000
+	wsVisible          = 0x10000000
+	wsCaption          = 0x00C00000
+	wsSysMenu          = 0x00080000
+	wsThickFrame       = 0x00040000
+	wsMinimizeBox      = 0x00020000
+	wsMaximizeBox      = 0x00010000
+	wsOverlappedWindow = wsOverlapped | wsCaption | wsSysMenu |
+		wsThickFrame | wsMinimizeBox | wsMaximizeBox
+	wsNativeWindow = wsOverlapped | wsThickFrame | wsMinimizeBox | wsMaximizeBox
+	wsChild        = 0x40000000
+
+	wmDestroy           = 0x0002
+	wmMove              = 0x0003
+	wmSize              = 0x0005
+	wmEraseBkgnd        = 0x0014
+	wmPaint             = 0x000F
+	wmClose             = 0x0010
+	wmSetCursor         = 0x0020
+	wmGetMinMaxInfo     = 0x0024
+	wmWindowPosChanging = 0x0046
+	wmWindowPosChanged  = 0x0047
+	wmNCCalcSize        = 0x0083
+	wmNCHitTest         = 0x0084
+	wmNCPaint           = 0x0085
+	wmNCActivate        = 0x0086
+	wmNCMouseMove       = 0x00A0
+	wmNCLButtonDown     = 0x00A1
+	wmSysCommand        = 0x0112
+	wmInitMenu          = 0x0116
+	wmMoving            = 0x0216
+	wmEnterSizeMove     = 0x0231
+	wmExitSizeMove      = 0x0232
+	wmNCMouseHover      = 0x02A0
+	wmNCMouseLeave      = 0x02A2
+	wmDPIChanged        = 0x02E0
+	wmApp               = 0x8000
+	wmNativeShow        = wmApp + 21
+	wmNativeHide        = wmApp + 22
+	wmNativeQuit        = wmApp + 23
+	wmNativeMinimize    = wmApp + 24
+	wmNativeMaxToggle   = wmApp + 25
+	wmNativeStartDrag   = wmApp + 26
+	wmNativeStartResize = wmApp + 27
+	wmNativeSyncBounds  = wmApp + 28
+
+	scMinimize = 0xF020
+	scMaximize = 0xF030
+	scRestore  = 0xF120
+
+	wmSetIcon = 0x0080
+	iconSmall = 0
+	iconBig   = 1
+
+	dwmwaExtendedFrameBounds     = 9
+	dwmwaCaptionButtonBounds     = 5
+	dwmwaUseImmersiveDarkMode    = 20
+	dwmwaWindowCornerPreference  = 33
+	dwmwaBorderColor             = 34
+	dwmwaCaptionColor            = 35
+	dwmwaTextColor               = 36
+	dwmWindowCornerPreferenceDef = 0
+	dwmWindowCornerPreferenceRnd = 2
+
+	defaultWindowDPI = 96
+)
+
+type rect struct {
+	Left   int32
+	Top    int32
+	Right  int32
+	Bottom int32
+}
+
+type point struct {
+	X int32
+	Y int32
+}
+
+type minMaxInfo struct {
+	Reserved     point
+	MaxSize      point
+	MaxPosition  point
+	MinTrackSize point
+	MaxTrackSize point
+}
+
+type monitorInfo struct {
+	Size    uint32
+	Monitor rect
+	Work    rect
+	Flags   uint32
+}
+
+type wndClassEx struct {
+	Size       uint32
+	Style      uint32
+	WndProc    uintptr
+	ClsExtra   int32
+	WndExtra   int32
+	Instance   windowHandle
+	Icon       windowHandle
+	Cursor     windowHandle
+	Background windowHandle
+	MenuName   *uint16
+	ClassName  *uint16
+	IconSm     windowHandle
+}
+
+type msg struct {
+	Window  windowHandle
+	Message uint32
+	WParam  uintptr
+	LParam  uintptr
+	Time    uint32
+	Point   point
+}

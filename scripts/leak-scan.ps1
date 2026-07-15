@@ -57,7 +57,7 @@ $skip = @(
 $pathFixtures = @(
     "internal/logsafe/logsafe_test.go",
     "internal/doctor/doctor_test.go",
-    "diagnostics_windows_test.go"
+    "host/diagnostics_windows_test.go"
 )
 
 $files = git ls-files | Where-Object {

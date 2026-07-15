@@ -20,7 +20,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/Burakuslendera/mullion"
+	"github.com/Burakuslendera/mullion/host"
 	"github.com/Burakuslendera/mullion/internal/doctor"
 )
 
@@ -32,7 +32,7 @@ func main() {
 
 	switch command {
 	case "doctor":
-		report := doctor.Probe(mullion.Version())
+		report := doctor.Probe(host.Version())
 		fmt.Print(doctor.Format(report))
 		if !report.Usable() {
 			// The block above says what is wrong; the exit code says that
@@ -42,7 +42,7 @@ func main() {
 		}
 
 	case "version":
-		fmt.Println(mullion.Version())
+		fmt.Println(host.Version())
 
 	case "help", "-h", "--help":
 		usage(os.Stdout)

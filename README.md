@@ -18,7 +18,7 @@ var embedded embed.FS
 func main() {
 	assets, _ := fs.Sub(embedded, "frontend")
 
-	host := mullion.New(mullion.Config{
+	host := host.New(host.Config{
 		Assets: assets,
 		Title:  "Demo",
 		Width:  980,
@@ -36,7 +36,7 @@ answered by the host itself, so the title bar works before you have written a
 single Go method.
 
 ```
-go get github.com/Burakuslendera/mullion
+go get github.com/Burakuslendera/mullion/host
 ```
 
 Requires Windows and the [WebView2 Runtime][runtime] (shipped with Windows 11 and

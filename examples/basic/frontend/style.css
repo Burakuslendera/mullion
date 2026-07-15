@@ -1,5 +1,5 @@
-/*
-  These three values are a contract with mullion.Config in main.go:
+  /*
+  These three values are a contract with host.Config in main.go:
 
     --titlebar-height  == Config.TitlebarHeight
     --control-width x 3 == Config.CaptionControlsWidth

@@ -16,7 +16,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Burakuslendera/mullion"
+	"github.com/Burakuslendera/mullion/host"
 )
 
 //go:embed all:frontend
@@ -30,7 +30,7 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	host := mullion.New(mullion.Config{
+	host := host.New(host.Config{
 		Assets: assets,
 		Title:  "Mullion Basic",
 		Width:  980,
@@ -44,9 +44,9 @@ func main() {
 		CaptionControlsWidth: 138, // 3 buttons x 46px
 		ResizeBorder:         8,
 
-		BackgroundColour: mullion.Colour{R: 0x16, G: 0x1a, B: 0x22, A: 0xff},
+		BackgroundColour: host.Colour{R: 0x16, G: 0x1a, B: 0x22, A: 0xff},
 
-		Logger: mullion.SlogLogger(logger),
+		Logger: host.SlogLogger(logger),
 		Bridge: bridge,
 	})
 
