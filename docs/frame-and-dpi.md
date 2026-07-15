@@ -224,6 +224,44 @@ Caveat: by the time `WM_DPICHANGED` arrives Windows has **already** updated the
 window's DPI, so `GetDpiForWindow` returns the *new* value. Track the last known
 DPI yourself if you want a truthful `old_dpi`.
 
+**The window rect is only half of a DPI change — the WebView content has its own
+scale.** Applying the suggested rect resizes the *window*; it does nothing about the
+scale the *frontend* renders at. That scale is the WebView2 controller's
+**rasterization scale** — the page's `devicePixelRatio` — and mullion owns it for
+the same reason it owns the bounds.
+
+- **Symptom:** drag the window from a 125% monitor to a 100% one (or throw it there
+  with `Win`+`Shift`+`←`) and the page is suddenly too large for the window,
+  overflows, and grows a scrollbar; the window frame itself is the right physical
+  size. The reverse — 100% to 125% — makes the content too small. A single-monitor
+  session never shows it, which is why it survived until a mixed-DPI report.
+- **Root cause:** the controller runs in raw-pixel bounds mode with
+  `PutShouldDetectMonitorScaleChanges(false)` (see
+  [decisions/0011](./decisions/0011-host-owns-rasterization-scale.md)). Microsoft is
+  explicit that in that configuration *"the app must update the RasterizationScale
+  property itself"*, and that the scale *"should be updated when the DPI scale of the
+  app's top level window changes (i.e. monitor DPI scale changes or window changes
+  monitor)"*. Turning detection off without then setting the scale leaves the content
+  frozen at whatever scale the controller was created with — correct on the starting
+  monitor, wrong on every other.
+- **Fix:** on `WM_DPICHANGED`, and once at embed, set
+  `controller.PutRasterizationScale(dpi/96)`. `rasterizationScaleForDPI` is the pure
+  function that computes it and `syncRasterizationScale` pushes it. Do this **and**
+  apply the suggested rect — neither substitutes for the other. In raw-pixel mode the
+  two are independent (Microsoft: *"Changing the rasterization scale in this mode
+  won't change the raw pixel size"*), so their order does not matter, but both must
+  happen.
+
+The scale is a function of the **absolute** DPI (`dpi/96`), never of a delta, so it
+cannot compound across monitor hops the way a mishandled rect can (the double-scale
+trap above). That is the invariant the `rasterizationScaleForDPI` tests pin.
+
+> **Known gap:** Microsoft's rasterization scale is *monitor DPI scale × user text
+> scale*; mullion sets only the DPI part, consistent with the rest of its DPI-based
+> geometry. A non-default system **text** scale is therefore not reflected yet.
+> `unverified` — there is no report against a raised text-scale factor to size the
+> gap.
+
 ## 8. Restore flicker (`WM_ERASEBKGND`)
 
 - **Symptom:** maximize -> restore shows a one-frame flash of blank background.
@@ -304,6 +342,7 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Maximized window restores when dragging content | unclamped delegated `HTCAPTION` (§4) |
 | Text heavy/blurry, layout too big | DPI awareness not PMv2, or set too late (§6) |
 | Window grows across monitors / hysteresis | double-scaling the suggested rect (§7) |
+| Content too big/overflows (scrollbar) after moving to another monitor | rasterization scale not updated on the DPI change (§7) |
 | Blank flash on restore | `WM_ERASEBKGND` not handled (§8) |
 | Content offset after a drag or DPI change | a missing bounds-sync trigger (§9) |
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
