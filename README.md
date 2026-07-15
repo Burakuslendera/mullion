@@ -66,7 +66,10 @@ is one half of it; [`docs/`](docs/) is the other.
   `app-region: drag` produces a real `HTCAPTION` and the shell handles dragging.
   Older runtimes fall back to an injected JavaScript drag path automatically.
 - **No port.** Assets come from `fs.FS` via `WebResourceRequested` and an
-  `IStream`. Scheme, host and path traversal are all rejected at the boundary.
+  `IStream`. Scheme, host and path traversal are all rejected at the boundary. Or
+  opt in: point `Config.URL` at a loopback origin you serve yourself (a dev
+  server) — mullion still opens no socket, and if that load fails it shows a
+  controllable fallback rather than the browser's error page.
 - **A bridge that already works.** `window.mullion.invoke("Method", ...args)`
   returns a `Promise`; window controls are reserved and never reach your code.
 - **Diagnostics that answer the real question.** A render watchdog fires if the
