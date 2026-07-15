@@ -91,6 +91,9 @@ A frame or DPI report cannot be investigated without its environment. Apply
 - **which monitor** the window was on, and whether it had been dragged there;
 - the **build**, from the `mullion: version=` line the library logs at startup: a
   tag, a pseudo-version carrying the commit hash, or a disclosed `replace`;
+- whether **`Config.URL`** was set (the loopback opt-in) and to what - the
+  `mullion: asset source=` line reports it. It changes both the asset path and the
+  threat model, so a report that omits it can send you hunting the wrong layer;
 - whether it reproduces in **`examples/basic`**, unmodified;
 - the **log**, with `MULLION_HITTEST_DIAG=1` for a hit-test report and
   `MULLION_TOOLTIP_TRACE=1` for a caption or tooltip one;

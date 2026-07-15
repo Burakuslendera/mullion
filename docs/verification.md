@@ -301,6 +301,10 @@ Then include:
   host or the WebView2 layer in the same window of time.
 - **Which switches were on** — build tags used, env variables set. A trace taken
   from a diagnostic build must say so.
+- **The asset source** — whether `Config.URL` pointed the WebView at a caller-served
+  loopback origin instead of the embedded `fs.FS`. The startup
+  `mullion: asset source=` line records it. With a caller URL the served bytes and
+  the asset boundary are the caller's, not mullion's, so it is a different report.
 - **WebView2 Runtime version — and which runtime was actually loaded.** A large
   share of "works on my machine" in a WebView2 host is a runtime-version
   difference. mullion discovers the runtime itself (registry, or a

@@ -54,8 +54,10 @@ func (host *Host) createWebView() error {
 			host.log.Warn("mullion: bridge response post failed, reason=" + logsafe.Reason(err))
 		}
 	}
-	browser.WebResourceRequestedCallback = func(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs) {
-		host.assets.webResourceRequested(request, args, browser.Environment())
+	if host.config.URL == "" {
+		browser.WebResourceRequestedCallback = func(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs) {
+			host.assets.webResourceRequested(request, args, browser.Environment())
+		}
 	}
 	browser.NavigationCompletedCallback = func(success bool, status webview2.WebErrorStatus) {
 		if !success {
@@ -86,9 +88,16 @@ func (host *Host) createWebView() error {
 	host.syncRasterizationScale("embed", dpiForWindow(host.window()))
 	host.syncWebViewBounds("embed")
 
-	host.log.Debug("mullion: webresource filter registered")
-	host.warnIf("web resource filter", browser.AddWebResourceRequestedFilter(host.config.origin()+"/*", webview2.WebResourceContextAll))
-	host.log.Debug("mullion: asset serving ready")
+	if host.config.URL == "" {
+		host.log.Debug("mullion: webresource filter registered")
+		host.warnIf("web resource filter", browser.AddWebResourceRequestedFilter(host.config.origin()+"/*", webview2.WebResourceContextAll))
+		host.log.Debug("mullion: asset serving ready, source=embedded-fs")
+	} else {
+		// Config.URL is set: the caller serves the origin, so there is nothing to
+		// intercept. The injected scripts below still run - they are per-navigation
+		// and origin-independent - so the bridge and window controls work either way.
+		host.log.Debug("mullion: asset serving skipped, source=external-url")
+	}
 
 	// The bridge script installs the namespace the other three scripts use, so
 	// it must be injected first.

@@ -32,6 +32,7 @@ These files are that record.
 | [0009](./0009-public-package-at-host.md) | The public package lives at /host, not the module root | Accepted |
 | [0010](./0010-ci-requires-the-runtime.md) | CI requires the WebView2 runtime, so the export check cannot silently skip | Accepted |
 | [0011](./0011-host-owns-rasterization-scale.md) | The host owns the WebView2 rasterization scale, updating it on every DPI change | Accepted |
+| [0012](./0012-config-url-loopback.md) | Config.URL lets a caller serve the frontend itself; mullion still opens no socket | Accepted |
 
 ## When to write one
 
