@@ -110,14 +110,16 @@ touching hit-testing or the non-client area.
   shims, must not reference an `HWND`, and must compile on Linux.
 - One concern per file, matching the existing layout. When a file grows past
   roughly 250 lines it has usually acquired a second concern; split it there.
-- **Source in another language never lives inline in a Go string literal.** A
-  document or program — HTML, JavaScript, CSS, anything with a structure of its
-  own — gets its own file next to the package and is compiled in with
-  `//go:embed`; `host/errorpage.html` and the `host/*.js` scripts are the
-  pattern. Genuine fragments (a CSS selector default, a JSON fixture in a test)
-  stay inline. The file reads and edits in its own language, and
-  `scripts/leak-scan.ps1` holds `.html`/`.js`/`.css` sources to the same ASCII
-  rule as `.go`.
+- **Source in one language never lives inline inside a file of another — in
+  any direction.** Not HTML in a Go string, not C# in a PowerShell here-string,
+  not a script block in YAML: a document or program gets its own file, and the
+  host file loads it — `//go:embed` in Go (`host/errorpage.html`, `host/*.js`),
+  `Get-Content -Raw` in PowerShell (`scripts/screenshot.cs`). Genuine fragments
+  stay inline: a CSS selector default, a one-line style string, a
+  `"<html></html>"` test fixture. A document composing what its own standard
+  defines — HTML carrying its `<style>` block — is one document, not a
+  violation. `scripts/leak-scan.ps1` holds every source extension to the same
+  ASCII rule as `.go`.
 - User-supplied strings — filesystem paths, URIs, bridge payloads — pass through
   `internal/logsafe` before they reach a log line. Diagnostics should be readable
   without being a disclosure.
@@ -156,4 +158,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: Code style gains the inline-foreign-source rule — a document or program in another language lives in its own file and is embedded, never written inline in a Go string literal (maintainer direction; `host/errorpage.html` and `host/*.js` are the pattern).
+> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: the inline-foreign-source rule is now universal, per maintainer direction — no language hosts another language's source inline, in any file (Go, PowerShell, YAML, JS alike); `scripts/screenshot.cs` joins `host/errorpage.html` and `host/*.js` as the pattern.

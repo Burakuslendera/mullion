@@ -58,7 +58,7 @@ func TestNoUpstreamBrandLeak(t *testing.T) {
 			return nil
 		}
 		switch filepath.Ext(path) {
-		case ".go", ".md", ".yml", ".yaml", ".html", ".css", ".js", ".mod", ".sum", ".ps1", "":
+		case ".go", ".md", ".yml", ".yaml", ".html", ".css", ".js", ".cs", ".mod", ".sum", ".ps1", "":
 		default:
 			return nil
 		}

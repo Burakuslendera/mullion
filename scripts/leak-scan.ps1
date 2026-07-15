@@ -42,7 +42,7 @@ $patterns = @(
 $sourcePatterns = @(
     @{ Name = "non-ASCII character in source"; Pattern = "[^\x00-\x7F]" }
 )
-$sourceExtensions = @(".go", ".js", ".css", ".html", ".ps1", ".yml")
+$sourceExtensions = @(".go", ".js", ".css", ".html", ".cs", ".ps1", ".yml")
 
 # Files that legitimately contain one of the shapes above.
 $skip = @(
