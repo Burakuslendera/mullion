@@ -52,11 +52,11 @@ That is close to free now — there is no tagged release yet, so nothing resolve
 the old layout — and it would not have been free later. This is the reason to do
 it before the first tag rather than after.
 
-Every file that was at the module root is now under `host/`. Documentation and
-decision records written before this one that name a bare root filename
-(`config.go`, `hittest_windows.go`, `nccalc_windows.go`, …) refer to
-`host/<file>`; they were correct where they were written, and are left as they
-were.
+Every file that was at the module root is now under `host/`, and the package was
+renamed from `mullion` to `host`. Living reference docs were repointed. The
+decision records before this one are left as they were and predate the move: a
+bare root filename in one (`assets_windows.go`, `nccalc_windows.go`, …) now lives
+at `host/<file>`, and a `mullion.X` qualifier is now `host.X`.
 
 `host/leak_test.go` walked `.` to scan the whole repository, which worked only
 because the package sat at the root. It now locates the module root explicitly
