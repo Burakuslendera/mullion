@@ -44,6 +44,11 @@ type Host struct {
 	sysMenuLast       sysMenuSnapshot
 	boundsMu          sync.Mutex
 	lastBoundsSyncLog boundsSyncLogState
+
+	// errorPageShown guards NavigationCompletedCallback from re-navigating to the
+	// fallback error surface in a loop. It is read and written only on the UI
+	// thread (the navigation-completed callback), so it needs no lock. See issue #3.
+	errorPageShown bool
 }
 
 // New prepares a host. It does not create a window; Run does that.

@@ -276,7 +276,8 @@ guarantee is unchanged.
 to it. When `Config.URL` is set, the `WebResourceRequested` filter is not registered
 and the boundary matrix above does not run — the caller's server owns those concerns.
 The injected scripts still run on every navigation, so `window.<ns>` (the bridge and
-window controls) works on the caller's origin too.
+window controls) works on the caller's origin too, and on the fallback page a failed
+navigation shows in place of Edge's chromeless error screen (`host/errorpage.go`).
 
 That last point is why `Config.URL` is pinned to **loopback** (`127.0.0.1`,
 `localhost`, `::1`) over `http`/`https`, and any other URL is rejected by `Run`:

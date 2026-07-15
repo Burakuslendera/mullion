@@ -66,6 +66,7 @@ func (host *Host) createWebView() error {
 		host.log.Debug("mullion: navigation completed")
 		host.syncWebViewBounds("navigation_completed")
 		host.warnIf("navigation diagnostic eval", browser.Eval(host.js.navigationEval))
+		host.handleNavigationOutcome(browser, success)
 	}
 	browser.ProcessFailedCallback = func(kind webview2.ProcessFailedKind) {
 		host.log.Error("mullion: webview2 process failed, kind=" + formatInt32(int32(kind)))
@@ -111,4 +112,35 @@ func (host *Host) createWebView() error {
 	host.log.Debug("mullion: navigate requested")
 	host.startRenderWatchdog()
 	return browser.Navigate(host.config.startURL())
+}
+
+// handleNavigationOutcome shows mullion's own controllable surface when a
+// navigation fails, so an end user is never stranded on Edge's chromeless
+// network-error page - which, with the native caption removed, has no title bar and
+// no visible way to minimise, maximise, close or reload (issue #3, found live in
+// PR #4). The surface is a self-contained data: URL (errorpage.go); no socket is
+// opened, consistent with the no-port guarantee.
+//
+// It runs on the UI thread from NavigationCompletedCallback, so errorPageShown needs
+// no lock. The recursion guard is belt-and-braces: the fallback is a data: page that
+// loads success=true and so cannot itself reach this branch, but the guard means a
+// future change that made it fail could not loop either. Any successful load re-arms
+// the guard, so a Retry that fails again shows the surface again.
+func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success bool) {
+	if success {
+		host.errorPageShown = false
+		return
+	}
+	if host.errorPageShown {
+		host.log.Warn("mullion: fallback error surface load failed, not retrying")
+		return
+	}
+	host.errorPageShown = true
+	host.log.Info("mullion: navigation failed, showing fallback error surface")
+	host.warnIf("error surface navigate", browser.Navigate(errorPageURL(host.config, host.config.startURL())))
+	// Release the startup show gate so the surface appears now instead of after
+	// Config.ShowTimeout. The render watchdog is left armed on purpose: the intended
+	// frontend never rendered, so it should still fire, and a blank frontend after a
+	// Retry must still be caught.
+	host.requestStartupShow("navigation_failed")
 }
