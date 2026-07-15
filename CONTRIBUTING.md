@@ -25,7 +25,9 @@ go vet ./...
 go test ./...
 go test -race ./...                          # the message pump is thread-affine
 go build -tags mullion_dwm_caption_diag ./... # diagnostic build tag still compiles
+go test -tags mullion_dwm_caption_diag ./...  # ... and its gated tests still pass
 go build -tags mullion_caption_passthrough_diag ./... # ... and the other one
+go test -tags mullion_caption_passthrough_diag ./...
 GOOS=linux go build ./...                     # build-tag hygiene: no Win32 leak
 pwsh scripts/leak-scan.ps1                    # nothing private is published
 cd examples/basic && go run .                 # live demo
@@ -76,7 +78,7 @@ such.
 A fix without a test is a fix that will be undone by the next refactor. Write the
 test so that it **fails before your change and passes after it**, and name it
 after the contract it locks, not after the function it calls. The DPI
-round-trip and no-compounding tests in `dpi_windows_test.go` are the model: they
+round-trip and no-compounding tests in `monitor_windows_test.go` are the model: they
 encode the rule, so a future "simplification" that reintroduces double-scaling
 cannot land silently.
 
@@ -146,4 +148,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-07-15 | Editor: Claude (Opus 4.8) | Change: carve one documented opt-in (`MULLION_REQUIRE_WEBVIEW2`) into the headless invariant (docs/decisions/0010); repoint the portable-file example to `host/config.go` after the package move (0009).
+> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: add the two `go test -tags <diag>` steps the ladder was missing (CI already runs them, ci.yml:50,52; docs/verification.md §5 requires them for tags with test files); repoint the DPI model-test reference to `monitor_windows_test.go`, where those tests live.

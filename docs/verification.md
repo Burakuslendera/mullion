@@ -26,7 +26,9 @@ go vet ./...                                     # syscall/unsafe/printf misuse
 go test ./...                                    # unit + table tests
 go test -race ./...                              # message pump vs. callback races
 go build -tags mullion_dwm_caption_diag ./...    # diagnostic tag still compiles
+go test -tags mullion_dwm_caption_diag ./...     # ... and its gated tests still pass
 go build -tags mullion_caption_passthrough_diag ./...
+go test -tags mullion_caption_passthrough_diag ./...
 GOOS=linux go build ./...                        # non-windows stub gate
 pwsh scripts/leak-scan.ps1                       # nothing private is published
 cd examples/basic && go run .                    # it actually starts
@@ -324,4 +326,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-14 | Editor: Claude (Fable 5) | Change: add the leak-scan gate to the automated gates; make the example pseudo-version obviously synthetic.
+> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: add the two `go test -tags <diag>` gates (CI runs them; §5's own rule requires them for tags with test files), keeping this list identical to CONTRIBUTING.md's ladder.
