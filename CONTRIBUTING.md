@@ -110,6 +110,14 @@ touching hit-testing or the non-client area.
   shims, must not reference an `HWND`, and must compile on Linux.
 - One concern per file, matching the existing layout. When a file grows past
   roughly 250 lines it has usually acquired a second concern; split it there.
+- **Source in another language never lives inline in a Go string literal.** A
+  document or program — HTML, JavaScript, CSS, anything with a structure of its
+  own — gets its own file next to the package and is compiled in with
+  `//go:embed`; `host/errorpage.html` and the `host/*.js` scripts are the
+  pattern. Genuine fragments (a CSS selector default, a JSON fixture in a test)
+  stay inline. The file reads and edits in its own language, and
+  `scripts/leak-scan.ps1` holds `.html`/`.js`/`.css` sources to the same ASCII
+  rule as `.go`.
 - User-supplied strings — filesystem paths, URIs, bridge payloads — pass through
   `internal/logsafe` before they reach a log line. Diagnostics should be readable
   without being a disclosure.
@@ -148,4 +156,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: add the two `go test -tags <diag>` steps the ladder was missing (CI already runs them, ci.yml:50,52; docs/verification.md §5 requires them for tags with test files); repoint the DPI model-test reference to `monitor_windows_test.go`, where those tests live.
+> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: Code style gains the inline-foreign-source rule — a document or program in another language lives in its own file and is embedded, never written inline in a Go string literal (maintainer direction; `host/errorpage.html` and `host/*.js` are the pattern).
