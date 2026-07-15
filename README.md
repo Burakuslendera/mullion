@@ -221,12 +221,25 @@ type Config struct {
 	ShowTimeout   time.Duration // 7s;  wait for shellReady() before showing
 	RenderTimeout time.Duration // 16s; watchdog if the frontend never paints
 
+	UserDataFolder   string // WebView2 profile dir; default under %LocalAppData%
+	BrowserArguments string // extra Chromium command-line flags
+
 	Logger Logger                 // default: discard
 	Bridge func(string) string    // optional: your methods only
 	OnReady func()
 	OnClose func() bool           // return true to cancel the close
 }
 ```
+
+`URL` is the one opt-in worth reading twice. Set it and the WebView loads a loopback
+origin you serve yourself — a dev server with hot reload, say — instead of `Assets`
+over the in-process virtual host. mullion still opens no socket: you run the server,
+it only navigates there, and `Assets` becomes optional. It must be loopback
+(`127.0.0.1`, `localhost` or `::1`) over `http`/`https`, because `window.<ns>` — the
+window controls and your `Config.Bridge` — is injected into whatever it loads, so a
+remote origin could otherwise call into your Go. If that load fails, mullion shows its
+own controllable fallback surface rather than the browser's error page. Full
+reasoning: [decisions/0012](docs/decisions/0012-config-url-loopback.md).
 
 `Logger` takes pre-sanitised single strings — file system paths are reduced to
 their base name before they reach you, so messages can be forwarded verbatim
