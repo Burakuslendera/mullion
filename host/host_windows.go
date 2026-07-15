@@ -106,12 +106,22 @@ func (host *Host) Run() (runErr error) {
 	lastStage = "mullion: com init"
 	host.log.Debug("mullion: com init")
 
-	if host.config.Assets == nil {
-		err := errors.New("asset fs unavailable")
-		host.log.Error("mullion: asset serving failed, reason=" + logsafe.Reason(err))
+	if err := validateURL(host.config.URL); err != nil {
+		host.log.Error("mullion: config url invalid, reason=" + logsafe.Reason(err))
 		return err
 	}
-	host.assets = newAssetProvider(host.config.Assets, host.log, host.config.VirtualHost, host.diagnostics)
+	// Always logged, both states, so a pasted log shows where the frontend came
+	// from without anyone having to ask (see the Config.URL triage note in
+	// docs/verification.md).
+	host.log.Info(assetSourceSummary(host.config))
+	if host.config.URL == "" {
+		if host.config.Assets == nil {
+			err := errors.New("asset fs unavailable")
+			host.log.Error("mullion: asset serving failed, reason=" + logsafe.Reason(err))
+			return err
+		}
+		host.assets = newAssetProvider(host.config.Assets, host.log, host.config.VirtualHost, host.diagnostics)
+	}
 
 	host.log.Debug("mullion: window create requested")
 	if err := host.createWindow(); err != nil {

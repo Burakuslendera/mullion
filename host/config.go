@@ -53,13 +53,29 @@ func SlogLogger(logger *slog.Logger) Logger {
 type Colour struct{ R, G, B, A uint8 }
 
 // Config describes a window host. The zero value is not useful on its own:
-// Assets must be set. Every other field has a documented default that New
-// applies, so Config{Assets: assets} is a complete configuration.
+// Assets must be set (unless URL points the WebView at a caller-served origin).
+// Every other field has a documented default that New applies, so
+// Config{Assets: assets} is a complete configuration.
 type Config struct {
 	// Assets is the file system served to the WebView. It must contain
-	// index.html at its root. Assets are served from an in-process virtual
-	// host; the library never opens a network port.
+	// index.html at its root, unless URL is set. Assets are served from an
+	// in-process virtual host; the library never opens a network port.
 	Assets fs.FS
+
+	// URL, when set, points the WebView at an origin the caller serves itself,
+	// instead of serving Assets over the in-process virtual host. It must name a
+	// loopback host - the local machine only - over http or https; any other URL
+	// is rejected by Run (loopback.go and docs/decisions/0012 have the exact set).
+	// mullion never opens a socket: the caller runs the server, mullion only
+	// navigates there.
+	//
+	// Empty (the default) keeps the no-port guarantee and serves Assets as usual.
+	// A non-empty URL is an opt-in for a caller who wants a real local HTTP origin
+	// - a dev server with hot reload, or a runtime that already speaks HTTP. When
+	// URL is set, Assets is optional and is not served, but window.<ns> (the bridge
+	// and Config.Bridge) is still injected - which is why URL is pinned to loopback:
+	// a remote origin could otherwise call into your Go. See docs/decisions/0012.
+	URL string
 
 	// Title is the window title. Default "Mullion".
 	Title string
@@ -262,6 +278,9 @@ func (config Config) origin() string {
 }
 
 func (config Config) startURL() string {
+	if config.URL != "" {
+		return config.URL
+	}
 	return config.origin() + "/index.html"
 }
 

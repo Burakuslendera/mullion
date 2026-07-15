@@ -94,13 +94,25 @@ func TestNoUpstreamBrandLeak(t *testing.T) {
 // See docs/decisions/0002-no-local-port.md.
 func TestNoNetworkListener(t *testing.T) {
 	// Built at run time so this file does not match itself.
-	forbidden := []string{
+	//
+	// Two tiers. The listeners are a socket, forbidden in every file: this package
+	// opens none. The loopback hosts are forbidden everywhere except the one file
+	// that exists to *reject* a non-loopback Config.URL - naming them there pins the
+	// URL to the local machine, the opposite of opening a socket. See
+	// docs/decisions/0002 (no port) and 0012 (the Config.URL opt-in).
+	listeners := []string{
 		"net." + "Listen",
 		"http." + "ListenAndServe",
 		"http." + "Serve(",
 		"httptest",
+	}
+	loopbackLiterals := []string{
 		"127.0." + "0.1",
 		"local" + "host",
+	}
+	loopbackAllowed := map[string]bool{
+		"loopback.go":      true,
+		"loopback_test.go": true,
 	}
 
 	err := filepath.WalkDir(moduleRoot(t), func(path string, entry os.DirEntry, err error) error {
@@ -121,9 +133,16 @@ func TestNoNetworkListener(t *testing.T) {
 			return err
 		}
 		source := string(data)
-		for _, needle := range forbidden {
+		for _, needle := range listeners {
 			if strings.Contains(source, needle) {
 				t.Errorf("%s contains %q: this package opens no sockets, and serves its assets over an in-process virtual host", path, needle)
+			}
+		}
+		if !loopbackAllowed[filepath.Base(path)] {
+			for _, needle := range loopbackLiterals {
+				if strings.Contains(source, needle) {
+					t.Errorf("%s contains %q: only loopback.go may name a loopback host, and only to reject a non-loopback Config.URL", path, needle)
+				}
 			}
 		}
 		return nil

@@ -193,7 +193,8 @@ Everything below has a working default; `Config{Assets: assets}` is complete.
 
 ```go
 type Config struct {
-	Assets fs.FS            // required: must contain index.html
+	Assets fs.FS            // required unless URL is set: must contain index.html
+	URL    string          // opt-in loopback origin you serve yourself; no socket
 
 	Title       string      // "Mullion"
 	ClassName   string      // "MullionWindow"

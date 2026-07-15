@@ -265,6 +265,27 @@ no-store`: the origin is identical across builds, so without it the WebView coul
 replay a cached asset from an older build into a new one. Bodies are wrapped in a COM
 `IStream` built with `SHCreateMemStream`.
 
+### Serving from a caller URL instead (`Config.URL`)
+
+By default the frontend is the embedded `fs.FS` above. `Config.URL` is an opt-in that
+points the WebView at an origin the caller serves themselves — a local dev server, or
+a runtime that already speaks HTTP — instead. It is empty by default, so the no-port
+guarantee is unchanged.
+
+**mullion still opens no socket.** The caller runs the server; mullion only navigates
+to it. When `Config.URL` is set, the `WebResourceRequested` filter is not registered
+and the boundary matrix above does not run — the caller's server owns those concerns.
+The injected scripts still run on every navigation, so `window.<ns>` (the bridge and
+window controls) works on the caller's origin too.
+
+That last point is why `Config.URL` is pinned to **loopback** (`127.0.0.1`,
+`localhost`, `::1`) over `http`/`https`, and any other URL is rejected by `Run`:
+injecting `Config.Bridge` — the application's Go methods — into an arbitrary remote
+origin would hand that origin a path into Go. Loopback keeps it on the local machine.
+Every run logs the source in effect (`asset source=embedded-fs …` or
+`asset source=external-url, url=…`, with the path dropped), so a report shows which
+was used. See [decisions/0012](./decisions/0012-config-url-loopback.md).
+
 ### COM stream lifetime
 
 Serving one asset means handing WebView2 two COM objects — an `IStream` holding the
