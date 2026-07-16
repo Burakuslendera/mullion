@@ -162,6 +162,16 @@ exactly on it. **An unnecessary override is a net loss.** Override only if you
 have measured an actual taskbar overlap, and if you do, take the monitor from the
 same source the rest of your frame code uses.
 
+**The auto-hide taskbar exception.** An auto-hide taskbar reserves *no* work area,
+so `rcWork == rcMonitor` and the clamp above sizes the maximized window to the whole
+monitor. The shell then treats it as a fullscreen app and stops revealing the
+taskbar on hover — it becomes unreachable by mouse. The fix is the same one
+`DefWindowProc` and Chromium apply: leave a 1px sliver on the auto-hide edge. mullion
+detects an auto-hide appbar per monitor edge (`SHAppBarMessage`) and insets the
+maximized work area by 1px there, feeding that inset area to all three maximized
+paths (`WM_GETMINMAXINFO`, `WM_NCCALCSIZE`, the maximized hit-test). It is inert
+when no auto-hide bar is present. See docs/decisions/0015.
+
 ## 6. Per-monitor DPI v2
 
 **Set process DPI awareness before any HWND exists.**

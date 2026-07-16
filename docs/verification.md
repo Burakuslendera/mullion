@@ -152,6 +152,12 @@ a pass/fail with an observable result — "looks fine" is not a result.
       the client area must not be a stretched bitmap. Then maximize on each
       monitor and confirm the client area fills the work area exactly, with no
       title bar clipped off the top.
+- [ ] **Auto-hide taskbar reveal while maximized.** Set the taskbar to auto-hide,
+      maximize the window, then push the mouse into the auto-hide edge. The taskbar
+      must still pop up (a 1px sliver is reserved for it — docs/decisions/0015).
+      Verify on the primary monitor and, with the taskbar's monitor changed, on a
+      secondary one. A window that covers the whole monitor and suppresses the
+      reveal is a failure.
 - [ ] **Hit-test trace.** Relaunch with `MULLION_HITTEST_DIAG=1` and repeat the
       drag / resize / caption-button passes. The emitted hit-test lines must
       show the expected code for each region (caption over the drag strip,

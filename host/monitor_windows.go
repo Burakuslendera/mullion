@@ -20,7 +20,7 @@ func (host *Host) applyMonitorWorkArea(hwnd windowHandle, lParam uintptr) bool {
 	if !ok {
 		return false
 	}
-	info, ok := monitorInfoForWindow(hwnd)
+	info, ok := maximizeMonitorInfo(hwnd)
 	if !ok {
 		return false
 	}

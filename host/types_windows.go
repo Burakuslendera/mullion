@@ -25,6 +25,18 @@ const (
 
 	monitorDefaultToNearest = 0x00000002
 
+	// SHAppBarMessage (shell32) commands and state, used to keep an auto-hide
+	// taskbar reachable while a frameless window is maximized (docs/decisions/0015).
+	// ABM_GETAUTOHIDEBAREX is the monitor-aware query: it takes the monitor rect and
+	// an edge and reports whether an auto-hide appbar sits on that edge of it.
+	abmGetState         = 0x00000004
+	abmGetAutoHideBarEx = 0x0000000b
+	absAutoHide         = 0x00000001
+	abeLeft             = 0
+	abeTop              = 1
+	abeRight            = 2
+	abeBottom           = 3
+
 	swHide     = 0
 	swShow     = 5
 	swMinimize = 6
@@ -130,6 +142,19 @@ type monitorInfo struct {
 	Monitor rect
 	Work    rect
 	Flags   uint32
+}
+
+// appBarData mirrors the Win32 APPBARDATA passed to SHAppBarMessage. Size is set
+// from unsafe.Sizeof so the trailing pad after Hwnd (uintptr is 8-aligned) is
+// counted exactly as the C struct's, on both 32- and 64-bit. Only Edge and Rect
+// are set for the ABM_GETAUTOHIDEBAREX query; the rest are zero.
+type appBarData struct {
+	Size            uint32
+	Hwnd            windowHandle
+	CallbackMessage uint32
+	Edge            uint32
+	Rect            rect
+	LParam          uintptr
 }
 
 type wndClassEx struct {

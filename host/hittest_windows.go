@@ -90,7 +90,7 @@ func (host *Host) nativeCaptionButtonHit(hwnd windowHandle, lParam uintptr) uint
 }
 
 func windowRectForMaximizedHitTest(hwnd windowHandle, windowRect rect) rect {
-	info, ok := monitorInfoForWindow(hwnd)
+	info, ok := maximizeMonitorInfo(hwnd)
 	if !ok {
 		return windowRect
 	}
