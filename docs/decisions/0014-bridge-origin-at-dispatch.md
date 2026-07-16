@@ -75,6 +75,14 @@ This does not stop the foreign origin from *loading* (that is the
 (`NewWindowRequested`); it stops the foreign origin from *acting through the
 bridge*, which is the reaches-into-Go half of the threat.
 
+The `data:` exception is scoped. A `data:` source is admitted so the error page's
+caption buttons work, but it is **not** trusted for `Config.Bridge`: only mullion
+can put a `data:` document in the *top* frame, but a script can create a `data:`
+*iframe*, and the bridge is injected into every frame — so a `data:` message may
+be a hostile iframe rather than the error surface. `messageSourceTrusted` gates
+the `Config.Bridge` hand-off, so a `data:` source reaches the reserved window
+controls only, never the application's own Go methods.
+
 ## What would change our mind
 
 - A WebView2 API that scopes an injected script to an origin natively would let

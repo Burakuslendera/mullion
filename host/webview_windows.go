@@ -49,7 +49,10 @@ func (host *Host) createWebView() error {
 			host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.Message(urlOrigin(source)))
 			return
 		}
-		response := host.handleWebMessage(message)
+		// A data: source (the error surface, or a hostile data: iframe) is allowed
+		// only the reserved window controls, never Config.Bridge; the trusted
+		// origin gets full access (decisions/0014).
+		response := host.handleWebMessage(message, host.config.messageSourceTrusted(source))
 		if response == "" {
 			return
 		}
