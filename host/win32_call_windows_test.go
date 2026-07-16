@@ -48,3 +48,33 @@ func TestGuardedWindowProcPassesThrough(t *testing.T) {
 		t.Fatalf("passthrough returned %d, want 42", got)
 	}
 }
+
+// TestRunWindowDestroyQuitsEvenOnPanic locks the shutdown-liveness invariant: if
+// the WM_DESTROY teardown panics, the quit is still posted (from the defer) so
+// the panic-guarded message loop cannot be stranded, and the panic still
+// propagates so the guard can log it. A naive teardown();quit() would fail this.
+func TestRunWindowDestroyQuitsEvenOnPanic(t *testing.T) {
+	quit := false
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected the teardown panic to propagate for the guard to log")
+		}
+		if !quit {
+			t.Fatal("quit was not posted before the panic propagated - the loop would hang")
+		}
+	}()
+	runWindowDestroy(func() { panic("teardown boom") }, func() { quit = true })
+}
+
+// TestRunWindowDestroyQuitsAfterTeardown is the normal path: teardown runs first,
+// then the deferred quit.
+func TestRunWindowDestroyQuitsAfterTeardown(t *testing.T) {
+	var order []string
+	runWindowDestroy(
+		func() { order = append(order, "teardown") },
+		func() { order = append(order, "quit") },
+	)
+	if len(order) != 2 || order[0] != "teardown" || order[1] != "quit" {
+		t.Fatalf("order = %v, want [teardown quit]", order)
+	}
+}
