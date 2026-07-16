@@ -98,3 +98,20 @@ func TestJSStartupContextReflectsStartHidden(t *testing.T) {
 		t.Fatal("startup context does not report a hidden start")
 	}
 }
+
+// TestJSDragSelectorIsEscaped locks the fix for a JS-string-literal injection.
+// Config.DragSelector lands inside target.closest(...) in the fallback drag
+// script and, unlike JSNamespace, is not otherwise validated - so it must be
+// encoded as a JS string literal rather than substituted raw.
+func TestJSDragSelectorIsEscaped(t *testing.T) {
+	scripts := Config{DragSelector: `x"),(globalThis.pwned=1),("`}.normalise().jsScripts()
+
+	// Raw substitution would have produced this break-out; it must not appear.
+	if strings.Contains(scripts.drag, `closest("x"),(globalThis.pwned=1),("")`) {
+		t.Fatalf("drag selector broke out of its string literal:\n%s", scripts.drag)
+	}
+	// The value must appear only as a properly escaped JS string literal.
+	if !strings.Contains(scripts.drag, `closest("x\"),(globalThis.pwned=1),(\"")`) {
+		t.Fatalf("drag selector not encoded as a JS string literal:\n%s", scripts.drag)
+	}
+}
