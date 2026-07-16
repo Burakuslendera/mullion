@@ -42,16 +42,24 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		host.log.Debug("mullion: close allowed")
 	case wmDestroy:
 		host.log.Debug("mullion: destroy requested")
-		host.stopRenderWatchdog()
-		if host.browser != nil {
-			// Tear the control down while the HWND is still alive. Closing the
-			// controller after its parent window is gone orphans the runtime's
-			// own child windows, and the teardown then reports failures nobody
-			// can act on.
-			host.log.Debug("mullion: webview2 shutdown requested")
-			host.browser.ShuttingDown()
-		}
-		procPostQuitMessage.Call(0)
+		// PostQuitMessage must run even if teardown panics. The window procedure
+		// is panic-guarded (win32_call_windows.go), so a panic in ShuttingDown
+		// would otherwise be recovered into DefWindowProc - which posts no quit -
+		// and the message loop would block forever with the HWND already gone, so
+		// Run never returns. runWindowDestroy posts the quit from a defer, which
+		// runs during the panic unwind (before the guard's recover), then lets the
+		// panic propagate so the guard still logs it.
+		runWindowDestroy(func() {
+			host.stopRenderWatchdog()
+			if host.browser != nil {
+				// Tear the control down while the HWND is still alive. Closing the
+				// controller after its parent window is gone orphans the runtime's
+				// own child windows, and the teardown then reports failures nobody
+				// can act on.
+				host.log.Debug("mullion: webview2 shutdown requested")
+				host.browser.ShuttingDown()
+			}
+		}, func() { procPostQuitMessage.Call(0) })
 		return 0
 	case wmNCCalcSize:
 		if nativeFrameProfileHandlesNCCalcSize(activeNativeFrameProfile(), wParam) {
@@ -111,4 +119,14 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		host.requestDeferredBoundsSync("wm_exitsizemove")
 	}
 	return defWindowProc(hwnd, message, wParam, lParam)
+}
+
+// runWindowDestroy runs the WM_DESTROY teardown and guarantees quit() runs even
+// if teardown panics: quit is deferred, so it fires during the panic unwind, and
+// the panic then propagates for the window procedure's guard to log. Extracted so
+// the "quit always posts" invariant is unit-testable without a window - a skipped
+// quit would hang the message loop (see the wmDestroy case).
+func runWindowDestroy(teardown, quit func()) {
+	defer quit()
+	teardown()
 }
