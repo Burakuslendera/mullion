@@ -219,10 +219,47 @@ func (host *Host) warnIf(action string, err error) {
 	}
 }
 
-func newWindowCallback(callback func(windowHandle, uint32, uintptr, uintptr) uintptr) uintptr {
+// guardedWindowProc wraps a window procedure so a Go panic cannot escape into
+// the native DispatchMessage frame that invoked it - which would abort the
+// process, taking the orderly WM_DESTROY teardown with it. On a panic it reports
+// through onPanic (which must not itself panic) and returns fallback's result,
+// keeping the window alive. This mirrors the recover the COM event handlers
+// already have (internal/webview2); the window procedure is the other native ->
+// Go boundary and needs the same guarantee - not least because it invokes
+// Config.OnClose, which is caller code.
+func guardedWindowProc(
+	proc func(windowHandle, uint32, uintptr, uintptr) uintptr,
+	fallback func(windowHandle, uint32, uintptr, uintptr) uintptr,
+	onPanic func(recovered any, message uint32),
+) func(windowHandle, uint32, uintptr, uintptr) uintptr {
+	return func(hwnd windowHandle, message uint32, wParam, lParam uintptr) (result uintptr) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				if onPanic != nil {
+					onPanic(recovered, message)
+				}
+				result = fallback(hwnd, message, wParam, lParam)
+			}
+		}()
+		return proc(hwnd, message, wParam, lParam)
+	}
+}
+
+func newWindowCallback(
+	callback func(windowHandle, uint32, uintptr, uintptr) uintptr,
+	onPanic func(recovered any, message uint32),
+) uintptr {
+	guarded := guardedWindowProc(callback, defWindowProc, onPanic)
 	return windows.NewCallback(func(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
-		return callback(windowHandle(hwnd), message, wParam, lParam)
+		return guarded(windowHandle(hwnd), message, wParam, lParam)
 	})
+}
+
+// reportWindowProcPanic logs a panic that guardedWindowProc caught before it
+// could unwind into the native message-dispatch frame. It never panics itself.
+func (host *Host) reportWindowProcPanic(recovered any, message uint32) {
+	host.log.Error(fmt.Sprintf("mullion: window procedure recovered from panic, message=0x%x, reason=%s",
+		message, logsafe.Message(fmt.Sprint(recovered))))
 }
 
 func syscallError(err error) error {

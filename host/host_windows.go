@@ -179,7 +179,7 @@ func (host *Host) createWindow() error {
 		return err
 	}
 	host.instance = instance
-	host.wndProc = newWindowCallback(host.windowProc)
+	host.wndProc = newWindowCallback(host.windowProc, host.reportWindowProcPanic)
 	host.log.Debug("mullion: win32 class/window create requested")
 	hwnd, err := host.createWin32Window(host.config.ClassName, host.config.Title, instance, host.wndProc, host.config.Width, host.config.Height)
 	if err != nil {
