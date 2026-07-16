@@ -64,10 +64,11 @@ func TestAssetSourceSummaryStatesTheSourceAndRedactsPath(t *testing.T) {
 	}
 }
 
-// TestMessageSourceAllowed locks the bridge-origin gate (decisions/0014): a web
-// message is dropped when its source is a concrete http/https origin other than
-// the trusted one, while the frontend, the data: error surface and about:blank all
-// pass so no first-party surface is broken.
+// TestMessageSourceAllowed locks the bridge-origin gate (decisions/0014). It is an
+// allow-list: only the trusted origin and the data: error surface may drive the
+// bridge. Everything else is rejected - a foreign http/https origin, a blob:/
+// filesystem:/file: document that launders a foreign origin, and about:blank/"" that
+// a script-driven top navigation can reach.
 func TestMessageSourceAllowed(t *testing.T) {
 	asset := Config{}.normalise()                            // virtual host https://mullion.local
 	loop := Config{URL: "http://127.0.0.1:8080"}.normalise() // caller loopback origin
@@ -79,9 +80,9 @@ func TestMessageSourceAllowed(t *testing.T) {
 	}{
 		{"trusted virtual host", asset, "https://mullion.local/index.html"},
 		{"trusted virtual host root", asset, "https://mullion.local/"},
+		{"trusted host explicit default port", asset, "https://mullion.local:443/x"},
+		{"trusted host case-insensitive", asset, "https://MULLION.LOCAL/x"},
 		{"data error page", asset, "data:text/html,%3Chtml%3E"},
-		{"about blank", asset, "about:blank"},
-		{"empty source", asset, ""},
 		{"trusted loopback url", loop, "http://127.0.0.1:8080/app"},
 	}
 	for _, c := range allowed {
@@ -100,6 +101,12 @@ func TestMessageSourceAllowed(t *testing.T) {
 		{"different loopback port", loop, "http://127.0.0.1:9999/x"},
 		{"remote in url mode", loop, "https://evil.example"},
 		{"scheme downgrade of trusted host", asset, "http://mullion.local"},
+		{"blob laundering a foreign origin", asset, "blob:https://evil.example/uuid"},
+		{"filesystem laundering a foreign origin", asset, "filesystem:https://evil.example/temporary/x"},
+		{"file scheme", asset, "file:///c:/x"},
+		{"about blank inherits the previous origin", asset, "about:blank"},
+		{"empty source", asset, ""},
+		{"userinfo cannot spoof the trusted host", asset, "https://mullion.local@evil.example/x"},
 	}
 	for _, c := range rejected {
 		if c.config.messageSourceAllowed(c.source) {
