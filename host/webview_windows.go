@@ -41,7 +41,14 @@ func (host *Host) createWebView() error {
 	browser.ErrorCallback = func(err error) {
 		host.log.Error("mullion: webview2 runtime error, reason=" + logsafe.Reason(err))
 	}
-	browser.MessageCallback = func(message string, sender *webview2.ICoreWebView2) {
+	browser.MessageCallback = func(message string, source string, sender *webview2.ICoreWebView2) {
+		if !host.config.messageSourceAllowed(source) {
+			// The bridge is injected into every document, so a top-level navigation
+			// away from the frontend must not be able to drive Config.Bridge. Drop
+			// the message silently - a foreign origin gets no reply to correlate.
+			host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.Message(urlOrigin(source)))
+			return
+		}
 		response := host.handleWebMessage(message)
 		if response == "" {
 			return
