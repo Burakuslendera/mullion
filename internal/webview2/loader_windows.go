@@ -183,7 +183,7 @@ func versionOfRuntime(clientPath, folder string) string {
 	if version, err := fileVersion(clientPath); err == nil && isInstalledVersion(version) {
 		return version
 	}
-	if base := filepath.Base(folder); isInstalledVersion(base) {
+	if base := sanitizeVersion(filepath.Base(folder)); isInstalledVersion(base) {
 		return base
 	}
 	return ""
@@ -239,6 +239,11 @@ func readEdgeUpdateClient(root registry.Key, path string, access uint32) (versio
 	if err != nil {
 		return "", "", false
 	}
+	// Strip control bytes at the trust boundary. pv is an unprivileged-writable
+	// HKCU value that is logged at startup and printed by `mullion doctor`, so a
+	// smuggled ESC/OSC/BEL sequence must not survive to reach an operator's
+	// terminal through a terminal-rendering Logger. A real version carries none.
+	version = sanitizeVersion(version)
 	if !isInstalledVersion(version) {
 		// EdgeUpdate leaves the client key behind with pv="0.0.0.0" after an
 		// uninstall. Treating that as an install sends us hunting for a folder
@@ -247,7 +252,7 @@ func readEdgeUpdateClient(root registry.Key, path string, access uint32) (versio
 	}
 	// "location" is optional; the default install root covers its absence.
 	location, _, _ = key.GetStringValue("location")
-	return strings.TrimSpace(version), strings.TrimSpace(location), true
+	return version, strings.TrimSpace(location), true
 }
 
 // selectRuntime turns candidates into the one runtime to load.
@@ -394,6 +399,23 @@ func isInstalledVersion(version string) bool {
 		}
 	}
 	return false
+}
+
+// sanitizeVersion drops control characters from a version string that came from
+// an untrusted source (the EdgeUpdate registry "pv", a folder name). The value is
+// logged at startup and printed by `mullion doctor`, so a control byte
+// (ESC/BEL/OSC) smuggled into it could inject terminal escape sequences into an
+// operator's console through a terminal-rendering Logger. A legitimate version -
+// digits, dots, spaces and an optional channel word - contains no control
+// character, so stripping them cannot corrupt a real value.
+func sanitizeVersion(version string) string {
+	version = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, version)
+	return strings.TrimSpace(version)
 }
 
 // CompareVersions orders two WebView2 version strings, returning -1, 0 or 1.

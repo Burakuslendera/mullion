@@ -170,3 +170,19 @@ func TestRuntimeSummaryCarriesTheBuildFacts(t *testing.T) {
 		t.Fatal("a missing runtime version must be admitted, not omitted")
 	}
 }
+
+// TestRuntimeSummaryNeutralisesControlBytes locks the terminal-escape defence on
+// the startup line. The WebView2 version can originate in an unprivileged HKCU
+// registry value, so a control byte smuggled into it must not survive into the
+// log line (and thence a terminal-rendering Logger); logsafe strips it.
+func TestRuntimeSummaryNeutralisesControlBytes(t *testing.T) {
+	summary := runtimeSummary("9999.0\x1b]0;pwned\x07\x1b[2K", "go1.22.5", "amd64")
+	for _, r := range summary {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			t.Fatalf("summary still carries control byte %#x: %q", r, summary)
+		}
+	}
+	if !strings.Contains(summary, "9999.0") {
+		t.Fatalf("summary dropped the version digits: %q", summary)
+	}
+}
