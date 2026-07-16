@@ -7,6 +7,7 @@ import "golang.org/x/sys/windows"
 var (
 	user32   = windows.NewLazySystemDLL("User32.dll")
 	kernel32 = windows.NewLazySystemDLL("Kernel32.dll")
+	shell32  = windows.NewLazySystemDLL("Shell32.dll")
 
 	procRegisterClassEx     = user32.NewProc("RegisterClassExW")
 	procUnregisterClass     = user32.NewProc("UnregisterClassW")
@@ -42,4 +43,6 @@ var (
 	procGetModuleHandle     = kernel32.NewProc("GetModuleHandleW")
 
 	procSetWindowText = user32.NewProc("SetWindowTextW")
+
+	procSHAppBarMessage = shell32.NewProc("SHAppBarMessage")
 )

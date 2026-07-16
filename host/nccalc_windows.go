@@ -14,7 +14,7 @@ func (host *Host) applyNativeNCCalcClientRect(hwnd windowHandle, lParam uintptr)
 		writeRect(lParam, &next)
 		return true
 	}
-	info, ok := monitorInfoForWindow(hwnd)
+	info, ok := maximizeMonitorInfo(hwnd)
 	if !ok {
 		return false
 	}
