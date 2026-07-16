@@ -132,3 +132,41 @@ func TestReasonAndMessagePreserveEmptyAndApostropheBehavior(t *testing.T) {
 		}
 	}
 }
+
+// TestMessageStripsControlBytes locks the escape-sequence half of the log-safety
+// contract. CRLF forging was already blocked; a frontend-controlled string must
+// also not carry an ANSI/OSC terminal escape, a NUL, or a provenance-erasing
+// backspace through to the caller's Logger. Each of these bytes reaches Message
+// unbounded from the frontend (a bridge method name, a WindowDiagnostic detail),
+// so the sanitizer is the boundary that must neutralise them.
+func TestMessageStripsControlBytes(t *testing.T) {
+	isControl := func(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) }
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"csi clear screen", "a\x1b[2Jb"},
+		{"osc title with bel", "x\x1b]0;pwned\x07y"},
+		{"backspace erases prefix", "mullion:\x08\x08\x08fake"},
+		{"nul byte", "a\x00b"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := Message(c.in)
+			for _, r := range got {
+				if isControl(r) {
+					t.Fatalf("Message(%q) = %q still carries control rune %#x", c.in, got, r)
+				}
+			}
+		})
+	}
+	// The payload text survives, minus the escapes: the line stays readable, the
+	// escape sequence is just inert.
+	if got := Message("a\x1b[2Jb"); !strings.Contains(got, "a") || !strings.Contains(got, "b") {
+		t.Fatalf("Message dropped payload text: %q", got)
+	}
+	// FileName sits on the same boundary and must strip too.
+	if got := FileName("\x1b[2Jname.log"); strings.ContainsRune(got, 0x1b) {
+		t.Fatalf("FileName leaked ESC: %q", got)
+	}
+}

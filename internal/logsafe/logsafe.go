@@ -14,6 +14,7 @@ func Reason(err error) string {
 func Message(message string) string {
 	message = strings.ReplaceAll(message, "\r", " ")
 	message = strings.ReplaceAll(message, "\n", " ")
+	message = stripControl(message)
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return "unknown"
@@ -27,8 +28,23 @@ func Message(message string) string {
 	return strings.Join(parts, " ")
 }
 
+// stripControl folds every C0/C1 control character to a space. CR and LF are
+// already handled by Message before this runs; this closes the rest of the
+// range - ESC, BEL, backspace, NUL and the C1 block - so a frontend-controlled
+// string cannot smuggle an ANSI/OSC terminal escape, a title rewrite or a
+// provenance-erasing backspace through to the caller's Logger. The classic CRLF
+// log-forging vector was already blocked; the escape-sequence vector was not.
+func stripControl(message string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return ' '
+		}
+		return r
+	}, message)
+}
+
 func FileName(path string) string {
-	name := strings.TrimSpace(path)
+	name := strings.TrimSpace(stripControl(path))
 	name = strings.Trim(name, `"'`)
 	name = strings.TrimRight(name, `\/`)
 	if index := strings.LastIndexAny(name, `\/`); index >= 0 {
