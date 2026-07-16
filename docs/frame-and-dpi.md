@@ -162,6 +162,27 @@ exactly on it. **An unnecessary override is a net loss.** Override only if you
 have measured an actual taskbar overlap, and if you do, take the monitor from the
 same source the rest of your frame code uses.
 
+### The auto-hide taskbar sliver
+
+Clamping the maximized client to the work area is not the whole story when the
+taskbar **auto-hides**. An auto-hide taskbar reserves no work-area space, so
+`GetMonitorInfo` reports the work area as the full monitor, and the maximized
+client then covers the very edge the taskbar hides against.
+
+- **Symptom:** while a window is maximized on a monitor with an auto-hide
+  taskbar, moving the cursor to that edge no longer reveals the taskbar (the
+  Windows key still shows it).
+- **Root cause:** the shell suppresses the reveal for a foreground window that
+  covers the whole monitor edge. `DefWindowProc`'s own maximized `WM_NCCALCSIZE`
+  reserves a one-pixel sliver on the auto-hide edge; a custom `WM_NCCALCSIZE` that
+  returns the full rect (section 2) loses it.
+- **Fix:** `applyNativeNCCalcClientRect` asks the shell which monitor edges hold
+  an auto-hide taskbar (`host/appbar_windows.go`, `SHAppBarMessage` +
+  `ABM_GETAUTOHIDEBAREX`) and insets the maximized client by one pixel on each
+  such edge (`insetForAutoHideEdges`). The window still fills the monitor; only
+  the client gives up the sliver, exactly as `DefWindowProc` would. See
+  [decision 0015](./decisions/0015-auto-hide-taskbar-inset.md).
+
 ## 6. Per-monitor DPI v2
 
 **Set process DPI awareness before any HWND exists.**
