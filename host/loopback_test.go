@@ -114,3 +114,55 @@ func TestMessageSourceAllowed(t *testing.T) {
 		}
 	}
 }
+
+// TestMessageSourceTrusted locks the second half of decisions/0014, the one
+// TestMessageSourceAllowed does not reach: a data: source is allowed (so the error
+// page's caption buttons work) but is NOT trusted for Config.Bridge, because a data:
+// document may be a hostile iframe a script created rather than mullion's own error
+// surface. Only the trusted origin drives the application's own Go methods. Without
+// this test the difference between the two functions is unlocked: collapsing
+// messageSourceTrusted to messageSourceAllowed (both call sameHTTPOrigin, so it reads
+// like harmless dedup) would make a data: iframe trusted - the exact hole 0014 closes
+// - and every other test would still pass.
+func TestMessageSourceTrusted(t *testing.T) {
+	asset := Config{}.normalise()                            // virtual host https://mullion.local
+	loop := Config{URL: "http://127.0.0.1:8080"}.normalise() // caller loopback origin
+
+	trusted := []struct {
+		name   string
+		config Config
+		source string
+	}{
+		{"trusted virtual host", asset, "https://mullion.local/index.html"},
+		{"trusted host explicit default port", asset, "https://mullion.local:443/x"},
+		{"trusted host case-insensitive", asset, "https://MULLION.LOCAL/x"},
+		{"trusted loopback url", loop, "http://127.0.0.1:8080/app"},
+	}
+	for _, c := range trusted {
+		if !c.config.messageSourceTrusted(c.source) {
+			t.Errorf("%s: messageSourceTrusted(%q) = false, want trusted", c.name, c.source)
+		}
+	}
+
+	untrusted := []struct {
+		name   string
+		config Config
+		source string
+	}{
+		// The load-bearing case: allowed for reserved controls, never for Config.Bridge.
+		{"data error surface is allowed but not trusted", asset, "data:text/html,%3Chtml%3E"},
+		{"foreign https origin", asset, "https://evil.example/x"},
+		{"different loopback port", loop, "http://127.0.0.1:9999/x"},
+		{"scheme downgrade of trusted host", asset, "http://mullion.local"},
+		{"blob laundering a foreign origin", asset, "blob:https://evil.example/uuid"},
+		{"file scheme", asset, "file:///c:/x"},
+		{"about blank inherits the previous origin", asset, "about:blank"},
+		{"empty source", asset, ""},
+		{"userinfo cannot spoof the trusted host", asset, "https://mullion.local@evil.example/x"},
+	}
+	for _, c := range untrusted {
+		if c.config.messageSourceTrusted(c.source) {
+			t.Errorf("%s: messageSourceTrusted(%q) = true, want untrusted", c.name, c.source)
+		}
+	}
+}
