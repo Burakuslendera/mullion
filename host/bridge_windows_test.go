@@ -19,13 +19,13 @@ func TestBridgeHandlesWindowControlsWithoutAConfiguredBridge(t *testing.T) {
 		methodStartDrag, methodMinimise, methodToggleMaximise,
 		methodHide, methodPhase, methodDiagnostic,
 	} {
-		reply := host.handleWebMessage(`{"id":"1","method":"` + method + `","args":[]}`)
+		reply := host.handleWebMessage(`{"id":"1","method":"`+method+`","args":[]}`, true)
 		if !strings.Contains(reply, `"ok":true`) {
 			t.Fatalf("reserved method %q was not handled by the host: %q", method, reply)
 		}
 	}
 
-	reply := host.handleWebMessage(`{"id":"7","method":"` + methodIsMaximised + `","args":[]}`)
+	reply := host.handleWebMessage(`{"id":"7","method":"`+methodIsMaximised+`","args":[]}`, true)
 	if reply != `{"id":"7","ok":true,"result":false}` {
 		t.Fatalf("IsMaximised reply = %q", reply)
 	}
@@ -46,7 +46,7 @@ func TestBridgeForwardsUnknownMethodsVerbatim(t *testing.T) {
 		},
 	})
 
-	reply := host.handleWebMessage(raw)
+	reply := host.handleWebMessage(raw, true)
 	if seen != raw {
 		t.Fatalf("Bridge received a rewritten message:\n got %q\nwant %q", seen, raw)
 	}
@@ -58,7 +58,7 @@ func TestBridgeForwardsUnknownMethodsVerbatim(t *testing.T) {
 func TestBridgeUnknownMethodWithoutBridgeIsAnError(t *testing.T) {
 	host, _ := newTestHost(t, Config{StartHidden: true})
 
-	reply := host.handleWebMessage(`{"id":"3","method":"GetThings","args":[]}`)
+	reply := host.handleWebMessage(`{"id":"3","method":"GetThings","args":[]}`, true)
 	if !strings.Contains(reply, `"ok":false`) {
 		t.Fatalf("unknown method without a bridge should fail, got %q", reply)
 	}
@@ -70,7 +70,7 @@ func TestBridgeSurvivesMalformedInput(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true})
 
 	for _, raw := range []string{"", "not json", "[]", "{}", `{"id":"1"}`, `{"method":""}`} {
-		if reply := host.handleWebMessage(raw); reply != "" {
+		if reply := host.handleWebMessage(raw, true); reply != "" {
 			t.Fatalf("malformed message %q produced a reply: %q", raw, reply)
 		}
 	}
@@ -92,8 +92,8 @@ func TestBridgeReservedMethodsNeverReachTheApplication(t *testing.T) {
 		},
 	})
 
-	host.handleWebMessage(`{"id":"1","method":"` + methodMinimise + `","args":[]}`)
-	host.handleWebMessage(`{"id":"2","method":"` + methodDiagnostic + `","args":["phase","boot"]}`)
+	host.handleWebMessage(`{"id":"1","method":"`+methodMinimise+`","args":[]}`, true)
+	host.handleWebMessage(`{"id":"2","method":"`+methodDiagnostic+`","args":["phase","boot"]}`, true)
 
 	if called {
 		t.Fatal("a reserved method was forwarded to Config.Bridge")
@@ -106,9 +106,43 @@ func TestBridgeReservedMethodsNeverReachTheApplication(t *testing.T) {
 func TestBridgeRejectsUnknownResizeEdge(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true})
 
-	host.handleWebMessage(`{"id":"1","method":"` + methodStartResize + `","args":["sideways"]}`)
+	host.handleWebMessage(`{"id":"1","method":"`+methodStartResize+`","args":["sideways"]}`, true)
 
 	if !strings.Contains(logger.String(), "resize requested with unknown edge") {
 		t.Fatalf("unknown resize edge was not rejected:\n%s", logger.String())
+	}
+}
+
+// TestBridgeRestrictedSourceReachesOnlyReservedMethods locks the data:-source
+// containment (decisions/0014). A restricted source - a data: document, which a
+// hostile script could be posting from a data: iframe - may drive the reserved
+// window controls, but a non-reserved method must never reach Config.Bridge.
+func TestBridgeRestrictedSourceReachesOnlyReservedMethods(t *testing.T) {
+	called := false
+	host, _ := newTestHost(t, Config{
+		StartHidden: true,
+		Bridge: func(string) string {
+			called = true
+			return `{"id":"x","ok":true}`
+		},
+	})
+
+	// A reserved window control still works from a restricted source.
+	reply := host.handleWebMessage(`{"id":"1","method":"`+methodMinimise+`","args":[]}`, false)
+	if !strings.Contains(reply, `"ok":true`) {
+		t.Fatalf("reserved method blocked from a restricted source: %q", reply)
+	}
+	// An application method must NOT reach Config.Bridge from a restricted source.
+	reply = host.handleWebMessage(`{"id":"2","method":"GetSecret","args":[]}`, false)
+	if called {
+		t.Fatal("a restricted source reached Config.Bridge")
+	}
+	if !strings.Contains(reply, `"ok":false`) {
+		t.Fatalf("restricted application call should be rejected, got %q", reply)
+	}
+	// The same method DOES reach the bridge from a trusted source (allowBridge=true).
+	host.handleWebMessage(`{"id":"3","method":"GetSecret","args":[]}`, true)
+	if !called {
+		t.Fatal("a trusted source did not reach Config.Bridge")
 	}
 }

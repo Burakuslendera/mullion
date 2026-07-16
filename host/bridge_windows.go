@@ -27,7 +27,13 @@ type bridgeRequest struct {
 // application that only wants a window - no application methods at all - can
 // leave Config.Bridge nil and still get drag, resize, minimise, maximise and
 // close.
-func (host *Host) handleWebMessage(raw string) string {
+//
+// allowBridge gates the application's own methods. Window controls (the reserved
+// methods) are always answered, but a message from a restricted source - the
+// data: error surface, which a hostile script could equally be posting from a
+// data: iframe (decisions/0014) - may drive those controls and nothing else,
+// never Config.Bridge.
+func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 	var request bridgeRequest
 	if err := json.Unmarshal([]byte(raw), &request); err != nil {
 		// A frontend can post arbitrary strings through chrome.webview; a
@@ -42,6 +48,13 @@ func (host *Host) handleWebMessage(raw string) string {
 
 	if reply, handled := host.handleReservedMethod(request); handled {
 		return reply
+	}
+
+	if !allowBridge {
+		// A restricted source reaches only the reserved window controls above,
+		// never the application's own Go methods (decisions/0014).
+		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Message(request.Method))
+		return bridgeError(request.ID, "restricted source")
 	}
 
 	if host.config.Bridge == nil {

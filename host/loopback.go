@@ -95,6 +95,16 @@ func (config Config) messageSourceAllowed(source string) bool {
 	return sameHTTPOrigin(source, config.trustedOrigin())
 }
 
+// messageSourceTrusted reports whether a message from source may drive the
+// application's own Config.Bridge methods, not just the reserved window controls.
+// Only the trusted origin qualifies. A data: source is allowed (messageSourceAllowed)
+// so the error page's caption buttons work, but it is NOT trusted for Config.Bridge:
+// a data: document may be a hostile iframe a script created, not mullion's own error
+// surface (decisions/0014).
+func (config Config) messageSourceTrusted(source string) bool {
+	return sameHTTPOrigin(source, config.trustedOrigin())
+}
+
 // sameHTTPOrigin reports whether raw and trusted are the same http/https origin -
 // scheme, host (case-insensitive) and port, with the default port normalised so that
 // https://x and https://x:443 match. A non-http/https scheme (blob:, file:, ...) is
