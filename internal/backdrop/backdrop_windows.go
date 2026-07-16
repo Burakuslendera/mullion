@@ -16,6 +16,9 @@ var (
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
 	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
+	procFindWindow                    = user32.NewProc("FindWindowW")
+	procIsWindowVisible               = user32.NewProc("IsWindowVisible")
+	procSetWindowPos                  = user32.NewProc("SetWindowPos")
 	procRegisterClassEx               = user32.NewProc("RegisterClassExW")
 	procUnregisterClass               = user32.NewProc("UnregisterClassW")
 	procCreateWindowEx                = user32.NewProc("CreateWindowExW")
@@ -50,6 +53,9 @@ const (
 	smCYVirtualScreen = 79
 
 	idcArrow = 32512
+
+	hwndTop                   = 0
+	swpNoMoveNoSizeNoActivate = 0x0013 // SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
 )
 
 type wndClassEx struct {
@@ -107,9 +113,15 @@ func backdropWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 // and blocks until the user dismisses it: Esc on the window, Alt+F4, its
 // taskbar button, or Ctrl+C on the terminal (which ends the process and the
 // window with it). It is deliberately NOT topmost: any window the user raises
-// sits above it, so the backdrop can never hold the desktop hostage, and the
-// window being captured just needs a click or an Alt+Tab to come forward.
-func Show(colour Colour) error {
+// sits above it, so the backdrop can never hold the desktop hostage.
+//
+// If a visible window of targetClass exists, Show slots itself directly
+// underneath it and lifts it to the top of the z-order - without activating
+// anything, so no foreground-steal restriction applies (the SetForegroundWindow
+// trap in docs/lessons-and-dead-ends.md section 4). The window to capture is
+// then already in front; everything else is behind the backdrop. An empty
+// targetClass, or no such window, just covers the desktop.
+func Show(colour Colour, targetClass string) error {
 	// A Win32 window and its message loop are thread-affine.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -175,6 +187,8 @@ func Show(colour Colour) error {
 		return fmt.Errorf("CreateWindowEx: %w", err)
 	}
 
+	raiseTargetAbove(hwnd, targetClass)
+
 	var msg message
 	for {
 		ret, _, err := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
@@ -187,4 +201,30 @@ func Show(colour Colour) error {
 		_, _, _ = procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 		_, _, _ = procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
 	}
+}
+
+// raiseTargetAbove finds the first visible top-level window of targetClass and
+// arranges the sandwich a capture wants: target on top, backdrop directly
+// under it, everything else behind the backdrop. Both moves are pure z-order
+// changes with SWP_NOACTIVATE - focus stays where it is, which is what makes
+// them reliable. Failing to find or raise the target is not an error: the
+// backdrop is still doing its job, and the user can Alt+Tab the window
+// forward, exactly as the usage text says.
+func raiseTargetAbove(backdrop uintptr, targetClass string) {
+	if targetClass == "" {
+		return
+	}
+	class, err := windows.UTF16PtrFromString(targetClass)
+	if err != nil {
+		return
+	}
+	target, _, _ := procFindWindow.Call(uintptr(unsafe.Pointer(class)), 0)
+	if target == 0 {
+		return
+	}
+	if visible, _, _ := procIsWindowVisible.Call(target); visible == 0 {
+		return
+	}
+	_, _, _ = procSetWindowPos.Call(target, hwndTop, 0, 0, 0, 0, swpNoMoveNoSizeNoActivate)
+	_, _, _ = procSetWindowPos.Call(backdrop, target, 0, 0, 0, 0, swpNoMoveNoSizeNoActivate)
 }

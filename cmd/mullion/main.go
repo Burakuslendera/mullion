@@ -49,6 +49,7 @@ func main() {
 	case "backdrop":
 		flags := flag.NewFlagSet("backdrop", flag.ExitOnError)
 		colourHex := flags.String("colour", backdrop.DefaultHex, "backdrop colour, #rrggbb")
+		class := flags.String("class", "MullionWindow", "window class to lift above the backdrop; empty to just cover the desktop")
 		_ = flags.Parse(os.Args[2:]) // ExitOnError: a bad flag already exited 2
 		colour, err := backdrop.ParseColour(*colourHex)
 		if err != nil {
@@ -56,7 +57,7 @@ func main() {
 			os.Exit(2)
 		}
 		fmt.Println("mullion: backdrop up - Esc on it (or Alt+F4, or Ctrl+C here) closes it.")
-		if err := backdrop.Show(colour); err != nil {
+		if err := backdrop.Show(colour, *class); err != nil {
 			fmt.Fprintf(os.Stderr, "mullion backdrop: %v\n", err)
 			os.Exit(1)
 		}
@@ -85,11 +86,13 @@ Usage:
                     exports the entry point mullion calls. Starts no browser and
                     opens no window.
   mullion backdrop  Cover every monitor with a flat colour while you screenshot
-                    a window, so nothing of the desktop lands in the margin.
-                    It is not topmost: raise your window over it, capture with
-                    any tool, then press Esc on the backdrop (or Alt+F4, or
-                    Ctrl+C in this terminal) to dismiss it. Windows only.
-                    -colour #rrggbb overrides the default dark grey.
+                    a window, so nothing of the desktop lands in the margin. A
+                    visible mullion window is lifted in front of it as it opens
+                    (-class overrides which window class that looks for; empty
+                    skips it). It is not topmost - anything you raise stays
+                    above it. Capture with any tool, then press Esc on the
+                    backdrop (or Alt+F4, or Ctrl+C in this terminal) to dismiss
+                    it. Windows only. -colour #rrggbb overrides the dark grey.
   mullion version   Print the version of mullion linked into this binary.
   mullion help      Print this message.
 

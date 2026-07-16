@@ -29,11 +29,15 @@ go run github.com/Burakuslendera/mullion/cmd/mullion@latest backdrop
 
 works with no checkout and no PowerShell. It covers the whole virtual screen —
 every monitor — with one flat-colour Win32 popup (`internal/backdrop`), blocks
-until dismissed, and exits 0. `-colour #rrggbb` overrides the default dark
-grey; the parse is strict, is the command's entire input surface, and is
-tested headlessly. The window half follows the repository's window rules:
-per-monitor-v2 declared before the HWND exists, a locked OS thread for the
-message loop, one `NewCallback` at package init.
+until dismissed, and exits 0. If a visible window of the target class
+(`MullionWindow`; `-class` overrides, empty skips) exists, the backdrop slots
+itself directly underneath it and lifts it to the top — two `SWP_NOACTIVATE`
+z-order moves, so no foreground-steal restriction applies and the window to
+capture is in front the moment the backdrop opens. `-colour #rrggbb` overrides
+the default dark grey; the parse is strict, is the command's entire input
+surface, and is tested headlessly. The window half follows the repository's
+window rules: per-monitor-v2 declared before the HWND exists, a locked OS
+thread for the message loop, one `NewCallback` at package init.
 
 Three properties are deliberate and security-motivated:
 
@@ -102,10 +106,13 @@ cannot.
 - `internal/backdrop`: `ParseColour` with `TestParseColourAcceptsOnlySixHexDigits`
   and `TestDefaultHexParses` (headless); `backdrop_windows.go` (window half);
   `backdrop_other.go` (0007-pattern stub).
-- Live check on this machine, 2026-07-16: raised over a real desktop, the
-  covered screen captured and every sampled pixel measured as the configured
+- Live check on this machine, 2026-07-16: raised over a real two-monitor
+  desktop (one window spanning the 3840x1080 virtual screen), the covered
+  screen captured and 500 sampled pixels all measured as the configured
   colour, then dismissed via `WM_CLOSE` and via Esc in separate runs, exit 0
-  both times.
+  both times. The lift: with `examples/basic` open, the backdrop was raised
+  and — with nothing touching the z-order afterwards — a capture measured the
+  window's pixels in front and backdrop grey beside it.
 - The scripted sibling and the need that produced it: `a7c689c`
   (`screenshot.ps1 -Backdrop`), and the maintainer's request for the same
   ground under a hand-driven capture tool.
