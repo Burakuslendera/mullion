@@ -3,6 +3,7 @@ package host
 import (
 	"errors"
 	"net/url"
+	"strings"
 )
 
 // Config.URL lets a caller point mullion at a URL they serve themselves instead of
@@ -78,19 +79,49 @@ func (config Config) trustedOrigin() string {
 
 // messageSourceAllowed decides whether a web message posted from source may reach
 // the bridge. window.<ns> - the window controls and Config.Bridge, the application's
-// own Go methods - is injected into every document the WebView loads, so a top-level
-// navigation to a foreign origin would otherwise let that origin call into Go
-// (decisions/0014). A message is rejected only when its source is a concrete
-// http/https origin other than the trusted one; the app's own frontend (trusted
-// origin), the data: error surface (opaque origin) and about:blank all pass, so no
-// first-party surface is broken.
+// own Go methods - is injected into every document the WebView loads (decisions/0014),
+// so this is an allow-list, not a deny-list: only mullion's own surfaces pass. That
+// is the trusted origin (the virtual host, or the Config.URL origin) and the data:
+// error page (errorpage.go). Everything else is rejected - a foreign http/https
+// origin, and also blob:/filesystem:/file: (which carry a real web origin a bare
+// scheme check would wave through) and about:blank/"" (which a script-driven top
+// navigation can reach while inheriting the previous document's origin). Admitting
+// data: is safe: only mullion itself can put a data: document in the top frame,
+// because browsers block a script-driven top navigation to a data: URL.
 func (config Config) messageSourceAllowed(source string) bool {
-	parsed, err := url.Parse(source)
+	if strings.HasPrefix(source, "data:") {
+		return true
+	}
+	return sameHTTPOrigin(source, config.trustedOrigin())
+}
+
+// sameHTTPOrigin reports whether raw and trusted are the same http/https origin -
+// scheme, host (case-insensitive) and port, with the default port normalised so that
+// https://x and https://x:443 match. A non-http/https scheme (blob:, file:, ...) is
+// never the same origin as the trusted http/https one, so it is rejected.
+func sameHTTPOrigin(raw, trusted string) bool {
+	a, err := url.Parse(raw)
 	if err != nil {
-		return true
+		return false
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return true
+	b, err := url.Parse(trusted)
+	if err != nil {
+		return false
 	}
-	return parsed.Scheme+"://"+parsed.Host == config.trustedOrigin()
+	if a.Scheme != b.Scheme || (a.Scheme != "http" && a.Scheme != "https") {
+		return false
+	}
+	return strings.EqualFold(a.Hostname(), b.Hostname()) && defaultedPort(a) == defaultedPort(b)
+}
+
+// defaultedPort returns the URL's port, or the scheme default (443 for https, 80 for
+// http) when none is given, so an explicit default port compares equal to none.
+func defaultedPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if u.Scheme == "https" {
+		return "443"
+	}
+	return "80"
 }

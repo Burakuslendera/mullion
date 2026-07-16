@@ -28,13 +28,20 @@ the document that posted a message. It was read and discarded.
 
 The host enforces the source origin at message dispatch. The `WebMessageReceived`
 handler threads `args.GetSource()` into `MessageCallback`, and
-`messageSourceAllowed` rejects any message whose source is a concrete
-`http`/`https` origin other than the trusted one — the virtual host
-(`https://<VirtualHost>`) in asset mode, or the `Config.URL` origin when set. The
-message is dropped silently and logged; no reply is posted, so a foreign origin
-gets nothing to correlate. A `data:` document (the error surface), `about:blank`
-and an empty source are not concrete remote origins and pass, so no first-party
-surface breaks.
+`messageSourceAllowed` is an **allow-list**: a message passes only when its source
+is the same http/https origin as the trusted one — the virtual host
+(`https://<VirtualHost>`) in asset mode, or the `Config.URL` origin when set,
+compared with the default port normalised and the host case-insensitive — or is the
+`data:` error surface. Everything else is dropped silently and logged; no reply is
+posted, so a foreign origin gets nothing to correlate.
+
+An allow-list, not a deny-list, because the schemes that are *not* a concrete
+http/https origin are not all harmless: `blob:` and `filesystem:` documents carry
+the full web origin that created them (`blob:https://evil…`), and `about:blank`
+inherits the previous document's origin, so a foreign origin the top frame was
+steered to could otherwise launder its post through one of those. Admitting `data:`
+is the one safe exception: only mullion itself can put a `data:` document in the top
+frame, because browsers block a script-driven top navigation to a `data:` URL.
 
 ## Alternatives rejected
 
