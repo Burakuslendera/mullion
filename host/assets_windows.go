@@ -155,7 +155,7 @@ func resolveAssetRequest(virtualHost, rawURI string) (assetRequest, int) {
 	if parsed.Host != virtualHost {
 		return assetRequest{path: "wrong_host", category: "wrong_host"}, http.StatusForbidden
 	}
-	if hasTraversalSegment(parsed.Path) {
+	if containsBackslashOrControl(parsed.Path) || hasTraversalSegment(parsed.Path) {
 		return assetRequest{path: "traversal", category: "traversal"}, http.StatusForbidden
 	}
 	cleanPath := path.Clean("/" + strings.TrimPrefix(parsed.Path, "/"))
@@ -172,6 +172,22 @@ func resolveAssetRequest(virtualHost, rawURI string) (assetRequest, int) {
 func hasTraversalSegment(value string) bool {
 	for _, segment := range strings.Split(value, "/") {
 		if segment == "." || segment == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// containsBackslashOrControl rejects input the traversal check above cannot
+// reason about. hasTraversalSegment splits on '/' only, and path.Clean (the
+// `path` package) treats '\' as an ordinary byte - so a percent-encoded
+// backslash (%5c), which url.Parse decodes to a literal '\', survives both as a
+// path separator on Windows. A control byte has no place in an asset path
+// either. The boundary rejects these itself rather than trusting the caller's
+// fs.FS not to resolve them.
+func containsBackslashOrControl(value string) bool {
+	for index := 0; index < len(value); index++ {
+		if char := value[index]; char == '\\' || char < 0x20 || char == 0x7f {
 			return true
 		}
 	}

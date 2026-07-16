@@ -33,6 +33,7 @@ func TestResolveAssetPath(t *testing.T) {
 		{name: "wrong scheme", uri: "http://" + testVirtualHost + "/index.html", wantErr: http.StatusForbidden},
 		{name: "traversal", uri: testOrigin + "/../secret", wantErr: http.StatusForbidden},
 		{name: "encoded traversal", uri: testOrigin + "/%2e%2e/secret", wantErr: http.StatusForbidden},
+		{name: "backslash traversal (%5c)", uri: testOrigin + "/..%5c..%5csecret", wantErr: http.StatusForbidden},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -115,6 +116,7 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 		{name: "wrong host", uri: "https://example.test/index.html", wantPath: "wrong_host", wantCategory: "wrong_host", wantStatus: http.StatusForbidden},
 		{name: "wrong scheme", uri: "http://" + testVirtualHost + "/index.html", wantPath: "wrong_scheme", wantCategory: "wrong_scheme", wantStatus: http.StatusForbidden},
 		{name: "traversal", uri: testOrigin + "/../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "backslash traversal (%5c)", uri: testOrigin + "/..%5c..%5csecret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
@@ -145,6 +147,7 @@ func TestAssetProviderResolveDiagnosticCategories(t *testing.T) {
 		{name: "wrong host", uri: "https://example.test/index.html", wantPath: "wrong_host", wantCategory: "wrong_host", wantStatus: http.StatusForbidden},
 		{name: "wrong scheme", uri: "http://" + testVirtualHost + "/index.html", wantPath: "wrong_scheme", wantCategory: "wrong_scheme", wantStatus: http.StatusForbidden},
 		{name: "traversal", uri: testOrigin + "/../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "backslash traversal (%5c)", uri: testOrigin + "/..%5c..%5csecret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
