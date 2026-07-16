@@ -34,6 +34,7 @@ These files are that record.
 | [0011](./0011-host-owns-rasterization-scale.md) | The host owns the WebView2 rasterization scale | Accepted |
 | [0012](./0012-config-url-loopback.md) | Config.URL lets a caller serve the frontend itself; mullion still opens no socket | Accepted |
 | [0013](./0013-backdrop-is-a-mullion-command.md) | The screenshot backdrop is a mullion command | Accepted |
+| [0014](./0014-bridge-origin-at-dispatch.md) | The injected bridge acts only on messages from the trusted origin | Accepted |
 | [0015](./0015-maximize-insets-for-autohide-taskbar.md) | Maximized geometry insets 1px on an auto-hide taskbar edge | Accepted |
 
 ## When to write one

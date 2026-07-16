@@ -67,3 +67,30 @@ func assetSourceSummary(config Config) string {
 	}
 	return "mullion: asset source=external-url, url=" + urlOrigin(config.URL)
 }
+
+// trustedOrigin is the single origin the injected bridge may be driven from: the
+// virtual host that serves the embedded fs.FS (https://<VirtualHost>), or the
+// loopback origin the caller serves when Config.URL is set. Scheme://host[:port],
+// no path.
+func (config Config) trustedOrigin() string {
+	return urlOrigin(config.startURL())
+}
+
+// messageSourceAllowed decides whether a web message posted from source may reach
+// the bridge. window.<ns> - the window controls and Config.Bridge, the application's
+// own Go methods - is injected into every document the WebView loads, so a top-level
+// navigation to a foreign origin would otherwise let that origin call into Go
+// (decisions/0014). A message is rejected only when its source is a concrete
+// http/https origin other than the trusted one; the app's own frontend (trusted
+// origin), the data: error surface (opaque origin) and about:blank all pass, so no
+// first-party surface is broken.
+func (config Config) messageSourceAllowed(source string) bool {
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return true
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return true
+	}
+	return parsed.Scheme+"://"+parsed.Host == config.trustedOrigin()
+}

@@ -25,7 +25,7 @@ import (
 type Browser struct {
 	// Callbacks. Set them before Embed; they are registered during Embed and
 	// must not change afterwards.
-	MessageCallback              func(message string, sender *ICoreWebView2)
+	MessageCallback              func(message string, source string, sender *ICoreWebView2)
 	WebResourceRequestedCallback func(request *ICoreWebView2WebResourceRequest, args *ICoreWebView2WebResourceRequestedEventArgs)
 	NavigationCompletedCallback  func(success bool, status WebErrorStatus)
 	ProcessFailedCallback        func(kind ProcessFailedKind)
@@ -197,7 +197,10 @@ func (browser *Browser) registerEvents() error {
 			// correct - there is nothing the host could do with it.
 			return
 		}
-		browser.MessageCallback(message, sender)
+		// GetSource is the URI of the document that posted the message; the host
+		// uses it to keep the bridge pinned to the trusted origin.
+		source, _ := args.GetSource()
+		browser.MessageCallback(message, source, sender)
 	}), core.AddWebMessageReceived); err != nil {
 		return err
 	}

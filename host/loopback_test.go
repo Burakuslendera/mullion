@@ -63,3 +63,47 @@ func TestAssetSourceSummaryStatesTheSourceAndRedactsPath(t *testing.T) {
 		t.Fatalf("assetSourceSummary (external) = %q, want the path and query dropped", got)
 	}
 }
+
+// TestMessageSourceAllowed locks the bridge-origin gate (decisions/0014): a web
+// message is dropped when its source is a concrete http/https origin other than
+// the trusted one, while the frontend, the data: error surface and about:blank all
+// pass so no first-party surface is broken.
+func TestMessageSourceAllowed(t *testing.T) {
+	asset := Config{}.normalise()                            // virtual host https://mullion.local
+	loop := Config{URL: "http://127.0.0.1:8080"}.normalise() // caller loopback origin
+
+	allowed := []struct {
+		name   string
+		config Config
+		source string
+	}{
+		{"trusted virtual host", asset, "https://mullion.local/index.html"},
+		{"trusted virtual host root", asset, "https://mullion.local/"},
+		{"data error page", asset, "data:text/html,%3Chtml%3E"},
+		{"about blank", asset, "about:blank"},
+		{"empty source", asset, ""},
+		{"trusted loopback url", loop, "http://127.0.0.1:8080/app"},
+	}
+	for _, c := range allowed {
+		if !c.config.messageSourceAllowed(c.source) {
+			t.Errorf("%s: messageSourceAllowed(%q) = false, want allowed", c.name, c.source)
+		}
+	}
+
+	rejected := []struct {
+		name   string
+		config Config
+		source string
+	}{
+		{"foreign https origin", asset, "https://evil.example/x"},
+		{"foreign http origin", asset, "http://evil.example"},
+		{"different loopback port", loop, "http://127.0.0.1:9999/x"},
+		{"remote in url mode", loop, "https://evil.example"},
+		{"scheme downgrade of trusted host", asset, "http://mullion.local"},
+	}
+	for _, c := range rejected {
+		if c.config.messageSourceAllowed(c.source) {
+			t.Errorf("%s: messageSourceAllowed(%q) = true, want rejected", c.name, c.source)
+		}
+	}
+}
