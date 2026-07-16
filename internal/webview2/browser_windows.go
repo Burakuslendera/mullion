@@ -87,6 +87,13 @@ func (browser *Browser) Embed(parent uintptr) error {
 
 	core, err := controller.GetCoreWebView2()
 	if err != nil {
+		// CreateController handed us an owned reference. Close and release it
+		// before bailing, or it is orphaned: browser.controller is not assigned
+		// until below, so ShuttingDown could never reclaim it.
+		if closeErr := controller.Close(); closeErr != nil {
+			browser.reportError(closeErr)
+		}
+		asUnknown(controller).Release()
 		environment.Release()
 		browser.reportError(err)
 		return err
@@ -421,6 +428,7 @@ func (browser *Browser) ShuttingDown() {
 	}
 	browser.shuttingDown = true
 	controller := browser.controller
+	core := browser.core
 	environment := browser.environment
 	browser.controller = nil
 	browser.core = nil
@@ -432,6 +440,13 @@ func (browser *Browser) ShuttingDown() {
 			browser.reportError(err)
 		}
 		asUnknown(controller).Release()
+	}
+	// GetCoreWebView2 returned a reference this Browser owns (see its doc in
+	// interfaces_windows.go). Closing the controller does not drop it, so release
+	// it explicitly - otherwise one ICoreWebView2 leaks on every teardown, which
+	// grows without bound in a process that opens and closes many windows.
+	if core != nil {
+		asUnknown(core).Release()
 	}
 	if environment != nil {
 		environment.Release()
