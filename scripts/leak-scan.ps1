@@ -75,7 +75,10 @@ foreach ($file in $files) {
         if ($rule.Name -eq "absolute Windows path" -and $pathFixtures -contains $file) {
             continue
         }
-        $hits = Select-String -Path $file -Pattern $rule.Pattern -AllMatches -ErrorAction SilentlyContinue
+        # -LiteralPath, not -Path: -Path treats its argument as a wildcard, so a
+        # tracked file whose name contains glob metacharacters ([ ] on Windows)
+        # would fail to resolve and be silently skipped by the scan below.
+        $hits = Select-String -LiteralPath $file -Pattern $rule.Pattern -AllMatches -ErrorAction SilentlyContinue
         foreach ($hit in $hits) {
             $found += [pscustomobject]@{
                 File  = $file
