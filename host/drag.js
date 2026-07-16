@@ -14,7 +14,7 @@
     if (event.button !== 0) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const titlebar = target.closest("__DRAG_SELECTOR__");
+    const titlebar = target.closest(__DRAG_SELECTOR__);
     if (!titlebar) return;
     if (target.closest("[data-__NS__-no-drag]")) return;
     // Let a double click through: the second click is what maximises, and

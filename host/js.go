@@ -2,6 +2,7 @@ package host
 
 import (
 	_ "embed"
+	"encoding/json"
 	"strconv"
 	"strings"
 )
@@ -44,7 +45,7 @@ func (config Config) jsScripts() jsScripts {
 		"__NS__", config.JSNamespace,
 		"__DATASET__", config.datasetKey("resizeEdge"),
 		"__EDGE_ATTR__", "data-"+config.JSNamespace+"-resize-edge",
-		"__DRAG_SELECTOR__", config.DragSelector,
+		"__DRAG_SELECTOR__", jsStringLiteral(config.DragSelector),
 		"__TITLEBAR_H__", strconv.Itoa(int(config.TitlebarHeight)),
 		"__CONTROLS_W__", strconv.Itoa(int(config.CaptionControlsWidth)),
 		"__BORDER__", strconv.Itoa(int(config.ResizeBorder)),
@@ -70,6 +71,17 @@ func (config Config) jsScripts() jsScripts {
 		navigationEval: replace.Replace(navigationEvalTemplateJS),
 		tabFlag:        "window." + config.JSNamespace + ".tabTitlebar = true;",
 	}
+}
+
+// jsStringLiteral encodes s as a JavaScript string literal, quotes included, so
+// a Config value substituted into a .js template cannot break out of the string
+// context it lands in. Unlike JSNamespace (validated to ^[a-z][a-z0-9]*$),
+// DragSelector is free-form, so it is encoded here rather than trusted raw:
+// drag.js reads target.closest(__DRAG_SELECTOR__) with no surrounding quotes.
+// json.Marshal of a string is always a valid JS string literal and never errors.
+func jsStringLiteral(s string) string {
+	encoded, _ := json.Marshal(s)
+	return string(encoded)
 }
 
 // The templates below live next to this file as plain JavaScript and are
