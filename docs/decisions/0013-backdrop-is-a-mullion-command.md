@@ -33,11 +33,15 @@ until dismissed, and exits 0. If a visible window of the target class
 (`MullionWindow`; `-class` overrides, empty skips) exists, the backdrop slots
 itself directly underneath it and lifts it to the top — two `SWP_NOACTIVATE`
 z-order moves, so no foreground-steal restriction applies and the window to
-capture is in front the moment the backdrop opens. `-colour #rrggbb` overrides
-the default dark grey; the parse is strict, is the command's entire input
-surface, and is tested headlessly. The window half follows the repository's
-window rules: per-monitor-v2 declared before the HWND exists, a locked OS
-thread for the message loop, one `NewCallback` at package init.
+capture is in front the moment the backdrop opens. The lifted window is then
+watched (a 200ms `WM_TIMER` checking `IsWindow`/`IsWindowVisible`/`IsIconic`):
+move and resize it freely, but close it, end its process, or minimise it and
+the backdrop closes itself — the session ends when the subject leaves the
+stage. `-colour #rrggbb` overrides the default dark grey; the parse is strict,
+is the command's entire input surface, and is tested headlessly. The window
+half follows the repository's window rules: per-monitor-v2 declared before the
+HWND exists, a locked OS thread for the message loop, one `NewCallback` at
+package init.
 
 Three properties are deliberate and security-motivated:
 
@@ -112,7 +116,10 @@ cannot.
   colour, then dismissed via `WM_CLOSE` and via Esc in separate runs, exit 0
   both times. The lift: with `examples/basic` open, the backdrop was raised
   and — with nothing touching the z-order afterwards — a capture measured the
-  window's pixels in front and backdrop grey beside it.
+  window's pixels in front and backdrop grey beside it. The watch, all three
+  ways out, measured live: the demo window closed normally, minimised
+  (`SW_MINIMIZE`), and its process killed from a terminal — the backdrop
+  closed itself within its timer tick in each run.
 - The scripted sibling and the need that produced it: `a7c689c`
   (`screenshot.ps1 -Backdrop`), and the maintainer's request for the same
   ground under a hand-driven capture tool.

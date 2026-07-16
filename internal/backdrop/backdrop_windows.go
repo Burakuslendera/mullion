@@ -17,8 +17,12 @@ var (
 
 	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
 	procFindWindow                    = user32.NewProc("FindWindowW")
+	procIsWindow                      = user32.NewProc("IsWindow")
 	procIsWindowVisible               = user32.NewProc("IsWindowVisible")
+	procIsIconic                      = user32.NewProc("IsIconic")
 	procSetWindowPos                  = user32.NewProc("SetWindowPos")
+	procSetTimer                      = user32.NewProc("SetTimer")
+	procKillTimer                     = user32.NewProc("KillTimer")
 	procRegisterClassEx               = user32.NewProc("RegisterClassExW")
 	procUnregisterClass               = user32.NewProc("UnregisterClassW")
 	procCreateWindowEx                = user32.NewProc("CreateWindowExW")
@@ -41,7 +45,13 @@ const (
 	wmDestroy = 0x0002
 	wmClose   = 0x0010
 	wmKeyDown = 0x0100
+	wmTimer   = 0x0113
 	vkEscape  = 0x1B
+
+	// watchTimerID drives the target watch below: 200ms is far under what a
+	// human reads as "instant" and costs three cheap USER calls a tick.
+	watchTimerID     = 1
+	watchTimerMillis = 200
 
 	wsPopup       = 0x8000_0000
 	wsVisible     = 0x1000_0000
@@ -88,8 +98,16 @@ type message struct {
 // follow).
 var wndProcCallback = windows.NewCallback(backdropWndProc)
 
+// watchedTarget is the window the backdrop lifted at startup, or 0. The
+// command runs exactly one backdrop per process, so a package variable is the
+// whole state the window procedure needs.
+var watchedTarget uintptr
+
 // backdropWndProc closes on Esc and on WM_CLOSE (Alt+F4, the taskbar button's
-// close). Everything else - paint included - is DefWindowProc's: the class
+// close) - and, when a target was lifted at startup, closes with that target:
+// the watch timer fires every 200ms and the backdrop leaves as soon as the
+// target is destroyed (its process ended, or the user closed it), hidden, or
+// minimised. Everything else - paint included - is DefWindowProc's: the class
 // background brush is the entire rendering.
 func backdropWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch msg {
@@ -98,15 +116,37 @@ func backdropWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			_, _, _ = procDestroyWindow.Call(hwnd)
 			return 0
 		}
+	case wmTimer:
+		if wParam == watchTimerID && watchedTarget != 0 && !targetStillUp(watchedTarget) {
+			_, _, _ = procDestroyWindow.Call(hwnd)
+			return 0
+		}
 	case wmClose:
 		_, _, _ = procDestroyWindow.Call(hwnd)
 		return 0
 	case wmDestroy:
+		_, _, _ = procKillTimer.Call(hwnd, watchTimerID)
 		_, _, _ = procPostQuitMessage.Call(0)
 		return 0
 	}
 	ret, _, _ := procDefWindowProc.Call(hwnd, msg, wParam, lParam)
 	return ret
+}
+
+// targetStillUp reports whether the lifted window still exists on screen,
+// unminimised. Moving and resizing it changes none of these; closing it,
+// ending its process, hiding it or sending it to the taskbar ends the watch.
+func targetStillUp(target uintptr) bool {
+	if alive, _, _ := procIsWindow.Call(target); alive == 0 {
+		return false
+	}
+	if visible, _, _ := procIsWindowVisible.Call(target); visible == 0 {
+		return false
+	}
+	if iconic, _, _ := procIsIconic.Call(target); iconic != 0 {
+		return false
+	}
+	return true
 }
 
 // Show covers the whole virtual screen - every monitor - with a flat colour
@@ -119,8 +159,10 @@ func backdropWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 // underneath it and lifts it to the top of the z-order - without activating
 // anything, so no foreground-steal restriction applies (the SetForegroundWindow
 // trap in docs/lessons-and-dead-ends.md section 4). The window to capture is
-// then already in front; everything else is behind the backdrop. An empty
-// targetClass, or no such window, just covers the desktop.
+// then already in front; everything else is behind the backdrop. The lifted
+// window is watched from then on: close it, end its process, or minimise it,
+// and the backdrop closes itself within a timer tick. An empty targetClass,
+// or no such window, just covers the desktop until dismissed by hand.
 func Show(colour Colour, targetClass string) error {
 	// A Win32 window and its message loop are thread-affine.
 	runtime.LockOSThread()
@@ -187,7 +229,10 @@ func Show(colour Colour, targetClass string) error {
 		return fmt.Errorf("CreateWindowEx: %w", err)
 	}
 
-	raiseTargetAbove(hwnd, targetClass)
+	if target := raiseTargetAbove(hwnd, targetClass); target != 0 {
+		watchedTarget = target
+		_, _, _ = procSetTimer.Call(hwnd, watchTimerID, watchTimerMillis, 0)
+	}
 
 	var msg message
 	for {
@@ -207,24 +252,25 @@ func Show(colour Colour, targetClass string) error {
 // arranges the sandwich a capture wants: target on top, backdrop directly
 // under it, everything else behind the backdrop. Both moves are pure z-order
 // changes with SWP_NOACTIVATE - focus stays where it is, which is what makes
-// them reliable. Failing to find or raise the target is not an error: the
-// backdrop is still doing its job, and the user can Alt+Tab the window
-// forward, exactly as the usage text says.
-func raiseTargetAbove(backdrop uintptr, targetClass string) {
+// them reliable. It returns the lifted window, or 0. Failing to find or raise
+// the target is not an error: the backdrop is still doing its job, and the
+// user can Alt+Tab the window forward, exactly as the usage text says.
+func raiseTargetAbove(backdrop uintptr, targetClass string) uintptr {
 	if targetClass == "" {
-		return
+		return 0
 	}
 	class, err := windows.UTF16PtrFromString(targetClass)
 	if err != nil {
-		return
+		return 0
 	}
 	target, _, _ := procFindWindow.Call(uintptr(unsafe.Pointer(class)), 0)
 	if target == 0 {
-		return
+		return 0
 	}
 	if visible, _, _ := procIsWindowVisible.Call(target); visible == 0 {
-		return
+		return 0
 	}
 	_, _, _ = procSetWindowPos.Call(target, hwndTop, 0, 0, 0, 0, swpNoMoveNoSizeNoActivate)
 	_, _, _ = procSetWindowPos.Call(backdrop, target, 0, 0, 0, 0, swpNoMoveNoSizeNoActivate)
+	return target
 }

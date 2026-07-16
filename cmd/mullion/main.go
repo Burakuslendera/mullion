@@ -56,7 +56,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "mullion backdrop: %v\n", err)
 			os.Exit(2)
 		}
-		fmt.Println("mullion: backdrop up - Esc on it (or Alt+F4, or Ctrl+C here) closes it.")
+		fmt.Println("mullion: backdrop up - it closes with the window it lifts (close or" +
+			" minimise that window); Esc on it, Alt+F4, or Ctrl+C here also close it.")
 		if err := backdrop.Show(colour, *class); err != nil {
 			fmt.Fprintf(os.Stderr, "mullion backdrop: %v\n", err)
 			os.Exit(1)
@@ -89,10 +90,13 @@ Usage:
                     a window, so nothing of the desktop lands in the margin. A
                     visible mullion window is lifted in front of it as it opens
                     (-class overrides which window class that looks for; empty
-                    skips it). It is not topmost - anything you raise stays
-                    above it. Capture with any tool, then press Esc on the
-                    backdrop (or Alt+F4, or Ctrl+C in this terminal) to dismiss
-                    it. Windows only. -colour #rrggbb overrides the dark grey.
+                    skips it), and from then on the backdrop follows that
+                    window: move and resize it freely, and the moment it is
+                    closed, its process ends, or it is minimised, the backdrop
+                    closes itself. It is not topmost - anything you raise stays
+                    above it. Capture with any tool; Esc on the backdrop (or
+                    Alt+F4, or Ctrl+C in this terminal) also dismisses it.
+                    Windows only. -colour #rrggbb overrides the dark grey.
   mullion version   Print the version of mullion linked into this binary.
   mullion help      Print this message.
 
