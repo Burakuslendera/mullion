@@ -33,6 +33,7 @@ These files are that record.
 | [0010](./0010-ci-requires-the-runtime.md) | CI requires the WebView2 runtime, so the export check cannot silently skip | Accepted |
 | [0011](./0011-host-owns-rasterization-scale.md) | The host owns the WebView2 rasterization scale | Accepted |
 | [0012](./0012-config-url-loopback.md) | Config.URL lets a caller serve the frontend itself; mullion still opens no socket | Accepted |
+| [0013](./0013-backdrop-is-a-mullion-command.md) | The screenshot backdrop is a mullion command | Accepted |
 
 ## When to write one
 

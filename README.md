@@ -299,6 +299,15 @@ reports a *virtualised* resolution to a process that has not asked, so a
 hand-written "1536x864" for a 1920x1080 monitor at 125% is the one number a DPI
 report must not contain — which is why this is a command and not a checklist.
 
+One more helper lives beside it: `mullion backdrop` covers every monitor with a
+flat grey while you screenshot a window, so the margin around it — the shadow
+and the corners are worth keeping in frame — carries nothing of your desktop.
+Raise your window over it, capture with whatever tool you like, press Esc on
+the backdrop when done
+([decisions/0013](docs/decisions/0013-backdrop-is-a-mullion-command.md)). From
+a checkout, `scripts/screenshot.ps1` automates the whole capture; the image
+above was taken that way, on the same flat ground.
+
 ## Known limitations
 
 - **WebView2 does not render while the window is hidden.** With `StartHidden`, the

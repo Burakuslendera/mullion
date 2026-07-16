@@ -13,14 +13,19 @@
 // The one line here that no registry lookup can produce: mullion drives the
 // WebView2 runtime's own client DLL directly, and Microsoft documents that entry
 // point as subject to change. doctor resolves it, on this machine, and says so.
+//
+// One capture helper lives beside it: backdrop covers the desktop with a flat
+// colour while a window screenshot is taken (docs/decisions/0013).
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/Burakuslendera/mullion/host"
+	"github.com/Burakuslendera/mullion/internal/backdrop"
 	"github.com/Burakuslendera/mullion/internal/doctor"
 )
 
@@ -41,6 +46,21 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "backdrop":
+		flags := flag.NewFlagSet("backdrop", flag.ExitOnError)
+		colourHex := flags.String("colour", backdrop.DefaultHex, "backdrop colour, #rrggbb")
+		_ = flags.Parse(os.Args[2:]) // ExitOnError: a bad flag already exited 2
+		colour, err := backdrop.ParseColour(*colourHex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "mullion backdrop: %v\n", err)
+			os.Exit(2)
+		}
+		fmt.Println("mullion: backdrop up - Esc on it (or Alt+F4, or Ctrl+C here) closes it.")
+		if err := backdrop.Show(colour); err != nil {
+			fmt.Fprintf(os.Stderr, "mullion backdrop: %v\n", err)
+			os.Exit(1)
+		}
+
 	case "version":
 		fmt.Println(host.Version())
 
@@ -57,13 +77,19 @@ func main() {
 }
 
 func usage(out io.Writer) {
-	fmt.Fprint(out, `mullion - diagnostics for the mullion window host
+	fmt.Fprint(out, `mullion - diagnostics and capture helpers for the mullion window host
 
 Usage:
   mullion doctor    Print the environment a window bug report needs, and check
                     that the WebView2 runtime this machine would load still
                     exports the entry point mullion calls. Starts no browser and
                     opens no window.
+  mullion backdrop  Cover every monitor with a flat colour while you screenshot
+                    a window, so nothing of the desktop lands in the margin.
+                    It is not topmost: raise your window over it, capture with
+                    any tool, then press Esc on the backdrop (or Alt+F4, or
+                    Ctrl+C in this terminal) to dismiss it. Windows only.
+                    -colour #rrggbb overrides the default dark grey.
   mullion version   Print the version of mullion linked into this binary.
   mullion help      Print this message.
 

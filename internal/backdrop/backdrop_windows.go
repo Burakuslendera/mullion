@@ -1,0 +1,190 @@
+//go:build windows
+
+package backdrop
+
+import (
+	"fmt"
+	"runtime"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
+
+var (
+	user32   = windows.NewLazySystemDLL("user32.dll")
+	gdi32    = windows.NewLazySystemDLL("gdi32.dll")
+	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
+
+	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
+	procRegisterClassEx               = user32.NewProc("RegisterClassExW")
+	procUnregisterClass               = user32.NewProc("UnregisterClassW")
+	procCreateWindowEx                = user32.NewProc("CreateWindowExW")
+	procDestroyWindow                 = user32.NewProc("DestroyWindow")
+	procDefWindowProc                 = user32.NewProc("DefWindowProcW")
+	procGetMessage                    = user32.NewProc("GetMessageW")
+	procTranslateMessage              = user32.NewProc("TranslateMessage")
+	procDispatchMessage               = user32.NewProc("DispatchMessageW")
+	procPostQuitMessage               = user32.NewProc("PostQuitMessage")
+	procGetSystemMetrics              = user32.NewProc("GetSystemMetrics")
+	procLoadCursor                    = user32.NewProc("LoadCursorW")
+	procCreateSolidBrush              = gdi32.NewProc("CreateSolidBrush")
+	procDeleteObject                  = gdi32.NewProc("DeleteObject")
+	procGetModuleHandle               = kernel32.NewProc("GetModuleHandleW")
+)
+
+const (
+	dpiAwarenessPerMonitorV2 = ^uintptr(3) // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
+
+	wmDestroy = 0x0002
+	wmClose   = 0x0010
+	wmKeyDown = 0x0100
+	vkEscape  = 0x1B
+
+	wsPopup       = 0x8000_0000
+	wsVisible     = 0x1000_0000
+	wsExAppWindow = 0x0004_0000 // a taskbar button, so the backdrop is always discoverable
+
+	smXVirtualScreen  = 76
+	smYVirtualScreen  = 77
+	smCXVirtualScreen = 78
+	smCYVirtualScreen = 79
+
+	idcArrow = 32512
+)
+
+type wndClassEx struct {
+	Size       uint32
+	Style      uint32
+	WndProc    uintptr
+	ClsExtra   int32
+	WndExtra   int32
+	Instance   uintptr
+	Icon       uintptr
+	Cursor     uintptr
+	Background uintptr
+	MenuName   *uint16
+	ClassName  *uint16
+	IconSmall  uintptr
+}
+
+type message struct {
+	Window  uintptr
+	Message uint32
+	WParam  uintptr
+	LParam  uintptr
+	Time    uint32
+	Point   struct{ X, Y int32 }
+}
+
+// wndProcCallback is created once, at package init: windows.NewCallback
+// allocates from a small fixed table that is never freed, so a callback per
+// call would leak table slots (the same rule host/ and internal/webview2
+// follow).
+var wndProcCallback = windows.NewCallback(backdropWndProc)
+
+// backdropWndProc closes on Esc and on WM_CLOSE (Alt+F4, the taskbar button's
+// close). Everything else - paint included - is DefWindowProc's: the class
+// background brush is the entire rendering.
+func backdropWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
+	switch msg {
+	case wmKeyDown:
+		if wParam == vkEscape {
+			_, _, _ = procDestroyWindow.Call(hwnd)
+			return 0
+		}
+	case wmClose:
+		_, _, _ = procDestroyWindow.Call(hwnd)
+		return 0
+	case wmDestroy:
+		_, _, _ = procPostQuitMessage.Call(0)
+		return 0
+	}
+	ret, _, _ := procDefWindowProc.Call(hwnd, msg, wParam, lParam)
+	return ret
+}
+
+// Show covers the whole virtual screen - every monitor - with a flat colour
+// and blocks until the user dismisses it: Esc on the window, Alt+F4, its
+// taskbar button, or Ctrl+C on the terminal (which ends the process and the
+// window with it). It is deliberately NOT topmost: any window the user raises
+// sits above it, so the backdrop can never hold the desktop hostage, and the
+// window being captured just needs a click or an Alt+Tab to come forward.
+func Show(colour Colour) error {
+	// A Win32 window and its message loop are thread-affine.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Per-monitor-v2 before the HWND exists (the rule every window in this
+	// repository follows), so the virtual-screen metrics and the window
+	// placement below are physical pixels on every monitor.
+	_, _, _ = procSetProcessDpiAwarenessContext.Call(dpiAwarenessPerMonitorV2)
+
+	instance, _, err := procGetModuleHandle.Call(0)
+	if instance == 0 {
+		return fmt.Errorf("GetModuleHandle: %w", err)
+	}
+	cursor, _, _ := procLoadCursor.Call(0, idcArrow)
+
+	// COLORREF is 0x00BBGGRR.
+	brush, _, err := procCreateSolidBrush.Call(uintptr(colour.R) | uintptr(colour.G)<<8 | uintptr(colour.B)<<16)
+	if brush == 0 {
+		return fmt.Errorf("CreateSolidBrush: %w", err)
+	}
+	defer procDeleteObject.Call(brush)
+
+	className, err := windows.UTF16PtrFromString("MullionBackdrop")
+	if err != nil {
+		return err
+	}
+	title, err := windows.UTF16PtrFromString("mullion backdrop")
+	if err != nil {
+		return err
+	}
+
+	class := wndClassEx{
+		Size:       uint32(unsafe.Sizeof(wndClassEx{})),
+		WndProc:    wndProcCallback,
+		Instance:   instance,
+		Cursor:     cursor,
+		Background: brush,
+		ClassName:  className,
+	}
+	atom, _, err := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&class)))
+	if atom == 0 {
+		return fmt.Errorf("RegisterClassEx: %w", err)
+	}
+	defer procUnregisterClass.Call(uintptr(unsafe.Pointer(className)), instance)
+
+	x, _, _ := procGetSystemMetrics.Call(smXVirtualScreen)
+	y, _, _ := procGetSystemMetrics.Call(smYVirtualScreen)
+	width, _, _ := procGetSystemMetrics.Call(smCXVirtualScreen)
+	height, _, _ := procGetSystemMetrics.Call(smCYVirtualScreen)
+	if width == 0 || height == 0 {
+		return fmt.Errorf("GetSystemMetrics reported a %dx%d virtual screen", width, height)
+	}
+
+	hwnd, _, err := procCreateWindowEx.Call(
+		wsExAppWindow,
+		uintptr(unsafe.Pointer(className)),
+		uintptr(unsafe.Pointer(title)),
+		wsPopup|wsVisible,
+		x, y, width, height,
+		0, 0, instance, 0,
+	)
+	if hwnd == 0 {
+		return fmt.Errorf("CreateWindowEx: %w", err)
+	}
+
+	var msg message
+	for {
+		ret, _, err := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
+		switch int32(ret) {
+		case 0: // WM_QUIT
+			return nil
+		case -1:
+			return fmt.Errorf("GetMessage: %w", err)
+		}
+		_, _, _ = procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
+		_, _, _ = procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
+	}
+}
