@@ -107,8 +107,27 @@ func (browser *Browser) Embed(parent uintptr) error {
 
 	browser.applyBoundsPolicy()
 
-	if err := browser.registerEvents(); err != nil {
+	return browser.registerEventsOrTearDown(browser.registerEvents)
+}
+
+// registerEventsOrTearDown runs register and, on failure, tears the browser down
+// before returning the error.
+//
+// By this point Embed has stored the environment, controller and core on the
+// browser, and the caller (host.createWebView) assigns host.browser only after
+// Embed returns nil. So if event registration fails here, nothing else will ever
+// release those three references: host.browser stays nil, and ShuttingDown - the
+// only code that releases them - never runs on this Browser. This releases them
+// itself. ShuttingDown is idempotent and nils the fields, and its controller.Close
+// also drops any handler registered before the failing one.
+//
+// register is a parameter so the failure path is unit-testable without a live
+// runtime: the real release counts need Windows and a runtime, but the contract
+// "a registration failure tears the browser down" is checkable headlessly.
+func (browser *Browser) registerEventsOrTearDown(register func() error) error {
+	if err := register(); err != nil {
 		browser.reportError(err)
+		browser.ShuttingDown()
 		return err
 	}
 	return nil
