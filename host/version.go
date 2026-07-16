@@ -3,6 +3,8 @@ package host
 import (
 	"runtime/debug"
 	"strings"
+
+	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
 const modulePath = "github.com/Burakuslendera/mullion"
@@ -142,8 +144,12 @@ func runtimeSummary(webViewVersion string, goVersion string, arch string) string
 	if webViewVersion == "" {
 		webViewVersion = "unknown"
 	}
+	// webViewVersion can originate in an unprivileged HKCU registry value, so it
+	// is sanitised (internal/webview2.sanitizeVersion) at the source; logsafe here
+	// is defence in depth for any other origin before the line reaches a Logger
+	// that may render it in a terminal.
 	return "mullion: version=" + Version() +
 		", go=" + goVersion +
 		", arch=" + arch +
-		", webview2=" + strings.TrimSpace(webViewVersion)
+		", webview2=" + logsafe.Message(webViewVersion)
 }
