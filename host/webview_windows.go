@@ -10,11 +10,38 @@ import (
 )
 
 func (host *Host) ensureWebView(source string) error {
+	return host.ensureWebViewWith(source, host.createWebView)
+}
+
+// ensureWebViewWith is ensureWebView with the embed injected, so the
+// single-flight contract is unit-testable without a live runtime (the same
+// seam registerEventsOrTearDown and navigateOrTearDown use).
+//
+// Embed pumps the message loop, so a message dispatched mid-embed can land
+// right back here with host.browser still nil. The webViewEmbedding flag makes
+// that re-entrant call fail instead of starting a second embed - two browsers
+// would race for the one host.browser commit and the loser would leak, browser
+// process and all (issue #23, decision 0016). A destroyed window refuses too:
+// there is nothing left to embed into.
+func (host *Host) ensureWebViewWith(source string, create func() error) error {
 	if host.browser != nil {
 		return nil
 	}
+	if host.windowDestroyed {
+		err := errors.New("window already destroyed")
+		host.log.Warn("mullion: webview create refused, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
+		return err
+	}
+	if host.webViewEmbedding {
+		err := errors.New("webview embed already in flight")
+		host.log.Warn("mullion: webview create refused, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
+		return err
+	}
+	host.webViewEmbedding = true
+	defer func() { host.webViewEmbedding = false }()
+
 	host.log.Debug("mullion: webview create requested, source=" + logsafe.Message(source))
-	if err := host.createWebView(); err != nil {
+	if err := create(); err != nil {
 		host.log.Error("mullion: webview2 embed failed, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
 		return err
 	}
@@ -86,7 +113,9 @@ func (host *Host) createWebView() error {
 	if err := browser.Embed(uintptr(host.window())); err != nil {
 		return errors.Join(errors.New("embed webview2"), err)
 	}
-	host.browser = browser
+	if err := host.commitEmbeddedBrowser(browser); err != nil {
+		return err
+	}
 	host.log.Debug("mullion: webview2 embedded")
 
 	background := host.config.BackgroundColour
@@ -124,6 +153,26 @@ func (host *Host) createWebView() error {
 	return host.navigateOrTearDown(func() error {
 		return browser.Navigate(host.config.startURL())
 	})
+}
+
+// commitEmbeddedBrowser assigns the freshly embedded browser - unless the
+// window was destroyed while Embed pumped the message loop.
+//
+// A WM_DESTROY dispatched inside the embed pump finds host.browser still nil
+// and skips ShuttingDown; committing afterwards would hand host.browser a
+// browser whose HWND is already gone and whose teardown has already passed -
+// nothing would ever release it (issue #23, defect 2). The browser is torn
+// down here instead. The HWND is no longer alive, so the controller Close may
+// report a failure the error callback logs; a best-effort teardown still beats
+// a stranded browser process. Split from createWebView so the contract is
+// unit-testable without a runtime.
+func (host *Host) commitEmbeddedBrowser(browser *webview2.Browser) error {
+	if host.windowDestroyed {
+		browser.ShuttingDown()
+		return errors.New("window destroyed during webview embed")
+	}
+	host.browser = browser
+	return nil
 }
 
 // navigateOrTearDown starts the first navigation and, on failure, undoes the

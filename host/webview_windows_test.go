@@ -60,6 +60,122 @@ func TestNavigateSuccessKeepsBrowser(t *testing.T) {
 	}
 }
 
+// Embed pumps the message loop, so ensureWebView can be re-entered from inside
+// its own create. The single-flight flag must make the inner call fail without
+// running a second embed - two browsers would race for one host.browser commit
+// and the loser would leak, browser process and all (issue #23, defect 1).
+func TestEnsureWebViewRefusesAReentrantEmbed(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	var outerRuns, innerRuns int
+	var innerErr error
+
+	err := host.ensureWebViewWith("initial", func() error {
+		outerRuns++
+		innerErr = host.ensureWebViewWith("show", func() error {
+			innerRuns++
+			return nil
+		})
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("outer ensureWebViewWith err = %v, want nil", err)
+	}
+	if outerRuns != 1 {
+		t.Fatalf("outer create ran %d times, want 1", outerRuns)
+	}
+	if innerErr == nil {
+		t.Fatal("the re-entrant call must fail while an embed is in flight")
+	}
+	if innerRuns != 0 {
+		t.Fatalf("inner create ran %d times, want 0: a second embed leaks a browser", innerRuns)
+	}
+}
+
+// An already-embedded browser short-circuits before any guard: the post-commit
+// show path relies on this returning nil without running create again.
+func TestEnsureWebViewReturnsImmediatelyWhenEmbedded(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.browser = webview2.New()
+
+	err := host.ensureWebViewWith("show", func() error {
+		t.Error("create must not run when a browser is already embedded")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ensureWebViewWith with an embedded browser err = %v, want nil", err)
+	}
+}
+
+// The in-flight flag must clear on both exits, or one failed embed would
+// refuse every retry for the life of the host.
+func TestEnsureWebViewClearsTheInFlightFlag(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+
+	if err := host.ensureWebViewWith("initial", func() error { return errors.New("embed failed") }); err == nil {
+		t.Fatal("a failing create must propagate its error")
+	}
+	var retried bool
+	if err := host.ensureWebViewWith("show", func() error { retried = true; return nil }); err != nil {
+		t.Fatalf("retry after a failed embed err = %v, want nil", err)
+	}
+	if !retried {
+		t.Fatal("the retry must run create again: the failure path left the flag set")
+	}
+}
+
+// A destroyed window has nothing to embed into: create must never run.
+func TestEnsureWebViewRefusesAfterDestroy(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.windowDestroyed = true
+
+	err := host.ensureWebViewWith("show", func() error {
+		t.Error("create must not run against a destroyed window")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("ensureWebView must refuse once the window is destroyed")
+	}
+}
+
+// TestCommitRefusedAfterMidEmbedDestroy locks defect 2 of issue #23: a
+// WM_DESTROY dispatched inside the embed pump skips ShuttingDown because
+// host.browser is still nil, so committing the browser afterwards would strand
+// it forever - its teardown moment has already passed. The commit must tear it
+// down instead.
+func TestCommitRefusedAfterMidEmbedDestroy(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	browser := webview2.New()
+	host.windowDestroyed = true
+
+	err := host.commitEmbeddedBrowser(browser)
+
+	if err == nil {
+		t.Fatal("committing after a mid-embed destroy must fail")
+	}
+	if host.browser != nil {
+		t.Fatal("a browser must not be committed to a destroyed window")
+	}
+	if !browser.IsShuttingDown() {
+		t.Fatal("the uncommitted browser must be torn down, or its COM references and process leak")
+	}
+}
+
+func TestCommitAssignsTheBrowserOnALiveWindow(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	browser := webview2.New()
+
+	if err := host.commitEmbeddedBrowser(browser); err != nil {
+		t.Fatalf("commitEmbeddedBrowser err = %v, want nil", err)
+	}
+	if host.browser != browser {
+		t.Fatal("a live window must receive the embedded browser")
+	}
+	if browser.IsShuttingDown() {
+		t.Fatal("a committed browser must not be torn down")
+	}
+}
+
 // The watchdog is armed immediately before Navigate, so the failure path must
 // disarm it: with the webview torn down, a later "frontend render timeout"
 // ERROR would point at a window that no longer exists.
