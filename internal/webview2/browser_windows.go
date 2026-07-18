@@ -225,15 +225,7 @@ func (browser *Browser) registerEvents() error {
 	}
 
 	if err := addEvent(NewWebResourceRequestedHandler(func(_ *ICoreWebView2, args *ICoreWebView2WebResourceRequestedEventArgs) {
-		if browser.WebResourceRequestedCallback == nil || args == nil {
-			return
-		}
-		request, err := args.GetRequest()
-		if err != nil {
-			browser.reportError(err)
-			return
-		}
-		browser.WebResourceRequestedCallback(request, args)
+		browser.handleWebResourceRequested(args)
 	}), core.AddWebResourceRequested); err != nil {
 		return err
 	}
@@ -256,6 +248,34 @@ func (browser *Browser) registerEvents() error {
 		kind, _ := args.GetProcessFailedKind()
 		browser.ProcessFailedCallback(kind)
 	}), core.AddProcessFailed)
+}
+
+// handleWebResourceRequested resolves the request out of the event args, hands
+// it to the host callback, and releases it when the callback returns.
+//
+// GetRequest returns a reference this package owns (interfaces_windows.go), and
+// this is the only code that can drop it: ICoreWebView2WebResourceRequest
+// exposes no exported Release, so the host-side callback could not release the
+// request even if it knew it had to. Without the release here, one COM object
+// leaks per intercepted request - every document, stylesheet, script, image and
+// fetch in embedded-FS mode - and grows without bound for the life of the
+// window. The deferred release also runs when the callback panics, so a
+// recovered handler panic (handlers_windows.go) does not turn into a leak.
+//
+// The args pointer is borrowed for the duration of the event and is left
+// untouched (see the ownership note in handlers_windows.go); only the
+// GetRequest result is owned here.
+func (browser *Browser) handleWebResourceRequested(args *ICoreWebView2WebResourceRequestedEventArgs) {
+	if browser.WebResourceRequestedCallback == nil || args == nil {
+		return
+	}
+	request, err := args.GetRequest()
+	if err != nil {
+		browser.reportError(err)
+		return
+	}
+	defer asUnknown(request).Release()
+	browser.WebResourceRequestedCallback(request, args)
 }
 
 // userDataFolder resolves where WebView2 keeps its profile.
