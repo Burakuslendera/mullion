@@ -298,6 +298,13 @@ established by testing the runtime rather than by reading a signature:
 | `response.PutContent(stream)` | the **response** takes its own reference on the stream |
 | `args.PutResponse(response)` | the **runtime** takes its own reference on the response |
 
+The inbound half of the same event obeys the same rule: `args.GetRequest()`
+returns a reference the handler owns, and it is released as soon as the callback
+returns (`handleWebResourceRequested`). The event fires for every intercepted
+resource, so an unreleased request is not a one-off — it is one leaked COM
+object per document, stylesheet, script, image and fetch, growing without bound
+for the life of the window.
+
 The body stream must be created first and attached with `PutContent`. Passing it to
 `CreateWebResourceResponse` and releasing it on the way out — which reads like the
 obvious thing to do, and is what a convenience helper is likely to do for you — frees
@@ -396,4 +403,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: MarkFrontendReady / MarkFrontendShellReady now post their bounds sync over `WM_APP+28` instead of touching the controller on the caller's goroutine (issue #38); the message's `wParam` carries the source label.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: document the inbound `WebResourceRequested` refcount rule (issue #41), and the frontend-ready bounds sync now posted over `WM_APP+28` with the source label in `wParam` (issue #38).

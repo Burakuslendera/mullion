@@ -80,6 +80,12 @@ func (s *ICoreWebView2Settings) QuerySettings9() (*ICoreWebView2Settings9, error
 	return queryAs[ICoreWebView2Settings9](s, &IIDICoreWebView2Settings9)
 }
 
+// Release drops the reference GetSettings returned. Unlike its Query* siblings
+// below, the base settings object comes from ICoreWebView2.GetSettings rather
+// than QueryInterface, but the ownership is the same: the getter AddRefs on the
+// way out, so every call pairs with exactly one Release.
+func (s *ICoreWebView2Settings) Release() { asUnknown(s).Release() }
+
 // Release drops a reference obtained from QueryInterface.
 func (c *ICoreWebView2Controller2) Release() { asUnknown(c).Release() }
 

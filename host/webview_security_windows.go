@@ -33,6 +33,8 @@ func (host *Host) applyWebViewHardening(browser *webview2.Browser) {
 		host.log.Warn("mullion: webview hardening skipped, settings unavailable, reason=" + logsafe.Reason(err))
 		return
 	}
+	// Settings returns an owned reference; held for this configuration pass only.
+	defer settings.Release()
 	enabled := host.config.DevTools
 
 	host.warnIf("devtools setting", settings.PutAreDevToolsEnabled(enabled))
@@ -45,8 +47,8 @@ func (host *Host) applyWebViewHardening(browser *webview2.Browser) {
 	if err != nil {
 		host.log.Warn("mullion: accelerator key setting unavailable, reason=" + logsafe.Reason(err))
 	} else {
+		defer settings3.Release()
 		host.warnIf("accelerator keys setting", settings3.PutAreBrowserAcceleratorKeysEnabled(enabled))
-		settings3.Release()
 	}
 
 	if enabled {
