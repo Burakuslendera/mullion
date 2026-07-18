@@ -32,6 +32,17 @@ type Host struct {
 	assets   assetProvider
 	browser  *webview2.Browser
 
+	// webViewEmbedding and windowDestroyed guard the in-flight embed. Embed
+	// pumps the message loop for up to a minute, so messages dispatched
+	// mid-embed re-enter the window procedure while host.browser is still nil:
+	// without the first flag a re-entrant ensureWebView would start a second
+	// embed and leak whichever browser loses the commit; without the second, a
+	// WM_DESTROY dispatched inside the pump would skip ShuttingDown and the
+	// browser committed afterwards would never be torn down (issue #23, decision
+	// 0016). Both are UI-thread-confined, like host.browser itself.
+	webViewEmbedding bool
+	windowDestroyed  bool
+
 	dpiAwarenessErr   error
 	renderMu          sync.Mutex
 	renderTimer       *time.Timer

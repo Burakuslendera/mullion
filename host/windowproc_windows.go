@@ -41,6 +41,10 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		}
 		host.log.Debug("mullion: close allowed")
 	case wmDestroy:
+		// Recorded before the teardown so an embed whose pump dispatched this
+		// message can see, once Embed returns, that its window is gone and the
+		// browser must be torn down instead of committed (decision 0016).
+		host.windowDestroyed = true
 		host.log.Debug("mullion: destroy requested")
 		// PostQuitMessage must run even if teardown panics. The window procedure
 		// is panic-guarded (win32_call_windows.go), so a panic in ShuttingDown
