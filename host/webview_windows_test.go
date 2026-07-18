@@ -29,7 +29,7 @@ func TestNavigateFailureUncommitsAndTearsDownBrowser(t *testing.T) {
 	host.browser = browser
 	wantErr := errors.New("navigate failed")
 
-	err := host.navigateOrTearDown(browser, func() error { return wantErr })
+	err := host.navigateOrTearDown(func() error { return wantErr })
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("navigateOrTearDown err = %v, want %v", err, wantErr)
@@ -49,7 +49,7 @@ func TestNavigateSuccessKeepsBrowser(t *testing.T) {
 	browser := webview2.New()
 	host.browser = browser
 
-	if err := host.navigateOrTearDown(browser, func() error { return nil }); err != nil {
+	if err := host.navigateOrTearDown(func() error { return nil }); err != nil {
 		t.Fatalf("navigateOrTearDown err = %v, want nil", err)
 	}
 	if host.browser != browser {
@@ -69,7 +69,7 @@ func TestNavigateFailureStopsTheRenderWatchdog(t *testing.T) {
 	host.browser = browser
 	host.startRenderWatchdog()
 
-	_ = host.navigateOrTearDown(browser, func() error { return errors.New("navigate failed") })
+	_ = host.navigateOrTearDown(func() error { return errors.New("navigate failed") })
 	time.Sleep(60 * time.Millisecond)
 
 	if strings.Contains(logger.String(), "mullion: frontend render timeout") {

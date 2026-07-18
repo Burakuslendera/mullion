@@ -121,7 +121,7 @@ func (host *Host) createWebView() error {
 	host.applyTabStripStartup(browser)
 	host.log.Debug("mullion: navigate requested")
 	host.startRenderWatchdog()
-	return host.navigateOrTearDown(browser, func() error {
+	return host.navigateOrTearDown(func() error {
 		return browser.Navigate(host.config.startURL())
 	})
 }
@@ -144,12 +144,17 @@ func (host *Host) createWebView() error {
 // live runtime, exactly like registerEventsOrTearDown on the in-Embed error
 // path (internal/webview2/browser_windows.go): the real release counts need a
 // runtime, but "a Navigate failure uncommits and tears down" is checkable
-// headlessly.
-func (host *Host) navigateOrTearDown(browser *webview2.Browser, navigate func() error) error {
+// headlessly. The browser is read from host.browser rather than taken as a
+// parameter, so the committed field is the single source of truth: a second
+// caller could otherwise tear down one browser while uncommitting another.
+func (host *Host) navigateOrTearDown(navigate func() error) error {
 	if err := navigate(); err != nil {
+		browser := host.browser
 		host.stopRenderWatchdog()
 		host.browser = nil
-		browser.ShuttingDown()
+		if browser != nil {
+			browser.ShuttingDown()
+		}
 		return err
 	}
 	return nil
