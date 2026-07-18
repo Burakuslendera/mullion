@@ -105,6 +105,16 @@ var fakeWebResourceArgsVtbl = ICoreWebView2WebResourceRequestedEventArgsVtbl{
 	})),
 }
 
+// newFakeUnknown returns a bare fake IUnknown and its call counters, for
+// lifetime tests that need nothing but AddRef/Release accounting.
+func newFakeUnknown(t *testing.T) (*IUnknown, *fakeComState) {
+	t.Helper()
+	object := &IUnknown{Vtbl: &fakeComIUnknownVtbl}
+	state := &fakeComState{}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(object)), state))
+	return object, state
+}
+
 // newFakeWebResourceRequest returns a fake request and its call counters. The
 // object stays registered until the test ends.
 func newFakeWebResourceRequest(t *testing.T) (*ICoreWebView2WebResourceRequest, *fakeComState) {
