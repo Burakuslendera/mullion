@@ -27,6 +27,9 @@ func newLogSink(logger Logger) *logSink {
 // Logger IS the sink - so the line is lost and the process stays alive, which
 // is the better half of that trade. The counts land before the hand-off, so
 // the startup summary stays truthful even about lines the Logger dropped.
+// The containment covers a synchronous panic; runtime.Goexit, and a panic on
+// a goroutine the Logger itself spawned, are beyond any recover's reach here
+// as everywhere.
 
 func (sink *logSink) Debug(message string) {
 	defer func() { _ = recover() }()

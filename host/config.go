@@ -19,6 +19,11 @@ var ErrUnsupportedPlatform = errors.New("mullion: unsupported platform (windows 
 // Messages are pre-formatted single strings on purpose. Some of them are emitted
 // from hot paths (WM_SIZE, WM_MOVE), and a variadic signature would push
 // formatting work into those paths for no benefit.
+//
+// A Logger that panics is contained, not fatal: the line is dropped, the
+// process keeps running, and the warn/error counts still record the attempt
+// (issue #26). The host calls the Logger from goroutines with no recover above
+// them, so an uncontained panic there would abort the whole process.
 type Logger interface {
 	Debug(msg string)
 	Info(msg string)

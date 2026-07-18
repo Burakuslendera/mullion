@@ -246,6 +246,9 @@ func guardedWindowProc(
 						onPanic(recovered, message)
 					}()
 				}
+				// fallback runs in the same spent-recover region and is trusted
+				// not to panic: production passes defWindowProc, a plain user32
+				// call.
 				result = fallback(hwnd, message, wParam, lParam)
 			}
 		}()
@@ -264,11 +267,13 @@ func newWindowCallback(
 }
 
 // reportWindowProcPanic logs a panic that guardedWindowProc caught before it
-// could unwind into the native message-dispatch frame. It can itself panic in
-// two ways, both caller code: fmt.Sprint(recovered) may invoke a String or
-// Error method on the recovered value, and the log line ends at the caller's
-// Logger. Both are contained - logSink swallows a panicking Logger, and
-// guardedWindowProc runs this reporter behind its own recover (issue #26).
+// could unwind into the native message-dispatch frame. Caller code runs in two
+// places here, each with its own containment: fmt.Sprint(recovered) may invoke
+// a String or Error method on the recovered value, which fmt itself contains
+// and renders as %!v(PANIC=...); and the log line ends at the caller's Logger,
+// which logSink contains. guardedWindowProc still runs this reporter behind
+// its own recover as the backstop for whatever neither layer catches
+// (issue #26).
 func (host *Host) reportWindowProcPanic(recovered any, message uint32) {
 	host.log.Error(fmt.Sprintf("mullion: window procedure recovered from panic, message=0x%x, reason=%s",
 		message, logsafe.Message(fmt.Sprint(recovered))))
