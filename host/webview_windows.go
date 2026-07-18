@@ -265,6 +265,14 @@ func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success boo
 // controls; on this path that document is a failed load or mullion's own
 // about:blank, and Config.Bridge stays out of reach regardless
 // (messageSourceTrusted).
+//
+// The machine also assumes the first success completion after arming is the
+// surface's own load - it has no navigation identity to check. A page-initiated
+// navigation superseding the surface's Navigate and completing success-first
+// would keep the admission armed against that document; the observed runtime
+// ordering (the superseded navigation completes with false first, which lands in
+// the surface-failed branch below and clears the flags) self-heals it. The
+// accepted costs and their trip-wires are recorded in decisions/0017.
 func (host *Host) noteNavigationOutcome(success bool) bool {
 	if success {
 		host.errorPageShown = false
