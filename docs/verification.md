@@ -136,6 +136,20 @@ a pass/fail with an observable result — "looks fine" is not a result.
       taskbar.
 - [ ] **Close** from the custom caption control; the process exits and no
       child process is left behind.
+- [ ] **Second `Run` in the same process after a pre-loop failure.** With a
+      driver that runs the host twice in one process, make the first `Run`
+      fail before the message loop (e.g. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
+      pointed at an empty folder so the embed fails, cleared again before the
+      retry). The second `Run` must reach a live, painted window: no
+      "Class already exists" from `RegisterClassEx` and no instant exit from
+      a stale `WM_QUIT` (issue #48).
+- [ ] **`StartHidden` → first `Show`.** With `Config.StartHidden` set, no
+      window may appear until `Show()` is called; the first `Show` embeds the
+      WebView and the frontend paints. Quitting without ever showing must
+      still exit cleanly with no browser process left behind. (A `Show()` or
+      `Quit()` landing mid-embed is timing-dependent and stays a live-only
+      scenario; the refusal and cancel logic is pinned headless — see
+      decisions/0016.)
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:
       restored → `Restore` disabled, `Maximize` enabled, `Move`/`Size` enabled;
@@ -332,4 +346,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: the vtable structs now live across the `interfaces_*` file family (PR #52), so the ABI-test pointer names the family rather than one file.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: two manual checklist items for the recently landed lifecycle fixes — second `Run` after a pre-loop failure (issue #48) and `StartHidden` → first `Show` (decision 0016).

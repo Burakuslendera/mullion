@@ -71,6 +71,13 @@ dependencies are process-wide and irreversible.
    **before** the first `Navigate`; a callback registered after navigation begins can
    miss the requests and messages the first document produces — a race that reproduces
    only on fast machines, or only on slow ones, depending on where the gap lands.
+   The embed is **single-flight, and window destruction cancels it**: controller
+   creation pumps the message loop while it waits, so a message dispatched mid-embed
+   can re-enter this path or destroy the window outright. A re-entrant attempt is
+   refused rather than racing a second browser for the one `host.browser` commit,
+   and a browser that completes after `WM_DESTROY` is torn down instead of being
+   committed to a window that no longer exists. See
+   [decisions/0016](./decisions/0016-single-flight-embed.md).
 
 7. **Show.** Parent window and WebView2 controller are both made visible explicitly.
    Showing the parent alone is not enough: the controller has an independent
@@ -140,7 +147,9 @@ One window procedure switch routes everything.
   opens, since the library, not the default frame, decides what is currently possible.
 - **`WM_CLOSE`** — offered to `Config.OnClose` first; returning true consumes the
   message, which is how a close-to-tray application keeps its process alive.
-- **`WM_DESTROY`** — stops the render watchdog, shuts the WebView down, posts `WM_QUIT`.
+- **`WM_DESTROY`** — records the destruction first, so a WebView2 embed still pumping
+  cannot later commit a browser to a window that is gone (decision 0016); then stops
+  the render watchdog, shuts the WebView down, posts `WM_QUIT`.
 
 Everything else falls through to `DefWindowProc`.
 
@@ -232,4 +241,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: move the WebView2-binding and asset-serving sections verbatim to webview2-and-assets.md — this file had crossed the 400-line reference-doc limit.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: bootstrap step 6 and WM_DESTROY now state the single-flight embed and its cancel-on-destroy (decision 0016), which this doc predated; the WebView2/asset sections moved to webview2-and-assets.md earlier the same day.

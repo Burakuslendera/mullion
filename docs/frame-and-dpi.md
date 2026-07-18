@@ -201,6 +201,14 @@ If `devicePixelRatio` is `1` on a scaled monitor, stop reading CSS: the awarenes
 call did not happen, or something created an HWND before it did. Awareness cannot
 be changed once a window exists.
 
+The latch also means a *second* host in the same process — or an application that
+declared `PER_MONITOR_AWARE_V2` itself before constructing the host — sees
+`SetProcessDpiAwarenessContext` refuse a context the process is already in. Since
+issue #48 that already-correct context counts as success: `New` checks the current
+context before treating the refusal as an error, and `Run` re-verifies the
+awareness on the thread that creates the window (`host/dpi_windows.go`). A context
+that is genuinely different stays the fatal error it always was.
+
 ## 7. `WM_DPICHANGED`
 
 Windows hands you a **suggested rect** in `lParam`: the position and size the
@@ -358,4 +366,4 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: normalise "hit test" to the canonical "hit-test" (agents/policy.md terminology rule) in two spots.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: §6 records the already-PMv2 acceptance with its Run-thread re-check (issue #48); the awareness latch itself is unchanged.
