@@ -61,7 +61,7 @@ The gate is therefore a test, and it must stay one:
 
 - Every vtable's slot offsets are pinned with `unsafe.Offsetof`, every interface ID is
   pinned byte for byte, and the settings chain's total slot count (39) is asserted
-  against the sum of its links. Change a struct in `interfaces_windows.go` and the test
+  against the sum of its links. Change a struct in any of the `interfaces_*` files and the test
   tells you immediately; ship it untested and the user finds out.
 - These tests need **no WebView2 runtime and no window** — they are assertions about
   struct layout — so they run in the same headless suite as everything else. Keep them
@@ -332,4 +332,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: add the two `go test -tags <diag>` gates (CI runs them; §5's own rule requires them for tags with test files), keeping this list identical to CONTRIBUTING.md's ladder.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: the vtable structs now live across the `interfaces_*` file family (PR #52), so the ABI-test pointer names the family rather than one file.

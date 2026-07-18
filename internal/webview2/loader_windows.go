@@ -33,8 +33,8 @@ const DefaultTimeout = 60 * time.Second
 // Environment is a live ICoreWebView2Environment.
 //
 // It deliberately holds nothing but the COM pointer: the interface's methods
-// are declared elsewhere (interfaces_windows.go), and duplicating them here
-// would mean two vtable layouts to keep in step with each other.
+// are declared elsewhere (interfaces_environment_windows.go), and duplicating
+// them here would mean two vtable layouts to keep in step with each other.
 type Environment struct {
 	unknown *IUnknown
 }
