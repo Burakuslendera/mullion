@@ -53,17 +53,7 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		// Run never returns. runWindowDestroy posts the quit from a defer, which
 		// runs during the panic unwind (before the guard's recover), then lets the
 		// panic propagate so the guard still logs it.
-		runWindowDestroy(func() {
-			host.stopRenderWatchdog()
-			if host.browser != nil {
-				// Tear the control down while the HWND is still alive. Closing the
-				// controller after its parent window is gone orphans the runtime's
-				// own child windows, and the teardown then reports failures nobody
-				// can act on.
-				host.log.Debug("mullion: webview2 shutdown requested")
-				host.browser.ShuttingDown()
-			}
-		}, func() { procPostQuitMessage.Call(0) })
+		runWindowDestroy(host.windowDestroyTeardown, func() { procPostQuitMessage.Call(0) })
 		return 0
 	case wmNCCalcSize:
 		if nativeFrameProfileHandlesNCCalcSize(activeNativeFrameProfile(), wParam) {
@@ -133,4 +123,23 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 func runWindowDestroy(teardown, quit func()) {
 	defer quit()
 	teardown()
+}
+
+// windowDestroyTeardown is the WM_DESTROY teardown, extracted so its contract is
+// headless-testable. Both timers die with the window: the render watchdog, and
+// the startup show gate - left pending, the gate would fire once after
+// Config.ShowTimeout and post wmNativeShow to the dead HWND, up to two warn
+// lines with nothing to act on (issue #54's companion observation). The WebView
+// is then shut down while the HWND is still alive.
+func (host *Host) windowDestroyTeardown() {
+	host.stopRenderWatchdog()
+	host.stopStartupShowGate()
+	if host.browser != nil {
+		// Tear the control down while the HWND is still alive. Closing the
+		// controller after its parent window is gone orphans the runtime's
+		// own child windows, and the teardown then reports failures nobody
+		// can act on.
+		host.log.Debug("mullion: webview2 shutdown requested")
+		host.browser.ShuttingDown()
+	}
 }

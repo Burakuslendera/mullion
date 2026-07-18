@@ -85,7 +85,10 @@ dependencies are process-wide and irreversible.
    blank window. Under `Config.StartHidden`, steps 6 and 7 defer to the first `Show`.
 
 8. **Message loop.** `GetMessage` / `TranslateMessage` / `DispatchMessage`, owned by
-   the library, pumping on the locked thread until `WM_QUIT`.
+   the library, pumping on the locked thread until `WM_QUIT`. An abnormal
+   `GetMessage` failure tears the window down the same way the pre-loop failure
+   path does - destroy, drain, handle cleared - so even that exit leaves the
+   process reusable and the WebView shut down.
 
 `Run` blocks for the life of the window and must be called from the goroutine that
 owns the process main thread.
@@ -241,4 +244,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: apply the adversarial review of the catch-up — `ready` is the render watchdog signal, not a startup gate, and step 6's pump covers environment and controller creation alike (decision 0016).
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: step 8 records that an abnormal GetMessage failure now tears the window down like the pre-loop failure path (issue #54).
