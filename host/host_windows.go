@@ -60,6 +60,21 @@ type Host struct {
 	// fallback error surface in a loop. It is read and written only on the UI
 	// thread (the navigation-completed callback), so it needs no lock. See issue #3.
 	errorPageShown bool
+
+	// errorSurfaceActive and errorSurfaceLoading admit the fallback error
+	// surface's own web messages. The runtime reports the empty string as the
+	// source of a data: document (issue #56, measured live on 150.0.4078.65 at
+	// both the event args and the core), so the surface cannot be recognised by
+	// its source and the host tracks it by navigation state instead:
+	// errorSurfaceActive arms when the surface is navigated to - before its load
+	// completes, because the injected diagnostics post from document creation -
+	// and disarms when a navigation away from it succeeds. errorSurfaceLoading
+	// marks the surface's own load in flight so its success completion is not
+	// mistaken for that departure. Both are read and written only on the UI
+	// thread (the navigation-completed and web-message callbacks), like
+	// errorPageShown and host.browser.
+	errorSurfaceActive  bool
+	errorSurfaceLoading bool
 }
 
 // New prepares a host. It does not create a window; Run does that.

@@ -4,6 +4,7 @@ package host
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/Burakuslendera/mullion/internal/logsafe"
 	"github.com/Burakuslendera/mullion/internal/webview2"
@@ -11,6 +12,18 @@ import (
 
 func (host *Host) ensureWebView(source string) error {
 	return host.ensureWebViewWith(source, host.createWebView)
+}
+
+// clampSourceForLog bounds a rejected source before it is reduced for the debug
+// log: a foreign data: or blob: URI can be arbitrarily long, and the first bytes
+// are what identify it. The cut can land mid-rune; logsafe's reduction tolerates
+// that, and an imperfect tail beats an unbounded log line.
+func clampSourceForLog(source string) string {
+	const limit = 160
+	if len(source) <= limit {
+		return source
+	}
+	return source[:limit]
 }
 
 // ensureWebViewWith is ensureWebView with the embed injected, so the
@@ -69,11 +82,15 @@ func (host *Host) createWebView() error {
 		host.log.Error("mullion: webview2 runtime error, reason=" + logsafe.Reason(err))
 	}
 	browser.MessageCallback = func(message string, source string, sender *webview2.ICoreWebView2) {
-		if !host.config.messageSourceAllowed(source) {
+		if !host.config.messageSourceAllowed(source) && !host.errorSurfaceMessageAllowed(source) {
 			// The bridge is injected into every document, so a top-level navigation
 			// away from the frontend must not be able to drive Config.Bridge. Drop
 			// the message silently - a foreign origin gets no reply to correlate.
+			// The debug line carries the reduced raw source because the WARN's
+			// origin form collapses every schemeless value to the same ":unknown",
+			// which is what made issue #56 need a live probe to diagnose.
 			host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.Message(urlOrigin(source)))
+			host.log.Debug("mullion: web message rejected, raw source=" + logsafe.Message(clampSourceForLog(source)) + ", len=" + strconv.Itoa(len(source)))
 			return
 		}
 		// A data: source (the error surface, or a hostile data: iframe) is allowed
@@ -222,15 +239,9 @@ func (host *Host) navigateOrTearDown(navigate func() error) error {
 // future change that made it fail could not loop either. Any successful load re-arms
 // the guard, so a Retry that fails again shows the surface again.
 func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success bool) {
-	if success {
-		host.errorPageShown = false
+	if !host.noteNavigationOutcome(success) {
 		return
 	}
-	if host.errorPageShown {
-		host.log.Warn("mullion: fallback error surface load failed, not retrying")
-		return
-	}
-	host.errorPageShown = true
 	host.log.Info("mullion: navigation failed, showing fallback error surface")
 	host.warnIf("error surface navigate", browser.Navigate(errorPageURL(host.config, host.config.startURL())))
 	// Release the startup show gate so the surface appears now instead of after
@@ -238,4 +249,57 @@ func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success boo
 	// frontend never rendered, so it should still fire, and a blank frontend after a
 	// Retry must still be caught.
 	host.requestStartupShow("navigation_failed")
+}
+
+// noteNavigationOutcome runs the error-surface bookkeeping for a completed
+// navigation and reports whether the fallback surface should be navigated to
+// now. It is split from handleNavigationOutcome so the state machine is
+// headless-testable without a Browser.
+//
+// The surface is armed here, at the decision to navigate, rather than when its
+// load completes: the injected diagnostics post their first messages from
+// document creation, before NavigationCompleted fires, and arming late would
+// reject them (the ten-in-a-row WARN flurry issue #56 was reported with). The
+// cost is a window, until the surface's document commits, in which the departing
+// document could post an empty-source message and be granted the reserved window
+// controls; on this path that document is a failed load or mullion's own
+// about:blank, and Config.Bridge stays out of reach regardless
+// (messageSourceTrusted).
+func (host *Host) noteNavigationOutcome(success bool) bool {
+	if success {
+		host.errorPageShown = false
+		if host.errorSurfaceLoading {
+			// The surface's own load completing; it is now the document on
+			// screen, and stays admitted until a navigation leaves it.
+			host.errorSurfaceLoading = false
+			return false
+		}
+		// A navigation away from the surface (a Retry that reached the origin,
+		// or the frontend recovering on its own): its messages are foreign now.
+		host.errorSurfaceActive = false
+		return false
+	}
+	if host.errorPageShown {
+		host.log.Warn("mullion: fallback error surface load failed, not retrying")
+		// The surface itself failed to load, so nothing on screen is mullion's
+		// own page; an empty source must not stay admitted against it.
+		host.errorSurfaceActive = false
+		host.errorSurfaceLoading = false
+		return false
+	}
+	host.errorPageShown = true
+	host.errorSurfaceActive = true
+	host.errorSurfaceLoading = true
+	return true
+}
+
+// errorSurfaceMessageAllowed admits a web message that messageSourceAllowed
+// rejected when it can only plausibly come from mullion's own fallback error
+// surface: the source is the empty string - the runtime's representation of a
+// data: document (issue #56, measured live) - and the surface is the document
+// the host last navigated to. The admission grants the reserved window controls
+// only, so the surface's caption buttons work; Config.Bridge stays behind
+// messageSourceTrusted, which never accepts an empty source (decisions/0014).
+func (host *Host) errorSurfaceMessageAllowed(source string) bool {
+	return source == "" && host.errorSurfaceActive
 }
