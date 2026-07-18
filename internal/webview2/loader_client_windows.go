@@ -70,6 +70,7 @@ func loadClient(path string) (*client, error) {
 		// The runtime is present but does not export the entry point we need.
 		// That means a runtime old enough - or repackaged oddly enough - that
 		// it cannot be driven without WebView2Loader.dll.
+		_ = windows.FreeLibrary(handle)
 		return nil, fmt.Errorf("webview2: %s does not export %s: %w", clientDLL, createEnvironmentExport, err)
 	}
 	loaded := &client{handle: handle, createEnviron: ComProc(address), path: path}
