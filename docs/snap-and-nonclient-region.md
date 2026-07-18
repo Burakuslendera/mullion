@@ -386,3 +386,5 @@ first, or the menu can fail to dismiss on the next outside click.
 
 The full source list — 40 links, grouped by topic and marked `[P]` primary /
 `[F]` secondary — lives in [snap-sources.md](./snap-sources.md).
+
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: repoint two binding references to webview2-and-assets.md after the architecture.md split, and add the document footer this file was missing (agents/notes.md, Mechanics).

@@ -128,11 +128,12 @@ One window procedure switch routes everything.
 - **`WM_GETMINMAXINFO`** — clamps the maximised rect to the monitor work area. Without
   it a frameless window maximises over the taskbar, because the default maximised size
   assumes a system frame that no longer exists.
-- **`WM_DPICHANGED`** — applies the rect Windows suggests and resyncs the WebView
-  bounds. Fires when the window crosses monitors with different scale factors.
-- **`WM_SIZE`, `WM_MOVE`, `WM_MOVING`, `WM_WINDOWPOSCHANGED`, `WM_ENTERSIZEMOVE`,
-  `WM_EXITSIZEMOVE`** — resync the controller's bounds to the parent client rect; the
-  WebView2 controller does not follow its parent automatically.
+- **`WM_DPICHANGED`** — applies the rect Windows suggests, pushes the new scale into
+  the WebView's rasterization scale, and resyncs the WebView bounds. Fires when the
+  window crosses monitors with different scale factors.
+- **`WM_SIZE`, `WM_MOVE`, `WM_MOVING`, `WM_WINDOWPOSCHANGING`, `WM_WINDOWPOSCHANGED`,
+  `WM_ENTERSIZEMOVE`, `WM_EXITSIZEMOVE`** — resync the controller's bounds to the
+  parent client rect; the WebView2 controller does not follow its parent automatically.
 - **`WM_ERASEBKGND`** — returns 1 without painting; the WebView covers the whole client
   area, so erasing the background only produces flicker.
 - **`WM_INITMENU`** — syncs system-menu item state with real window state as the menu
@@ -173,8 +174,13 @@ and never reaches the application:
 
 ```
 WindowShow   WindowHide   WindowClose   WindowMinimise   WindowToggleMaximise
-WindowIsMaximised   WindowStartDrag   WindowStartResize   (diagnostics)
+WindowIsMaximised   WindowStartDrag   WindowStartResize
+WindowShellReady   WindowReady   WindowPhase   WindowDiagnostic
 ```
+
+The first eight are the window controls. The last four are the signals the injected
+scripts send back: the startup gates (`shellReady`, `ready`) and the frontend
+diagnostics (`phase`, `diagnostic`).
 
 Everything else is handed to `Config.Bridge` as the raw request JSON; it returns the raw
 response JSON, or `""` to stay silent. `Bridge` may be nil — window controls

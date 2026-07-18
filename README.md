@@ -260,6 +260,8 @@ mullion.window.close();
 await mullion.window.isMaximised();
 mullion.window.startDrag();                // only needed for a custom drag path
 mullion.window.startResize("top-left");
+mullion.window.show();                     // pairs with Config.StartHidden
+mullion.window.hide();
 
 mullion.shellReady();   // releases the startup gate; the window appears
 mullion.ready();        // stops the render watchdog; call after the first paint
