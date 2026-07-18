@@ -47,8 +47,8 @@ func (host *Host) applyWebViewHardening(browser *webview2.Browser) {
 	if err != nil {
 		host.log.Warn("mullion: accelerator key setting unavailable, reason=" + logsafe.Reason(err))
 	} else {
+		defer settings3.Release()
 		host.warnIf("accelerator keys setting", settings3.PutAreBrowserAcceleratorKeysEnabled(enabled))
-		settings3.Release()
 	}
 
 	if enabled {
