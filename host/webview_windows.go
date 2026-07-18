@@ -121,7 +121,38 @@ func (host *Host) createWebView() error {
 	host.applyTabStripStartup(browser)
 	host.log.Debug("mullion: navigate requested")
 	host.startRenderWatchdog()
-	return browser.Navigate(host.config.startURL())
+	return host.navigateOrTearDown(browser, func() error {
+		return browser.Navigate(host.config.startURL())
+	})
+}
+
+// navigateOrTearDown starts the first navigation and, on failure, undoes the
+// embed commit before returning the error.
+//
+// By this point createWebView has assigned host.browser, and the only code that
+// releases the browser's COM references - Browser.ShuttingDown - runs from the
+// WM_DESTROY case of the window procedure. On the initial embed path a Navigate
+// failure propagates out of Run before the message loop ever starts, so
+// WM_DESTROY is never dispatched, Run's deferred CoUninitialize executes with
+// the environment, controller and core still referenced, and the WebView2
+// browser child process is orphaned. Tearing down here - watchdog stopped,
+// host.browser uncommitted, ShuttingDown while the HWND is still alive - closes
+// that path, and leaves ensureWebView free to embed a fresh browser if the
+// caller retries (a nil-ed host.browser is what its guard checks).
+//
+// navigate is a parameter so the failure contract is unit-testable without a
+// live runtime, exactly like registerEventsOrTearDown on the in-Embed error
+// path (internal/webview2/browser_windows.go): the real release counts need a
+// runtime, but "a Navigate failure uncommits and tears down" is checkable
+// headlessly.
+func (host *Host) navigateOrTearDown(browser *webview2.Browser, navigate func() error) error {
+	if err := navigate(); err != nil {
+		host.stopRenderWatchdog()
+		host.browser = nil
+		browser.ShuttingDown()
+		return err
+	}
+	return nil
 }
 
 // handleNavigationOutcome shows mullion's own controllable surface when a
