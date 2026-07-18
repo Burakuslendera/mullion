@@ -161,6 +161,42 @@ func (host *Host) requestDeferredBoundsSync(source string) {
 	})
 }
 
+// A wmNativeSyncBounds message carries the origin of the sync request in
+// wParam, so the UI thread keeps the source label the bounds diagnostics key on
+// (formatWebViewBoundsMismatchLog treats frontend_ready specially). Zero - what
+// every plain postWindowMessage sends - stays the deferred resync, so the
+// existing posts are unchanged.
+const (
+	boundsSyncWParamDeferred uintptr = iota
+	boundsSyncWParamFrontendReady
+	boundsSyncWParamFrontendShellReady
+)
+
+// boundsSyncSourceFromWParam maps a wmNativeSyncBounds wParam to its source
+// label. Unknown values collapse to the deferred label rather than inventing a
+// new one, so a stray message cannot mint a source no log reader has seen.
+func boundsSyncSourceFromWParam(wParam uintptr) string {
+	switch wParam {
+	case boundsSyncWParamFrontendReady:
+		return "frontend_ready"
+	case boundsSyncWParamFrontendShellReady:
+		return "frontend_shell_ready"
+	default:
+		return "deferred_window_state"
+	}
+}
+
+// postBoundsSync queues a bounds sync on the UI thread instead of running it on
+// the caller's goroutine. MarkFrontendReady and MarkFrontendShellReady carry the
+// any-goroutine contract every exported method honours (see the Host doc), and
+// syncWebViewBounds talks to the STA-bound WebView2 controller - so from a
+// background goroutine the sync must travel as a message, never as a call. The
+// bridge path loses nothing: it already runs on the UI thread, and the posted
+// message is handled on the next pump iteration.
+func (host *Host) postBoundsSync(action string, source uintptr) {
+	host.warnIf(action, postWindowMessageArgs(host.window(), wmNativeSyncBounds, source, 0))
+}
+
 func webViewBoundsMismatch(clientWidth, clientHeight, controllerWidth, controllerHeight int32) bool {
 	if clientWidth < 300 || clientHeight < 200 {
 		return false

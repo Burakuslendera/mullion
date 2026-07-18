@@ -98,7 +98,7 @@ where the window procedure applies it:
 | `ToggleMaximise()` | `WM_APP+25` | post |
 | `StartDrag()` | `WM_APP+26` | post |
 | `StartResize(edge)` | `WM_APP+27` | post; edge travels in `wParam` as a hit-test code |
-| deferred bounds resync | `WM_APP+28` | post (internal) |
+| deferred bounds resync; `MarkFrontendReady()` / `MarkFrontendShellReady()` bounds sync | `WM_APP+28` | post; the source label travels in `wParam` |
 
 The pattern generalises: **the only thread allowed to call a window-affine Win32
 function is the thread that pumps the queue.** `PostMessage` is the asynchronous
@@ -396,4 +396,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: complete the reserved bridge set (WindowShow/WindowHide/WindowClose were intercepted but undocumented); add the missing `Config.URL` TOC entry.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: MarkFrontendReady / MarkFrontendShellReady now post their bounds sync over `WM_APP+28` instead of touching the controller on the caller's goroutine (issue #38); the message's `wParam` carries the source label.

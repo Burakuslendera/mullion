@@ -49,6 +49,12 @@ func (host *Host) stopRenderWatchdog() {
 // MarkFrontendReady records that the frontend has painted. The injected bridge
 // calls this for you when the frontend calls window.<ns>.ready(); it is exported
 // so an application that drives its own readiness signal can too.
+//
+// Safe from any goroutine: the bounds sync it triggers is posted to the UI
+// thread rather than run here, because the caller may be a background goroutine
+// (Run blocks the UI thread, so an application driving its own readiness signal
+// is off-thread by construction) and the sync touches the STA-bound WebView2
+// controller.
 func (host *Host) MarkFrontendReady() {
 	host.renderMu.Lock()
 	if host.frontendReady {
@@ -63,16 +69,18 @@ func (host *Host) MarkFrontendReady() {
 
 	host.recordStartupFrontendReady()
 	host.log.Info("mullion: frontend ready")
-	host.syncWebViewBounds("frontend_ready")
+	host.postBoundsSync("frontend ready bounds post", boundsSyncWParamFrontendReady)
 }
 
 // MarkFrontendShellReady records that the frontend has rendered enough to be
 // shown, and releases the startup show gate. Corresponds to
-// window.<ns>.shellReady().
+// window.<ns>.shellReady(). Safe from any goroutine, exactly as
+// MarkFrontendReady: the bounds sync is posted, and the show gate already
+// posts.
 func (host *Host) MarkFrontendShellReady() {
 	host.recordStartupFrontendShellReady()
 	host.log.Info("mullion: frontend shell ready")
-	host.syncWebViewBounds("frontend_shell_ready")
+	host.postBoundsSync("frontend shell ready bounds post", boundsSyncWParamFrontendShellReady)
 	host.requestStartupShow("frontend_shell_ready")
 }
 
