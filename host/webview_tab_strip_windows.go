@@ -38,6 +38,8 @@ func (host *Host) applyTabStripStartup(browser *webview2.Browser) {
 		host.log.Warn("mullion: tab strip disabled, settings unavailable, reason=" + logsafe.Reason(err))
 		return
 	}
+	// Settings returns an owned reference; held for this configuration pass only.
+	defer settings.Release()
 	host.disableChromiumZoom(settings)
 
 	settings9, err := settings.QuerySettings9()

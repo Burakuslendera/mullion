@@ -438,7 +438,8 @@ func (browser *Browser) SetBackgroundColour(r, g, b, a uint8) error {
 	return controller2.PutDefaultBackgroundColor(Color{A: a, R: r, G: g, B: b})
 }
 
-// Settings returns the base settings object.
+// Settings returns the base settings object. The pointer carries a reference
+// the caller owns and must Release once it is done configuring.
 func (browser *Browser) Settings() (*ICoreWebView2Settings, error) {
 	core := browser.CoreWebView2()
 	if core == nil {
