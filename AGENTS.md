@@ -16,6 +16,7 @@ pull-request mechanics. The rules below are additional, not alternative.
 | Question | File |
 | --- | --- |
 | How does the host work, end to end? | [docs/architecture.md](./docs/architecture.md) |
+| How does the host talk to WebView2, and how are assets served? | [docs/webview2-and-assets.md](./docs/webview2-and-assets.md) |
 | Why is the frame / hit-test / DPI code shaped like this? | [docs/frame-and-dpi.md](./docs/frame-and-dpi.md) |
 | Snap, the non-client region, caption behaviour | [docs/snap-and-nonclient-region.md](./docs/snap-and-nonclient-region.md) |
 | Where do those snap / non-client claims come from? | [docs/snap-sources.md](./docs/snap-sources.md) |

@@ -71,7 +71,7 @@ with mullion opening nothing at all, so there is no socket code to gate.
 matrix — scheme/host/path-traversal rejection, `index.html` rewrite, `no-store` —
 runs in `WebResourceRequested`, which only fires for the virtual host. A caller
 serving their own origin owns those concerns themselves. This is stated in the field
-doc and in `architecture.md`, because it is a real transfer of responsibility.
+doc and in `webview2-and-assets.md`, because it is a real transfer of responsibility.
 
 **The bridge reaches the caller's origin.** That is the point (their frontend calls
 `window.<ns>`), and the loopback pin is what bounds it. If a caller ever serves

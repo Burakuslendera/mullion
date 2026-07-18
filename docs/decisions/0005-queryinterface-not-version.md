@@ -76,5 +76,5 @@ compare here is a guess wearing a number.
 - `webview_tab_strip_windows.go`: `QuerySettings9` gates non-client region
   support and logs `fallback=classic_titlebar` when it fails; `QuerySettings5`
   gates pinch zoom the same way.
-- `docs/architecture.md` ("the version floor lives in the loader, not in the
-  runtime") and `docs/snap-and-nonclient-region.md` section 4.
+- `docs/webview2-and-assets.md` ("the version floor lives in the loader, not in
+  the runtime") and `docs/snap-and-nonclient-region.md` section 4.

@@ -106,7 +106,7 @@ need is the one value you cannot produce.
   through `…Settings6` and stop. `Settings9` is **not** in their settings vtable — and
   this is still true on their main branches, so **bumping a dependency does not help.**
   You must bind the interface yourself. This library ends up binding the whole surface
-  itself (`internal/webview2`, see `docs/architecture.md`), and this interface is why
+  itself (`internal/webview2`, see `docs/webview2-and-assets.md`), and this interface is why
   that road opened: needing one COM interface a binding does not cover leaves you with a
   fork, a raw-COM escape hatch inside someone else's abstraction, or your own binding.
 
@@ -182,7 +182,7 @@ pointer is borrowed — do **not** release it, or you will over-release an objec
 not own. This is also the *only* correct way to ask whether the running runtime supports
 non-client regions: the version floor that `WebView2Loader.dll` enforces does not exist
 inside the runtime DLL, so a version comparison proves nothing (see
-`docs/architecture.md`). Ask the object, not the version number.
+`docs/webview2-and-assets.md`). Ask the object, not the version number.
 
 **A trap worth naming:** auto-generated COM bindings in this ecosystem sometimes pass
 `BOOL` properties by *address* (`&goBool`). A Win32 `BOOL` is a 4-byte int passed **by

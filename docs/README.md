@@ -12,6 +12,7 @@ other document answers one narrower question below.
 | Question | Document |
 | --- | --- |
 | How does the host work, end to end? | [architecture.md](./architecture.md) |
+| How does the host talk to WebView2, and how are assets served? | [webview2-and-assets.md](./webview2-and-assets.md) |
 | Why is the frame / hit-test / DPI code shaped like this? | [frame-and-dpi.md](./frame-and-dpi.md) |
 | Snap, the non-client region and caption behaviour | [snap-and-nonclient-region.md](./snap-and-nonclient-region.md) |
 | Where do those snap / non-client claims come from? | [snap-sources.md](./snap-sources.md) |
@@ -36,4 +37,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-07-15 | Editor: Claude (Opus 4.8) | Change: add a docs/ index so the folder view lands on a readable map instead of a bare file list.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: index webview2-and-assets.md, split out of architecture.md at the 400-line reference-doc limit.

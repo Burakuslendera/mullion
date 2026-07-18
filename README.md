@@ -183,7 +183,8 @@ list, because it is the reason this repository exists:
 
 | Document                                                             | What it covers                                                                   |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| [architecture.md](docs/architecture.md)                               | Bootstrap order, threading model, asset serving without a port, the bridge        |
+| [architecture.md](docs/architecture.md)                               | Bootstrap order, threading model, message routing, the bridge                     |
+| [webview2-and-assets.md](docs/webview2-and-assets.md)                 | The in-house WebView2 COM binding, and asset serving without a port               |
 | [frame-and-dpi.md](docs/frame-and-dpi.md)                             | `WM_NCCALCSIZE`, hit-testing, per-monitor DPI, restore flicker                    |
 | [snap-and-nonclient-region.md](docs/snap-and-nonclient-region.md)     | What WebView2 can and cannot do with Windows 11 snap, and the COM binding for it  |
 | [snap-sources.md](docs/snap-sources.md)                               | The 40 primary and secondary sources those findings rest on                       |

@@ -68,7 +68,7 @@ day a range request has to be honoured, this record is due for review.
 - `assets_windows_test.go`: the boundary matrix - root maps to `index.html`,
   wrong host 403, wrong scheme 403, `../` and `%2e%2e/` traversal 403, missing
   404, read failure 500, `no-store` asserted on every response.
-- `docs/architecture.md`, "Asset serving without a port": the same table, plus
-  the COM stream-lifetime rules that make it work.
+- `docs/webview2-and-assets.md`, "Asset serving without a port": the same table,
+  plus the COM stream-lifetime rules that make it work.
 - No `net.Listen` and no `http.Server` exists anywhere in the host package; the
   grep for them is part of the verification checklist and must stay empty.
