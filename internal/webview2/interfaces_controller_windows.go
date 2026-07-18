@@ -12,6 +12,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// Transcribed from the MIDL_INTERFACE attributes in WebView2.h. A single
+// swapped nibble compiles fine and only shows up as a QueryInterface miss at
+// runtime, so interfaces_windows_test.go re-parses each one from its canonical
+// string form and compares.
 var (
 	// IIDICoreWebView2Controller2 = {c979903e-d4ca-4228-92eb-47ee3fa96eab}
 	IIDICoreWebView2Controller2 = windows.GUID{

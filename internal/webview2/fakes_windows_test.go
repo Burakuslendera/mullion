@@ -11,7 +11,7 @@ package webview2
 // handlers_windows_test.go plays the runtime's part when it calls Invoke.
 //
 // Every trampoline is created once, at package init, because NewCallback
-// allocates from a small fixed table that is never freed (see com_windows.go).
+// allocates from a small fixed table that is never freed (see comserver_windows.go).
 // Per-object state lives in a registry keyed by the object's address, so one
 // set of trampolines serves every fake object in the suite. The callbacks run
 // synchronously on the calling goroutine - a vtable call is just an indirect
