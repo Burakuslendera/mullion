@@ -257,8 +257,9 @@ func (host *Host) messageLoop() error {
 			// Best effort by construction: the documented causes of -1 are a
 			// corrupted queue or an invalid handle (unverified - this branch has
 			// never been observed live), and on a wounded thread the destroy and
-			// drain may themselves fail; strictly better than returning with
-			// everything alive.
+			// drain may themselves fail. Never worse than returning with
+			// everything alive, and strictly better whenever the handle still
+			// is.
 			host.destroyWindowOutsideLoop("abnormal_loop_exit")
 			return syscallError(err)
 		case 0:
@@ -286,8 +287,8 @@ func (host *Host) window() windowHandle {
 // window, and a second Run in the same process cannot register the class again.
 // DestroyWindow dispatches WM_DESTROY synchronously on this thread - the
 // teardown case runs (shutting down a still-committed browser on the abnormal
-// exit; on the pre-loop paths host.browser is nil or already torn down) and
-// posts WM_QUIT. With no loop left to consume it, that WM_QUIT would sit in
+// exit or an OnReady panic after the embed; on the other pre-loop paths
+// host.browser is nil or already torn down) and posts WM_QUIT. With no loop left to consume it, that WM_QUIT would sit in
 // the thread queue and poison the next message loop on this thread - a later
 // Run would read it first and exit immediately, a silent one-shot failure - so
 // the quit is drained right after the destroy. The stored handle is cleared

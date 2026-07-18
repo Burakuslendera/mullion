@@ -79,16 +79,19 @@ func TestDestroyWindowOutsideLoopIsANoOpWithoutAWindow(t *testing.T) {
 	}
 }
 
-// TestWindowDestroyTeardownStopsTheShowGateAndBrowser locks the WM_DESTROY
-// teardown contract: the startup show gate dies with the window - left armed,
-// it would fire after the destroy and post wmNativeShow to the dead HWND
-// (issue #54's companion observation) - and a committed browser is shut down
-// while the HWND is still alive. The render watchdog stop is part of the same
-// teardown; its timer state is not observable from here and is covered by the
-// watchdog's own tests.
-func TestWindowDestroyTeardownStopsTheShowGateAndBrowser(t *testing.T) {
-	host, _ := newTestHost(t, Config{ShowTimeout: time.Hour})
+// TestWindowDestroyTeardownStopsTheTimersAndBrowser locks the WM_DESTROY
+// teardown contract: both timers die with the window - a startup show gate
+// left armed would fire after the destroy and post wmNativeShow to the dead
+// HWND (issue #54's companion observation), and a surviving render watchdog
+// would report a render timeout against a window that no longer exists - and
+// a committed browser is shut down while the HWND is still alive. The
+// watchdog's timer state is not inspectable, so its stop is observed the same
+// way TestNavigateFailureStopsTheRenderWatchdog observes it: the timeout ERROR
+// must never appear.
+func TestWindowDestroyTeardownStopsTheTimersAndBrowser(t *testing.T) {
+	host, logger := newTestHost(t, Config{ShowTimeout: time.Hour, RenderTimeout: 20 * time.Millisecond})
 	host.startStartupShowGate()
+	host.startRenderWatchdog()
 	browser := webview2.New()
 	host.browser = browser
 
@@ -102,5 +105,9 @@ func TestWindowDestroyTeardownStopsTheShowGateAndBrowser(t *testing.T) {
 	}
 	if !browser.IsShuttingDown() {
 		t.Fatal("the WM_DESTROY teardown must shut the committed browser down")
+	}
+	time.Sleep(60 * time.Millisecond)
+	if strings.Contains(logger.String(), "mullion: frontend render timeout") {
+		t.Fatal("the render watchdog fired after WM_DESTROY tore the window down")
 	}
 }

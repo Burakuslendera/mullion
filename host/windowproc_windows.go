@@ -127,10 +127,10 @@ func runWindowDestroy(teardown, quit func()) {
 
 // windowDestroyTeardown is the WM_DESTROY teardown, extracted so its contract is
 // headless-testable. Both timers die with the window: the render watchdog, and
-// the startup show gate - left pending, the gate would fire after the destroy
-// and post wmNativeShow to the dead HWND, a warn per Config.ShowTimeout with
-// nothing to act on (issue #54's companion observation). The WebView is then
-// shut down while the HWND is still alive.
+// the startup show gate - left pending, the gate would fire once after
+// Config.ShowTimeout and post wmNativeShow to the dead HWND, up to two warn
+// lines with nothing to act on (issue #54's companion observation). The WebView
+// is then shut down while the HWND is still alive.
 func (host *Host) windowDestroyTeardown() {
 	host.stopRenderWatchdog()
 	host.stopStartupShowGate()
