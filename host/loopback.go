@@ -88,6 +88,14 @@ func (config Config) trustedOrigin() string {
 // navigation can reach while inheriting the previous document's origin). Admitting
 // data: is safe: only mullion itself can put a data: document in the top frame,
 // because browsers block a script-driven top navigation to a data: URL.
+//
+// The data: branch is belt and braces, kept for a runtime that reports the URI:
+// the runtime measured live (150.0.4078.65) reports a data: document's source as
+// the empty string instead, at the event args and the core alike, so the error
+// surface never actually reaches this branch there. The empty-source case is
+// admitted per navigation state by Host.errorSurfaceMessageAllowed
+// (webview_windows.go, issue #56); this pure function stays source-only and
+// keeps rejecting "".
 func (config Config) messageSourceAllowed(source string) bool {
 	if strings.HasPrefix(source, "data:") {
 		return true
@@ -97,10 +105,12 @@ func (config Config) messageSourceAllowed(source string) bool {
 
 // messageSourceTrusted reports whether a message from source may drive the
 // application's own Config.Bridge methods, not just the reserved window controls.
-// Only the trusted origin qualifies. A data: source is allowed (messageSourceAllowed)
-// so the error page's caption buttons work, but it is NOT trusted for Config.Bridge:
-// a data: document may be a hostile iframe a script created, not mullion's own error
-// surface (decisions/0014).
+// Only the trusted origin qualifies. The error surface's messages are allowed
+// (messageSourceAllowed, or Host.errorSurfaceMessageAllowed for the empty-source
+// form the runtime actually reports - issue #56) so its caption buttons work, but
+// they are NOT trusted for Config.Bridge: a data: document may be a hostile iframe
+// a script created, not mullion's own error surface, and an empty source says even
+// less (decisions/0014).
 func (config Config) messageSourceTrusted(source string) bool {
 	return sameHTTPOrigin(source, config.trustedOrigin())
 }

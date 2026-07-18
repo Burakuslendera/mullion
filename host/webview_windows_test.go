@@ -192,3 +192,107 @@ func TestNavigateFailureStopsTheRenderWatchdog(t *testing.T) {
 		t.Fatal("the render watchdog fired after the failed navigation tore the webview down")
 	}
 }
+
+// The tests below lock the error-surface admission state machine (issue #56).
+// The runtime reports a data: document's source as the empty string - measured
+// live at both the event args and the core - so the fallback error surface can
+// only be recognised by navigation state, and these transitions are what decide
+// whether its caption buttons work. Each test walks noteNavigationOutcome the
+// way NavigationCompletedCallback would.
+
+// A host that never saw a navigation failure must keep rejecting the empty
+// source: it is also what about:blank-adjacent opaque documents report, and
+// admitting it unconditionally would hand every such frame the window controls.
+func TestErrorSurfaceEmptySourceRejectedByDefault(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("an empty source must be rejected while no error surface is up")
+	}
+	if host.errorSurfaceMessageAllowed("https://evil.example/x") {
+		t.Fatal("a non-empty foreign source must never pass the error-surface gate")
+	}
+}
+
+// A navigation failure arms the surface immediately - before its load
+// completes - because the injected diagnostics post from document creation,
+// ahead of NavigationCompleted. Arming late would reject exactly the flurry
+// issue #56 was reported with.
+func TestErrorSurfaceAdmitsEmptySourceOnNavigationFailure(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+
+	if !host.noteNavigationOutcome(false) {
+		t.Fatal("the first navigation failure must ask for the surface to be shown")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the surface's empty-source messages must be admitted from the moment it is navigated to")
+	}
+	if host.errorSurfaceMessageAllowed("https://evil.example/x") {
+		t.Fatal("arming the surface must not admit foreign origins")
+	}
+	if host.config.messageSourceTrusted("") {
+		t.Fatal("an empty source must never be trusted for Config.Bridge, error surface or not")
+	}
+}
+
+// The surface's own load completing is not a departure: the empty source stays
+// admitted afterwards, which is when a human actually clicks the caption
+// buttons.
+func TestErrorSurfaceStaysAdmittedThroughItsOwnLoad(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.noteNavigationOutcome(false)
+
+	if host.noteNavigationOutcome(true) {
+		t.Fatal("the surface's own successful load must not trigger another surface navigation")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the surface must stay admitted after its own load completes")
+	}
+}
+
+// A successful navigation away from the surface - Retry reaching the origin,
+// or the frontend recovering - disarms it: whatever document is up now owns
+// the window, and an empty source is foreign again.
+func TestErrorSurfaceDisarmsWhenNavigationLeavesIt(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.noteNavigationOutcome(false) // failure: surface armed and navigated
+	host.noteNavigationOutcome(true)  // the surface's own load
+	host.noteNavigationOutcome(true)  // Retry reached the origin
+
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("leaving the surface must disarm the empty-source admission")
+	}
+}
+
+// A Retry that fails again re-shows the surface, and the admission must follow
+// it through the whole loop: fail, load, fail again, load again.
+func TestErrorSurfaceRearmsWhenRetryFailsAgain(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.noteNavigationOutcome(false) // failure: surface armed
+	host.noteNavigationOutcome(true)  // the surface's own load
+
+	if !host.noteNavigationOutcome(false) {
+		t.Fatal("a failed Retry must show the surface again")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the re-shown surface must be admitted like the first one")
+	}
+}
+
+// When the surface itself fails to load, nothing on screen is mullion's own
+// page, so the admission must drop with it - a stale allow against an unknown
+// document is the hole the gate exists to close.
+func TestErrorSurfaceDisarmsWhenTheSurfaceItselfFailsToLoad(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	host.noteNavigationOutcome(false) // failure: surface armed and navigated
+
+	if host.noteNavigationOutcome(false) {
+		t.Fatal("the surface failing to load must not re-navigate in a loop")
+	}
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("a surface that failed to load must not keep the empty source admitted")
+	}
+	if !strings.Contains(logger.String(), "fallback error surface load failed") {
+		t.Fatal("the dead-surface branch must say so in the log")
+	}
+}

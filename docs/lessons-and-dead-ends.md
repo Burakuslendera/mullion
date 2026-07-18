@@ -8,6 +8,24 @@ Everything below was built, run, and failed. Each entry: **what was tried → wh
 
 Working rule throughout: a claim is only "verified" if it was observed at runtime on a real window. Passing tests, clean logs and plausible static analysis have each been wrong here.
 
+## Contents
+
+- [1. The bug that forced us to own the window: maximized title bar drag-down restore](#1-the-bug-that-forced-us-to-own-the-window-maximized-title-bar-drag-down-restore)
+- [2. `SWP_FRAMECHANGED` without `SWP_NOMOVE | SWP_NOSIZE` collapses the window](#2-swp_framechanged-without-swp_nomove--swp_nosize-collapses-the-window)
+- [3. Showing the parent HWND does not show the WebView](#3-showing-the-parent-hwnd-does-not-show-the-webview)
+- [4. WebView2 does not render while hidden](#4-webview2-does-not-render-while-hidden--hide-until-ready-then-show-is-impossible)
+- [5. Letting `DefWindowProc` handle `WM_NCCALCSIZE`](#5-letting-defwindowproc-handle-wm_nccalcsize--better-numbers-broken-product)
+- [6. The delegated `HTCAPTION` trap](#6-the-delegated-htcaption-trap-the-whole-native-caption-is-a-drag-region)
+- [7. Weeks spent in the wrong layer](#7-weeks-spent-in-the-wrong-layer--the-native-tooltip-that-was-a-dom-element)
+- [8. Serving frontend assets over `localhost` with a random port](#8-serving-frontend-assets-over-localhost-with-a-random-port)
+- [9. Measuring shell motion honestly](#9-measuring-shell-motion-honestly-ab-harness-methodology)
+- [10. `MinTrackSize` is not what you think it is](#10-mintracksize-is-not-what-you-think-it-is)
+- [11. Injected mouse input never reaches the WebView2 child](#11-injected-mouse-input-never-reaches-the-webview2-child)
+- [12. Performance notes: where the WebView2 levers actually are](#12-performance-notes-where-the-webview2-levers-actually-are)
+- [13. Building on a third-party WebView2 binding](#13-building-on-a-third-party-webview2-binding--the-slow-squeeze)
+- [14. A data: document has no reportable source](#14-a-data-document-has-no-reportable-source)
+- [15. The short version](#15-the-short-version)
+
 ---
 
 ## 1. The bug that forced us to own the window: maximized title bar drag-down restore
@@ -232,7 +250,43 @@ It is more code, and the ABI parts of it fail by crashing rather than by returni
 
 ---
 
-## 14. The short version
+## 14. A data: document has no reportable source
+
+**Symptom.** The fallback error surface loads, the window appears — and every
+bridge message the page posts is rejected, `untrusted source, origin=:unknown`,
+ten in a row: dead caption buttons on the one page whose whole job is having
+working caption buttons (issue #56).
+
+**Tried and dead.**
+
+- **Recognise the surface by its message source.** The `WebMessageReceived`
+  args' `GetSource` returns the **empty string** for a data: document — not the
+  data: URI, not `null` (measured live, runtime 150.0.4078.65).
+- **Ask the core at message time.** `ICoreWebView2.get_Source` — the current
+  top-level document's URI — returns the empty string for the same document.
+  The runtime erases the data: URI at both levels, so there is nothing to
+  match; a `GetSource` binding written for this was deleted as dead code.
+
+A diagnostic trap on the way: the rejection log's origin form collapses every
+schemeless source — empty and `null` alike — to the same `:unknown`, so the raw
+value can only be learned from a live probe. The rejection path now logs the
+reduced raw source at debug for exactly this reason.
+
+**Instead.** The host itself knows when it navigated to its own surface, so
+identity comes from a UI-thread state machine (`noteNavigationOutcome`,
+`errorSurfaceActive` in `host/webview_windows.go`): the empty source is admitted
+only while the surface is the current document, and only for the reserved
+window controls — `Config.Bridge` stays origin-gated (decisions/0014). The
+accepted costs of that identification, and what would retire it, are recorded
+in decisions/0017.
+
+**Lesson.** When the runtime's own identity channel reports nothing, parsing
+harder is not the answer; the identity you need must come from state you
+already own.
+
+---
+
+## 15. The short version
 
 1. **Search the DOM before the frame.** Native-looking symptoms are frequently web bugs. (§7)
 2. **Log the container, not the content.** A tiny render is usually a tiny rect. (§2)
@@ -243,5 +297,6 @@ It is more code, and the ABI parts of it fail by crashing rather than by returni
 7. **When five fixes produce clean logs and no change, the ownership model is wrong** — not the message handling. (§1)
 8. **No listening sockets in a desktop app.** Intercept the resource request instead. (§8)
 9. **Count your escape hatches into a dependency.** When you have forked it once and bypassed it once, the abstraction is already gone; owning the binding is cheaper than pretending otherwise. (§13)
+10. **A data: document reports no source.** Identify your own surfaces from navigation state you already hold, not by parsing the source harder. (§14)
 
-> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: normalise "titlebar" to the two-word "title bar" used everywhere else (agents/policy.md terminology rule); collapse a doubled section divider before §13.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: new §14 — the data: error surface has no reportable source at either GetSource level (issue #56, measured live), so admission comes from the host's own navigation state; the short version renumbered to §15.
