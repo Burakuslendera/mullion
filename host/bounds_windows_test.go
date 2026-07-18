@@ -63,6 +63,28 @@ func TestFormatWebViewBoundsLogs(t *testing.T) {
 	}
 }
 
+// The wParam-to-source mapping is what keeps the diagnostics honest once the
+// frontend-ready syncs travel as messages: "frontend_ready" drives the special
+// "frontend ready but surface tiny" warning, so losing the label to a generic
+// deferred one would erase the one line that separates an asset failure from a
+// late resize.
+func TestBoundsSyncSourceFromWParam(t *testing.T) {
+	tests := []struct {
+		wParam uintptr
+		want   string
+	}{
+		{boundsSyncWParamDeferred, "deferred_window_state"},
+		{boundsSyncWParamFrontendReady, "frontend_ready"},
+		{boundsSyncWParamFrontendShellReady, "frontend_shell_ready"},
+		{99, "deferred_window_state"},
+	}
+	for _, test := range tests {
+		if got := boundsSyncSourceFromWParam(test.wParam); got != test.want {
+			t.Errorf("boundsSyncSourceFromWParam(%d) = %q, want %q", test.wParam, got, test.want)
+		}
+	}
+}
+
 func TestDeferredWebViewBoundsSyncDoesNotWarn(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true})
 

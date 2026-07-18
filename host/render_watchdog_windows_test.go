@@ -53,6 +53,63 @@ func TestRenderWatchdogStopsOnFrontendReady(t *testing.T) {
 	}
 }
 
+// The two frontend-ready marks are exported with the any-goroutine contract
+// (see the Host doc): they must post their WebView work to the UI thread, never
+// run it on the caller's goroutine, because syncWebViewBounds touches the
+// STA-bound WebView2 controller and races host.browser when called off-thread.
+//
+// The synchronous path is observable without a window: syncWebViewBounds with
+// no browser embedded always logs a bounds-sync line ("skipped" here, since the
+// host is not StartHidden), so its absence proves the sync now travels as a
+// message instead of running inline. Before the fix both tests fail on that
+// line; the posted message itself needs a pumping window and stays a live
+// check.
+
+func TestMarkFrontendReadyPostsBoundsSyncInsteadOfTouchingCOM(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	host.MarkFrontendReady()
+
+	text := logger.String()
+	if !strings.Contains(text, "mullion: frontend ready") {
+		t.Fatalf("log missing the frontend ready line:\n%s", text)
+	}
+	if strings.Contains(text, "webview bounds sync") {
+		t.Fatalf("MarkFrontendReady ran the bounds sync on the caller's goroutine:\n%s", text)
+	}
+}
+
+func TestMarkFrontendShellReadyPostsBoundsSyncInsteadOfTouchingCOM(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	host.MarkFrontendShellReady()
+
+	text := logger.String()
+	if !strings.Contains(text, "mullion: frontend shell ready") {
+		t.Fatalf("log missing the frontend shell ready line:\n%s", text)
+	}
+	if strings.Contains(text, "webview bounds sync") {
+		t.Fatalf("MarkFrontendShellReady ran the bounds sync on the caller's goroutine:\n%s", text)
+	}
+}
+
+// A second MarkFrontendReady is a no-op: the render watchdog is already
+// cancelled and no further bounds sync is queued. Locks the early-return so the
+// posted sync cannot multiply if a frontend calls ready() repeatedly.
+func TestMarkFrontendReadyIsIdempotent(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	host.MarkFrontendReady()
+	host.MarkFrontendReady()
+
+	// Count the exact line: with no window the bounds post may also log a
+	// "frontend ready bounds post failed" warning, which a substring count
+	// would miscount as a second ready.
+	if got := strings.Count(logger.String(), "msg=mullion: frontend ready\n"); got != 1 {
+		t.Fatalf("frontend ready logged %d times, want 1:\n%s", got, logger.String())
+	}
+}
+
 func TestRenderWatchdogDisabled(t *testing.T) {
 	host, logger := newTestHost(t, Config{RenderTimeout: -1})
 	host.startRenderWatchdog()

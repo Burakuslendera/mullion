@@ -29,7 +29,7 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		host.startResizeFromMessage(int32(wParam))
 		return 0
 	case wmNativeSyncBounds:
-		host.syncWebViewBounds("deferred_window_state")
+		host.syncWebViewBounds(boundsSyncSourceFromWParam(wParam))
 		return 0
 	case wmClose:
 		host.log.Debug("mullion: close requested")
