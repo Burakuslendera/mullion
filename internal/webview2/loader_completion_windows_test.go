@@ -159,3 +159,20 @@ func TestCompletionResultRejectsASuccessWithNoResult(t *testing.T) {
 		t.Fatal("success with a nil result must be an error")
 	}
 }
+
+// abandon is called from two exits (timeout and the synchronous-failure
+// defence); a repeated call must stay a no-op so no ordering of those exits
+// can double-release anything.
+func TestAbandonIsIdempotent(t *testing.T) {
+	handler := newTestCompletedHandler(t)
+	object, state := newFakeUnknown(t)
+
+	invoked(handler.this, sOK, uintptr(unsafe.Pointer(object)))
+	handler.abandon()
+	handler.abandon()
+
+	if state.releases != 1 {
+		t.Fatalf("releases after two abandons = %d, want 1: the drain must fire once, never twice", state.releases)
+	}
+	runtime.KeepAlive(object)
+}

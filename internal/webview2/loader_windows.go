@@ -959,6 +959,12 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 		handler.this,
 	)
 	if err := hres(hr); err != nil {
+		// A synchronous failure means the runtime never scheduled the completion
+		// (the async contract), so nothing can arrive late - but that contract is
+		// the runtime's to break, and abandoning costs nothing: if an Invoke ever
+		// did fire after this return, it would release its reference instead of
+		// stranding it in a buffer nobody drains.
+		handler.abandon()
 		return nil, fmt.Errorf("webview2: %s: %w", createEnvironmentExport, err)
 	}
 
@@ -1036,6 +1042,9 @@ func (e *Environment) CreateControllerWithTimeout(parent windows.Handle, timeout
 		handler.this,
 	)
 	if err := hres(hr); err != nil {
+		// Same defence as the environment path: a synchronous failure schedules
+		// no completion, but abandoning is free and seals the contract-breach case.
+		handler.abandon()
 		return nil, fmt.Errorf("webview2: CreateCoreWebView2Controller: %w", err)
 	}
 
