@@ -69,7 +69,7 @@ compare here is a guess wearing a number.
 
 ## Evidence
 
-- `internal/webview2/loader_windows.go`, `resolveTargetVersion`: the three live
+- `internal/webview2/loader_version_windows.go`, `resolveTargetVersion`: the three live
   findings above, recorded next to the code they constrain.
 - `internal/webview2/loader_windows_test.go`, `TestResolveTargetVersion`: locks
   the rule that the target version is never null and never invented.

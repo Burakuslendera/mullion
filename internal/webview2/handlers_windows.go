@@ -4,7 +4,7 @@ package webview2
 
 // Event handlers: the four COM objects WebView2 calls back into.
 //
-// Everything in interfaces_windows.go is outbound - Go calling the runtime.
+// Everything in the interfaces_* files is outbound - Go calling the runtime.
 // This file is the other direction. add_WebMessageReceived and friends take a
 // COM object that *we* implement, and the runtime invokes it later, on its own
 // schedule, from its own stack. That inversion is where the sharp edges are:

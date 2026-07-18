@@ -10,7 +10,7 @@ import (
 
 // TestSettingsReleaseDropsExactlyOneReference locks the Release shim for the
 // base settings object. GetSettings returns an owned reference
-// (interfaces_windows.go), and until this shim existed nothing outside the
+// (interfaces_core_windows.go), and until this shim existed nothing outside the
 // package could drop it - so every Embed pinned the two settings references the
 // host takes (webview hardening and tab-strip startup) for the life of the
 // process. The fake vtable is the real ICoreWebView2SettingsVtbl, so the call
