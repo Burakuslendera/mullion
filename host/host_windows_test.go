@@ -3,8 +3,10 @@
 package host
 
 import (
+	"runtime"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 // teardownBeforeLoop's ordering is the contract: the destroy's WM_DESTROY
@@ -33,6 +35,31 @@ func TestDPIAwarenessEnableIsRepeatable(t *testing.T) {
 	if err := enablePerMonitorV2DPIAwareness(); err != nil {
 		t.Fatalf("second enable = %v, want nil: an already-PMv2 process is success, not access denied", err)
 	}
+	if !alreadyPerMonitorV2DPIAware() {
+		t.Fatal("the process just enabled PMv2; the Run-thread re-check must see it")
+	}
+}
+
+// The drain must actually remove a pending WM_QUIT from the thread queue - the
+// ordering test above proves when it runs, this proves what it does. WM_QUIT
+// is a thread message, so the check needs a locked thread and no window.
+func TestDrainThreadQuitMessageRemovesAPendingQuit(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		procPostQuitMessage.Call(0)
+		drainThreadQuitMessage()
+
+		var message msg
+		got, _, _ := procPeekMessage.Call(uintptr(unsafe.Pointer(&message)), 0, wmQuit, wmQuit, pmRemove)
+		if got != 0 {
+			t.Error("a WM_QUIT survived the drain: the next message loop on this thread would exit immediately")
+		}
+	}()
+	<-done
 }
 
 // With no window there is nothing to tear down: the zero-handle guard must
