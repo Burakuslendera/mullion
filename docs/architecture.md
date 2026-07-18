@@ -42,7 +42,10 @@ dependencies are process-wide and irreversible.
    inherits that mode, so getting this wrong yields a blurry, bitmap-stretched
    WebView on high-DPI monitors with no error reported anywhere. `New` applies the
    context immediately and stores the result; `Run` treats a failure as fatal rather
-   than continuing into a window that can never be correct. A caller with windows of
+   than continuing into a window that can never be correct. An already-per-monitor-v2
+   process — a second host, or an application that declared the context itself — is
+   recognised as success rather than refused, and the awareness is re-verified on the
+   `Run` thread before anything is created. A caller with windows of
    its own must construct the host first.
 
 2. **`runtime.LockOSThread()`.** A Win32 window belongs to the thread that created
@@ -58,7 +61,9 @@ dependencies are process-wide and irreversible.
 
 4. **Window class registration.** The name comes from `Config.ClassName` and must be
    unique per process. It is unregistered when `Run` returns, so a later host in the
-   same process can register it again.
+   same process can register it again — a pre-loop failure destroys the window first
+   (and drains the quit that teardown posts), so the unregister succeeds on that
+   path too.
 
 5. **`HWND` creation.** The window procedure is bound at class registration, so the
    first messages the window ever receives — `WM_NCCALCSIZE` among them — already
@@ -403,4 +408,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: document the inbound `WebResourceRequested` refcount rule (issue #41), and the frontend-ready bounds sync now posted over `WM_APP+28` with the source label in `wParam` (issue #38).
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: bootstrap steps 1 and 4 now state the already-PMv2 recovery with its Run-thread re-check, and the pre-loop window teardown that keeps the class unregister true on the failure path (issue #48).

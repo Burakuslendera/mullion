@@ -96,6 +96,18 @@ func (host *Host) Run() (runErr error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	if host.dpiAwarenessErr == nil && !alreadyPerMonitorV2DPIAware() {
+		// New may have run on a different thread. Its already-PMv2 acceptance
+		// samples the New thread, and a thread-level override there cannot
+		// vouch for this one - the thread the window is created on. A process
+		// that is genuinely PMv2 passes here too (no override in play), so the
+		// re-check costs nothing on the normal path; it only turns the exotic
+		// override-on-another-thread case back into the fatal error the DPI
+		// gate promises. Unreachable below Windows 1703: the enable has
+		// already failed there and the error short-circuits this check.
+		host.dpiAwarenessErr = errors.New("the Run thread is not per-monitor-v2 dpi aware")
+	}
+
 	loopStarted := false
 	lastStage := "startup"
 	defer func() {
@@ -145,6 +157,18 @@ func (host *Host) Run() (runErr error) {
 		return err
 	}
 	defer unregisterWindowClass(host.config.ClassName, host.instance)
+	// A pre-loop exit must not leave the window behind - and that includes a
+	// panic (an OnReady that explodes, say), which a straight-line call on the
+	// error return would miss: the unwind would skip it, the class unregister
+	// above would fail against the live window, and the next Run would die in
+	// RegisterClassEx (issue #48). Registered after the unregister defer so it
+	// runs before it (LIFO); gated on loopStarted so a normal loop exit - whose
+	// window died through WM_DESTROY - changes nothing.
+	defer func() {
+		if !loopStarted {
+			host.destroyWindowBeforeLoop()
+		}
+	}()
 	lastStage = "mullion: hwnd created"
 	host.log.Debug("mullion: hwnd created")
 
@@ -224,4 +248,66 @@ func (host *Host) window() windowHandle {
 	host.mu.RLock()
 	defer host.mu.RUnlock()
 	return host.hwnd
+}
+
+// destroyWindowBeforeLoop tears the HWND down when Run fails after createWindow
+// but before the message loop starts.
+//
+// Without it the window outlives Run invisibly: the deferred
+// unregisterWindowClass fails with ERROR_CLASS_HAS_WINDOWS against the live
+// window, and a second Run in the same process cannot register the class again
+// (issue #48). DestroyWindow dispatches WM_DESTROY synchronously on this
+// thread - the teardown case runs (host.browser is nil or already torn down on
+// every path that reaches here) and posts WM_QUIT. With no loop ever starting,
+// that WM_QUIT would sit in the thread queue and poison the next message loop
+// on this thread - a later Run would read it first and exit immediately, a
+// silent one-shot failure - so the quit is drained right after the destroy.
+// The stored handle is cleared last, so a stray exported call afterwards fails
+// the zero-handle guard instead of posting to a recycled HWND.
+func (host *Host) destroyWindowBeforeLoop() {
+	hwnd := host.window()
+	if hwnd == 0 {
+		return
+	}
+	host.log.Debug("mullion: pre-loop window teardown")
+	if host.windowDestroyed {
+		// A Quit dispatched inside the embed pump already destroyed the real
+		// window: the stored handle is stale and is not fed back to
+		// DestroyWindow, on the off-chance the value was recycled. Only the
+		// drain is still owed - the pump re-posts the quit it swallowed
+		// mid-wait, so it is pending right now.
+		drainThreadQuitMessage()
+	} else {
+		teardownBeforeLoop(
+			func() { procDestroyWindow.Call(uintptr(hwnd)) },
+			drainThreadQuitMessage,
+		)
+	}
+	host.mu.Lock()
+	host.hwnd = 0
+	host.mu.Unlock()
+}
+
+// teardownBeforeLoop orders the two halves of the pre-loop teardown: the
+// destroy posts the WM_QUIT (via the window procedure's WM_DESTROY case), so
+// the drain must run after it - draining first would remove nothing and leave
+// the poison behind. Extracted so the ordering contract is unit-testable
+// without a window.
+func teardownBeforeLoop(destroy, drain func()) {
+	destroy()
+	drain()
+}
+
+// drainThreadQuitMessage removes any pending WM_QUIT from the calling thread's
+// queue. WM_QUIT is a thread message, not a window message, so it survives the
+// window's destruction and would be the first thing the next GetMessage on
+// this thread returns.
+func drainThreadQuitMessage() {
+	var message msg
+	for {
+		got, _, _ := procPeekMessage.Call(uintptr(unsafe.Pointer(&message)), 0, wmQuit, wmQuit, pmRemove)
+		if got == 0 {
+			return
+		}
+	}
 }

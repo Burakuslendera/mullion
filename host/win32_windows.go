@@ -17,6 +17,7 @@ var (
 	procGetWindowLongPtr    = user32.NewProc("GetWindowLongPtrW")
 	procSetWindowLongPtr    = user32.NewProc("SetWindowLongPtrW")
 	procGetMessage          = user32.NewProc("GetMessageW")
+	procPeekMessage         = user32.NewProc("PeekMessageW")
 	procTranslateMessage    = user32.NewProc("TranslateMessage")
 	procDispatchMessage     = user32.NewProc("DispatchMessageW")
 	procPostQuitMessage     = user32.NewProc("PostQuitMessage")

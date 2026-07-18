@@ -65,6 +65,7 @@ const (
 	wmDestroy           = 0x0002
 	wmMove              = 0x0003
 	wmSize              = 0x0005
+	wmQuit              = 0x0012
 	wmEraseBkgnd        = 0x0014
 	wmPaint             = 0x000F
 	wmClose             = 0x0010
@@ -103,6 +104,8 @@ const (
 	wmSetIcon = 0x0080
 	iconSmall = 0
 	iconBig   = 1
+
+	pmRemove = 0x0001
 
 	dwmwaExtendedFrameBounds     = 9
 	dwmwaCaptionButtonBounds     = 5
