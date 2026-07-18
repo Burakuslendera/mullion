@@ -32,6 +32,24 @@ func TestGuardedWindowProcContainsPanic(t *testing.T) {
 	}
 }
 
+// TestGuardedWindowProcSurvivesAPanickingReporter locks the other half of the
+// guard's contract (issue #26): the reporter runs after the guard's recover has
+// been spent, so a reporter that panics - the live scenario is a caller Logger
+// dying during teardown - must be contained, and the fallback result must still
+// be returned. Without that containment the fresh panic unwinds into the native
+// DispatchMessage frame and aborts the process the guard exists to protect.
+func TestGuardedWindowProcSurvivesAPanickingReporter(t *testing.T) {
+	const sentinel = uintptr(0xFA11)
+	guarded := guardedWindowProc(
+		func(windowHandle, uint32, uintptr, uintptr) uintptr { panic("proc boom") },
+		func(windowHandle, uint32, uintptr, uintptr) uintptr { return sentinel },
+		func(any, uint32) { panic("reporter boom") },
+	)
+	if got := guarded(0, wmDestroy, 0, 0); got != sentinel {
+		t.Fatalf("panicking-reporter path returned %#x, want the fallback result %#x", got, sentinel)
+	}
+}
+
 // TestGuardedWindowProcPassesThrough proves the guard is transparent when the
 // procedure does not panic: the real return value flows through untouched and
 // the fallback is never consulted.
