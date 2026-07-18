@@ -92,6 +92,21 @@ func TestEnsureWebViewRefusesAReentrantEmbed(t *testing.T) {
 	}
 }
 
+// An already-embedded browser short-circuits before any guard: the post-commit
+// show path relies on this returning nil without running create again.
+func TestEnsureWebViewReturnsImmediatelyWhenEmbedded(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.browser = webview2.New()
+
+	err := host.ensureWebViewWith("show", func() error {
+		t.Error("create must not run when a browser is already embedded")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ensureWebViewWith with an embedded browser err = %v, want nil", err)
+	}
+}
+
 // The in-flight flag must clear on both exits, or one failed embed would
 // refuse every retry for the life of the host.
 func TestEnsureWebViewClearsTheInFlightFlag(t *testing.T) {

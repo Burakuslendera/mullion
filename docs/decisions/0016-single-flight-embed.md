@@ -31,8 +31,9 @@ UI-thread-confined flags on `Host` enforce it:
   failed embed does not poison retries.
 - `windowDestroyed` is set at the top of the `WM_DESTROY` case. `ensureWebView`
   refuses to start against a destroyed window, and `commitEmbeddedBrowser` -
-  the one place `host.browser` is assigned - tears the browser down instead of
-  committing when the flag is up.
+  the one place a live browser is committed to `host.browser`
+  (`navigateOrTearDown` only ever nils the field back on its teardown path) -
+  tears the browser down instead of committing when the flag is up.
 
 Both flags are read and written only on the UI thread, the same confinement
 `host.browser` itself relies on.
@@ -66,10 +67,12 @@ commit-time check keeps the invariant local to the one assignment.
 An application that calls `Show()` or drives `ensureWebView` while the first
 embed is still pumping gets an error rather than a wait. That is a real,
 permanent behaviour: the caller retries, or relies on the startup show gate,
-which already re-shows once the embed lands. And every future path that assigns
-`host.browser` must go through `commitEmbeddedBrowser` - assigning the field
-directly reopens defect 2, which is why the assignment now exists in exactly
-one place.
+which already re-shows once the embed lands. And every future path that commits
+a browser to `host.browser` must go through `commitEmbeddedBrowser` - a direct
+non-nil assignment in production code reopens defect 2, which is why the commit
+now exists in exactly one place. (`navigateOrTearDown` nils the field on its
+teardown path, and test fixtures set it directly to stage a state; neither
+commits a live browser.)
 
 ## What would change our mind
 
