@@ -6,15 +6,20 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 	"unsafe"
+
+	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
-// teardownBeforeLoop's ordering is the contract: the destroy's WM_DESTROY
+// teardownOutsideLoop's ordering is the contract: the destroy's WM_DESTROY
 // posts the WM_QUIT, so draining before the destroy would remove nothing and
-// leave the thread queue poisoned for the next Run on this thread (issue #48).
-func TestTeardownBeforeLoopDrainsAfterTheDestroy(t *testing.T) {
+// leave the thread queue poisoned for the next Run on this thread (issues #48
+// and #54 - the loop is not running to consume it, having never started or
+// having just died).
+func TestTeardownOutsideLoopDrainsAfterTheDestroy(t *testing.T) {
 	var order []string
-	teardownBeforeLoop(
+	teardownOutsideLoop(
 		func() { order = append(order, "destroy") },
 		func() { order = append(order, "drain") },
 	)
@@ -64,12 +69,38 @@ func TestDrainThreadQuitMessageRemovesAPendingQuit(t *testing.T) {
 
 // With no window there is nothing to tear down: the zero-handle guard must
 // return before the destroy, the drain, or the log line.
-func TestDestroyWindowBeforeLoopIsANoOpWithoutAWindow(t *testing.T) {
+func TestDestroyWindowOutsideLoopIsANoOpWithoutAWindow(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 
-	host.destroyWindowBeforeLoop()
+	host.destroyWindowOutsideLoop("pre_loop_failure")
 
-	if strings.Contains(logger.String(), "pre-loop window teardown") {
+	if strings.Contains(logger.String(), "window teardown outside the loop") {
 		t.Fatalf("teardown ran without a window:\n%s", logger.String())
+	}
+}
+
+// TestWindowDestroyTeardownStopsTheShowGateAndBrowser locks the WM_DESTROY
+// teardown contract: the startup show gate dies with the window - left armed,
+// it would fire after the destroy and post wmNativeShow to the dead HWND
+// (issue #54's companion observation) - and a committed browser is shut down
+// while the HWND is still alive. The render watchdog stop is part of the same
+// teardown; its timer state is not observable from here and is covered by the
+// watchdog's own tests.
+func TestWindowDestroyTeardownStopsTheShowGateAndBrowser(t *testing.T) {
+	host, _ := newTestHost(t, Config{ShowTimeout: time.Hour})
+	host.startStartupShowGate()
+	browser := webview2.New()
+	host.browser = browser
+
+	host.windowDestroyTeardown()
+
+	host.startupMu.Lock()
+	gateArmed := host.startupShowTimer != nil
+	host.startupMu.Unlock()
+	if gateArmed {
+		t.Fatal("the startup show gate survived WM_DESTROY; it would post wmNativeShow to a dead HWND")
+	}
+	if !browser.IsShuttingDown() {
+		t.Fatal("the WM_DESTROY teardown must shut the committed browser down")
 	}
 }
