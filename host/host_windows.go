@@ -152,6 +152,7 @@ func (host *Host) Run() (runErr error) {
 		host.log.Debug("mullion: webview deferred, reason=start_hidden")
 	} else {
 		if err := host.ensureWebView("initial"); err != nil {
+			host.destroyWindowBeforeLoop()
 			return err
 		}
 		lastStage = "mullion: webview2 embedded"
@@ -224,4 +225,57 @@ func (host *Host) window() windowHandle {
 	host.mu.RLock()
 	defer host.mu.RUnlock()
 	return host.hwnd
+}
+
+// destroyWindowBeforeLoop tears the HWND down when Run fails after createWindow
+// but before the message loop starts.
+//
+// Without it the window outlives Run invisibly: the deferred
+// unregisterWindowClass fails with ERROR_CLASS_HAS_WINDOWS against the live
+// window, and a second Run in the same process cannot register the class again
+// (issue #48). DestroyWindow dispatches WM_DESTROY synchronously on this
+// thread - the teardown case runs (host.browser is nil or already torn down on
+// every path that reaches here) and posts WM_QUIT. With no loop ever starting,
+// that WM_QUIT would sit in the thread queue and poison the next message loop
+// on this thread - a later Run would read it first and exit immediately, a
+// silent one-shot failure - so the quit is drained right after the destroy.
+// The stored handle is cleared last, so a stray exported call afterwards fails
+// the zero-handle guard instead of posting to a recycled HWND.
+func (host *Host) destroyWindowBeforeLoop() {
+	hwnd := host.window()
+	if hwnd == 0 {
+		return
+	}
+	host.log.Debug("mullion: pre-loop window teardown")
+	teardownBeforeLoop(
+		func() { procDestroyWindow.Call(uintptr(hwnd)) },
+		drainThreadQuitMessage,
+	)
+	host.mu.Lock()
+	host.hwnd = 0
+	host.mu.Unlock()
+}
+
+// teardownBeforeLoop orders the two halves of the pre-loop teardown: the
+// destroy posts the WM_QUIT (via the window procedure's WM_DESTROY case), so
+// the drain must run after it - draining first would remove nothing and leave
+// the poison behind. Extracted so the ordering contract is unit-testable
+// without a window.
+func teardownBeforeLoop(destroy, drain func()) {
+	destroy()
+	drain()
+}
+
+// drainThreadQuitMessage removes any pending WM_QUIT from the calling thread's
+// queue. WM_QUIT is a thread message, not a window message, so it survives the
+// window's destruction and would be the first thing the next GetMessage on
+// this thread returns.
+func drainThreadQuitMessage() {
+	var message msg
+	for {
+		got, _, _ := procPeekMessage.Call(uintptr(unsafe.Pointer(&message)), 0, wmQuit, wmQuit, pmRemove)
+		if got == 0 {
+			return
+		}
+	}
 }
