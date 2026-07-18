@@ -71,9 +71,9 @@ dependencies are process-wide and irreversible.
    **before** the first `Navigate`; a callback registered after navigation begins can
    miss the requests and messages the first document produces — a race that reproduces
    only on fast machines, or only on slow ones, depending on where the gap lands.
-   The embed is **single-flight, and window destruction cancels it**: controller
-   creation pumps the message loop while it waits, so a message dispatched mid-embed
-   can re-enter this path or destroy the window outright. A re-entrant attempt is
+   The embed is **single-flight, and window destruction cancels it**: environment and
+   controller creation pump the message loop while they wait, so a message dispatched
+   mid-embed can re-enter this path or destroy the window outright. A re-entrant attempt is
    refused rather than racing a second browser for the one `host.browser` commit,
    and a browser that completes after `WM_DESTROY` is torn down instead of being
    committed to a window that no longer exists. See
@@ -188,8 +188,8 @@ WindowShellReady   WindowReady   WindowPhase   WindowDiagnostic
 ```
 
 The first eight are the window controls. The last four are the signals the injected
-scripts send back: the startup gates (`shellReady`, `ready`) and the frontend
-diagnostics (`phase`, `diagnostic`).
+scripts send back: the show gate (`shellReady`), the render watchdog (`ready`), and
+the frontend diagnostics (`phase`, `diagnostic`).
 
 Everything else is handed to `Config.Bridge` as the raw request JSON; it returns the raw
 response JSON, or `""` to stay silent. `Bridge` may be nil — window controls
@@ -241,4 +241,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: bootstrap step 6 and WM_DESTROY now state the single-flight embed and its cancel-on-destroy (decision 0016), which this doc predated; the WebView2/asset sections moved to webview2-and-assets.md earlier the same day.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: apply the adversarial review of the catch-up — `ready` is the render watchdog signal, not a startup gate, and step 6's pump covers environment and controller creation alike (decision 0016).

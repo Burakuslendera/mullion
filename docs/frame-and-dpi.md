@@ -205,9 +205,10 @@ The latch also means a *second* host in the same process — or an application t
 declared `PER_MONITOR_AWARE_V2` itself before constructing the host — sees
 `SetProcessDpiAwarenessContext` refuse a context the process is already in. Since
 issue #48 that already-correct context counts as success: `New` checks the current
-context before treating the refusal as an error, and `Run` re-verifies the
-awareness on the thread that creates the window (`host/dpi_windows.go`). A context
-that is genuinely different stays the fatal error it always was.
+context before treating the refusal as an error (`host/dpi_windows.go`), and `Run`
+re-verifies the awareness on the thread that creates the window
+(`host/host_windows.go`). A context that is genuinely different stays the fatal
+error it always was.
 
 ## 7. `WM_DPICHANGED`
 
@@ -366,4 +367,4 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: §6 records the already-PMv2 acceptance with its Run-thread re-check (issue #48); the awareness latch itself is unchanged.
+> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: §6 records the already-PMv2 acceptance with its Run-thread re-check (issue #48), the re-check cited to host_windows.go per its review; the awareness latch itself is unchanged.
