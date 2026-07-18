@@ -767,6 +767,13 @@ type completedHandler struct {
 	server comServer // must stay first
 	this   uintptr
 	done   chan completion
+
+	// mu orders invoked against abandon. Both run on the STA thread in practice,
+	// but the lock makes the no-strand guarantee hold by construction rather
+	// than by apartment rules: a completion is either sent while a waiter still
+	// exists, or released.
+	mu        sync.Mutex
+	abandoned bool
 }
 
 var (
@@ -793,6 +800,28 @@ func (h *completedHandler) release() {
 	serverRelease(h.this)
 }
 
+// abandon records that the waiter gave up, and reclaims a completion that
+// already reached the buffer.
+//
+// After a timeout nobody will ever drain done, so a completion left there would
+// hold the AddRef the handler took and the GC would eventually free the channel
+// without a Release - stranding the freshly created controller or environment
+// and its browser processes (#37). Raising the flag makes a later invoked
+// release instead of send; the drain below catches the other ordering, where
+// the completion landed before the flag went up.
+func (h *completedHandler) abandon() {
+	h.mu.Lock()
+	h.abandoned = true
+	h.mu.Unlock()
+	select {
+	case late := <-h.done:
+		if late.result != nil {
+			late.result.Release()
+		}
+	default:
+	}
+}
+
 // invoked is the body shared by both Invoke callbacks.
 func invoked(this, errorCode, result uintptr) uintptr {
 	server := serverFor(this)
@@ -810,11 +839,23 @@ func invoked(this, errorCode, result uintptr) uintptr {
 		// leaves a pointer to a freed object.
 		object.AddRef()
 	}
-	select {
-	case handler.done <- completion{hr: errorCode, result: object}:
-	default:
-		// Invoke fired twice, which the interface forbids. Drop the extra
-		// rather than leak the reference we just took.
+	delivered := false
+	handler.mu.Lock()
+	if !handler.abandoned {
+		select {
+		case handler.done <- completion{hr: errorCode, result: object}:
+			delivered = true
+		default:
+			// Invoke fired twice, which the interface forbids. Drop the extra
+			// rather than leak the reference we just took.
+		}
+	}
+	handler.mu.Unlock()
+	if !delivered {
+		// Either the waiter timed out and abandoned the handler - a late
+		// completion sent into the buffer would never be drained, and the GC
+		// would free it without a Release (#37) - or this was a forbidden
+		// second fire. Both drop the reference taken above.
 		object.Release()
 	}
 	return sOK
@@ -923,15 +964,32 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 
 	result, err := waitFor(handler.done, timeoutOf(opts), "the WebView2 environment")
 	if err != nil {
+		handler.abandon()
 		return nil, err
 	}
+	unknown, err := completionResult(result, "environment")
+	if err != nil {
+		return nil, err
+	}
+	return &Environment{unknown: unknown}, nil
+}
+
+// completionResult unwraps what a completion handler delivered, deciding the
+// fate of the reference invoked took. A failing HRESULT releases the result if
+// one arrived anyway - the completion contract does not promise a null object
+// on failure, and keeping it would leak; a nil result on success is an error;
+// otherwise ownership passes to the caller.
+func completionResult(result completion, what string) (*IUnknown, error) {
 	if err := hres(result.hr); err != nil {
-		return nil, fmt.Errorf("webview2: environment creation failed: %w", err)
+		if result.result != nil {
+			result.result.Release()
+		}
+		return nil, fmt.Errorf("webview2: %s creation failed: %w", what, err)
 	}
 	if result.result == nil {
-		return nil, errors.New("webview2: environment creation reported success but returned nothing")
+		return nil, fmt.Errorf("webview2: %s creation reported success but returned nothing", what)
 	}
-	return &Environment{unknown: result.result}, nil
+	return result.result, nil
 }
 
 // environmentVtbl mirrors ICoreWebView2Environment only as far as its first
@@ -983,15 +1041,10 @@ func (e *Environment) CreateControllerWithTimeout(parent windows.Handle, timeout
 
 	result, err := waitFor(handler.done, timeout, "the WebView2 controller")
 	if err != nil {
+		handler.abandon()
 		return nil, err
 	}
-	if err := hres(result.hr); err != nil {
-		return nil, fmt.Errorf("webview2: controller creation failed: %w", err)
-	}
-	if result.result == nil {
-		return nil, errors.New("webview2: controller creation reported success but returned nothing")
-	}
-	return result.result, nil
+	return completionResult(result, "controller")
 }
 
 func timeoutOf(opts Options) time.Duration {
