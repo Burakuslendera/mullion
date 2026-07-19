@@ -83,7 +83,8 @@ degraded position, never a failed launch.
 - Issue #59: the live three-launch measurement of the defect, with the
   environment (`mullion doctor`) and the mechanism walk.
 - Before the fix: (96,96)/(224,224)/(128,128), 980x640 physical at dpi 120.
-  After: (347,110), 1225x800 physical, identical across launches; startup log
+  After: (347,110), 1225x800 physical, identical across launches; Debug-level
+  startup log
   `mullion: initial placement, x=347, y=110, width=1225, height=800, dpi=120`.
   Client rect 1225x801 — the +1 restored-frame compensation, unchanged.
 - Headless: the `TestCenteredPlacement*` suite in

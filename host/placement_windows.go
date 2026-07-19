@@ -105,13 +105,13 @@ func centeredPlacement(work rect, dpi uint32, logicalWidth, logicalHeight int32)
 	if workWidth <= 0 || workHeight <= 0 || logicalWidth <= 0 || logicalHeight <= 0 {
 		return initialPlacement{}, false
 	}
-	width := dpiRescaleLength(logicalWidth, defaultWindowDPI, dpi)
-	height := dpiRescaleLength(logicalHeight, defaultWindowDPI, dpi)
-	if width > workWidth {
-		width = workWidth
-	}
-	if height > workHeight {
-		height = workHeight
+	width := scaledLengthWithin(logicalWidth, dpi, workWidth)
+	height := scaledLengthWithin(logicalHeight, dpi, workHeight)
+	if width <= 0 || height <= 0 {
+		// Reachable only through a degenerate effective DPI scaling a small
+		// length to zero; reject into the CW_USEDEFAULT fallback rather than
+		// create a zero-size window.
+		return initialPlacement{}, false
 	}
 	return initialPlacement{
 		X:      work.Left + (workWidth-width)/2,
@@ -120,6 +120,23 @@ func centeredPlacement(work rect, dpi uint32, logicalWidth, logicalHeight int32)
 		Height: height,
 		DPI:    dpi,
 	}, true
+}
+
+// scaledLengthWithin scales a logical length to physical pixels for dpi and
+// clamps it to limit - in int64, BEFORE the int32 truncation. The order is the
+// point (issue #61): a large-but-legal logical length at a scaled DPI can
+// exceed int32 and wrap - negative below 2^32, or, past it, to a small
+// positive that would become a silently tiny window, which no post-truncation
+// guard can tell from a genuine small size. Clamping the exact int64 value
+// first makes the truncation safe by construction: limit is a work-area
+// extent and always fits int32. A zero result (a degenerate DPI on a small
+// length) is left for the caller to reject.
+func scaledLengthWithin(logical int32, dpi uint32, limit int32) int32 {
+	scaled := int64(logical) * int64(dpi) / int64(defaultWindowDPI)
+	if scaled > int64(limit) {
+		return limit
+	}
+	return int32(scaled)
 }
 
 // formatInitialPlacementLog is the startup log line for a resolved placement.

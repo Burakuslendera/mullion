@@ -153,8 +153,8 @@ a pass/fail with an observable result — "looks fine" is not a result.
 - [ ] **First frame position and size.** The window opens centered in the
       primary monitor's work area, identical across launches, and its physical
       size is `Config.Width x Height` times the monitor's scale (e.g. 980x640
-      at 125% → 1225x800; the startup log line `mullion: initial placement`
-      states the applied numbers). On a scaled monitor an unscaled window is
+      at 125% → 1225x800; the Debug-level startup log line
+      `mullion: initial placement` states the applied numbers). On a scaled monitor an unscaled window is
       the issue #59 regression (decisions/0018).
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:
