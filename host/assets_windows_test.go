@@ -117,6 +117,13 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 		{name: "wrong scheme", uri: "http://" + testVirtualHost + "/index.html", wantPath: "wrong_scheme", wantCategory: "wrong_scheme", wantStatus: http.StatusForbidden},
 		{name: "traversal", uri: testOrigin + "/../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "backslash traversal (%5c)", uri: testOrigin + "/..%5c..%5csecret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		// The control-byte branch of containsBackslashOrControl (issue #31).
+		// url.Parse decodes a percent-encoded control byte to a literal one in
+		// Path - hasTraversalSegment (splits on '/') and path.Clean both leave
+		// it untouched, so only this branch stops it reaching fs.ReadFile.
+		{name: "null byte (%00)", uri: testOrigin + "/a%00b", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "escape byte (%1b)", uri: testOrigin + "/a%1bb.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "delete byte (%7f)", uri: testOrigin + "/a%7fb", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
@@ -148,6 +155,13 @@ func TestAssetProviderResolveDiagnosticCategories(t *testing.T) {
 		{name: "wrong scheme", uri: "http://" + testVirtualHost + "/index.html", wantPath: "wrong_scheme", wantCategory: "wrong_scheme", wantStatus: http.StatusForbidden},
 		{name: "traversal", uri: testOrigin + "/../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "backslash traversal (%5c)", uri: testOrigin + "/..%5c..%5csecret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		// The control-byte branch of containsBackslashOrControl (issue #31).
+		// url.Parse decodes a percent-encoded control byte to a literal one in
+		// Path - hasTraversalSegment (splits on '/') and path.Clean both leave
+		// it untouched, so only this branch stops it reaching fs.ReadFile.
+		{name: "null byte (%00)", uri: testOrigin + "/a%00b", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "escape byte (%1b)", uri: testOrigin + "/a%1bb.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "delete byte (%7f)", uri: testOrigin + "/a%7fb", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
