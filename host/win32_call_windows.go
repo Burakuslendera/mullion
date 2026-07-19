@@ -68,7 +68,11 @@ func unregisterWindowClass(className string, instance windowHandle) {
 // createWin32Window registers the class and creates the HWND. It is named apart
 // from (*Host).createWindow, which is the caller: the two would otherwise shadow
 // each other confusingly on the same receiver.
-func (host *Host) createWin32Window(className, title string, instance windowHandle, wndProc uintptr, width, height int32) (windowHandle, error) {
+//
+// x and y are uintptr, not int32, because one of their legal values is
+// CW_USEDEFAULT (0x80000000) - the fallback when placement could not be
+// resolved - and that constant does not fit an int32.
+func (host *Host) createWin32Window(className, title string, instance windowHandle, wndProc uintptr, x, y uintptr, width, height int32) (windowHandle, error) {
 	cursor, _, _ := procLoadCursor.Call(0, 32512)
 	if err := registerWindowClass(className, instance, windowHandle(cursor), wndProc); err != nil {
 		return 0, fmt.Errorf("RegisterClassEx: %w", err)
@@ -86,7 +90,7 @@ func (host *Host) createWin32Window(className, title string, instance windowHand
 		uintptr(unsafe.Pointer(class)),
 		uintptr(unsafe.Pointer(windowTitle)),
 		nativeInitialWindowStyle(),
-		uintptr(cwUseDefault), uintptr(cwUseDefault),
+		x, y,
 		uintptr(width), uintptr(height),
 		0, 0, uintptr(instance), 0,
 	)

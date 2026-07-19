@@ -230,8 +230,24 @@ func (host *Host) createWindow() error {
 	}
 	host.instance = instance
 	host.wndProc = newWindowCallback(host.windowProc, host.reportWindowProcPanic)
+
+	// Centered on the primary work area, DPI-scaled (issue #59, decision 0018).
+	// A failed resolution falls back to the shell's default position with the
+	// unscaled size - the pre-#59 behaviour - and says so, because a window
+	// that silently appears in the wrong place looks like a placement bug with
+	// no evidence trail.
+	x, y := uintptr(cwUseDefault), uintptr(cwUseDefault)
+	width, height := host.config.Width, host.config.Height
+	if place, ok := host.initialWindowPlacement(); ok {
+		x, y = uintptr(place.X), uintptr(place.Y)
+		width, height = place.Width, place.Height
+		host.log.Debug(formatInitialPlacementLog(place))
+	} else {
+		host.log.Warn("mullion: initial placement unresolved, using the system default position")
+	}
+
 	host.log.Debug("mullion: win32 class/window create requested")
-	hwnd, err := host.createWin32Window(host.config.ClassName, host.config.Title, instance, host.wndProc, host.config.Width, host.config.Height)
+	hwnd, err := host.createWin32Window(host.config.ClassName, host.config.Title, instance, host.wndProc, x, y, width, height)
 	if err != nil {
 		return err
 	}

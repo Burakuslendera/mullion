@@ -150,6 +150,12 @@ a pass/fail with an observable result — "looks fine" is not a result.
       `Quit()` landing mid-embed is timing-dependent and stays a live-only
       scenario; the refusal and cancel logic is pinned headless — see
       decisions/0016.)
+- [ ] **First frame position and size.** The window opens centered in the
+      primary monitor's work area, identical across launches, and its physical
+      size is `Config.Width x Height` times the monitor's scale (e.g. 980x640
+      at 125% → 1225x800; the startup log line `mullion: initial placement`
+      states the applied numbers). On a scaled monitor an unscaled window is
+      the issue #59 regression (decisions/0018).
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:
       restored → `Restore` disabled, `Maximize` enabled, `Move`/`Size` enabled;
@@ -346,4 +352,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: two manual checklist items for the recently landed lifecycle fixes — second `Run` after a pre-loop failure (issue #48) and `StartHidden` → first `Show` (decision 0016).
+> Last updated: 2026-07-19 | Editor: Claude (Fable 5) | Change: checklist item for the first frame's position and size — centered on the primary work area, DPI-scaled (issue #59, decision 0018).

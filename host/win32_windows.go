@@ -8,6 +8,7 @@ var (
 	user32   = windows.NewLazySystemDLL("User32.dll")
 	kernel32 = windows.NewLazySystemDLL("Kernel32.dll")
 	shell32  = windows.NewLazySystemDLL("Shell32.dll")
+	shcore   = windows.NewLazySystemDLL("Shcore.dll")
 
 	procRegisterClassEx     = user32.NewProc("RegisterClassExW")
 	procUnregisterClass     = user32.NewProc("UnregisterClassW")
@@ -39,7 +40,9 @@ var (
 	procIsIconic            = user32.NewProc("IsIconic")
 	procIsWindowVisible     = user32.NewProc("IsWindowVisible")
 	procMonitorFromWindow   = user32.NewProc("MonitorFromWindow")
+	procMonitorFromPoint    = user32.NewProc("MonitorFromPoint")
 	procGetMonitorInfo      = user32.NewProc("GetMonitorInfoW")
+	procGetDpiForMonitor    = shcore.NewProc("GetDpiForMonitor")
 	procLoadCursor          = user32.NewProc("LoadCursorW")
 	procGetModuleHandle     = kernel32.NewProc("GetModuleHandleW")
 
