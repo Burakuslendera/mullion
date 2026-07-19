@@ -152,3 +152,107 @@ func TestHandleWebResourceRequestedReportsGetRequestFailure(t *testing.T) {
 	}
 	runtime.KeepAlive(args)
 }
+
+// The teardown release sequence (issue #63). releaseBrowserObjects is the
+// seam ShuttingDown runs its Close-and-release through, so the ordering and the
+// panic-independence can be pinned without a live COM runtime.
+
+// TestReleaseBrowserObjectsRunsCloseThenReleasesInOrder locks the order the
+// runtime requires: Close before the controller is released, then core, then
+// environment. The window path relies on this exact sequence.
+func TestReleaseBrowserObjectsRunsCloseThenReleasesInOrder(t *testing.T) {
+	var order []string
+	releaseBrowserObjects(
+		func() error { order = append(order, "close"); return nil },
+		func() { order = append(order, "controller") },
+		func() { order = append(order, "core") },
+		func() { order = append(order, "environment") },
+		func(error) { t.Error("no error was returned by Close; reportErr must not run") },
+	)
+	want := []string{"close", "controller", "core", "environment"}
+	if len(order) != len(want) {
+		t.Fatalf("release order = %v, want %v", order, want)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("release order = %v, want %v", order, want)
+		}
+	}
+}
+
+// TestReleaseBrowserObjectsReleasesEveryObjectWhenClosePanics is the #63 fix
+// itself: a panic in Close - this runs inside the panic-recovering window
+// procedure, and ShuttingDown cannot be retried - must not strand the three
+// owned references. Separate deferred drops guarantee it; a single wrapping
+// closure would leave all three unreleased, which is what this test rejects.
+func TestReleaseBrowserObjectsReleasesEveryObjectWhenClosePanics(t *testing.T) {
+	var releasedController, releasedCore, releasedEnvironment bool
+	var reported any
+	func() {
+		// The Close panic propagates out, exactly as it would to the window
+		// procedure's recover; contain it here so the test can inspect the drops.
+		defer func() {
+			if recover() == nil {
+				t.Error("a panic in Close must propagate for the window procedure to report")
+			}
+		}()
+		releaseBrowserObjects(
+			func() error { panic("close blew up") },
+			func() { releasedController = true },
+			func() { releasedCore = true },
+			func() { releasedEnvironment = true },
+			func(err error) { reported = err },
+		)
+	}()
+	if !releasedController || !releasedCore || !releasedEnvironment {
+		t.Fatalf("a panic in Close stranded a reference: controller=%t core=%t environment=%t",
+			releasedController, releasedCore, releasedEnvironment)
+	}
+	if reported != nil {
+		t.Fatalf("Close panicked rather than returning an error; reportErr ran with %v", reported)
+	}
+}
+
+// TestReleaseBrowserObjectsReportsACloseError locks the other direction of the
+// Close-error branch: a Close that returns a real error (rather than nil or a
+// panic) must reach reportErr, and the three releases must still run. The order
+// and panic tests only cover Close returning nil or panicking, so without this
+// a regression that dropped the reportErr call would keep the suite green.
+func TestReleaseBrowserObjectsReportsACloseError(t *testing.T) {
+	wantErr := errors.New("close failed")
+	var reported error
+	var releasedController, releasedCore, releasedEnvironment bool
+	releaseBrowserObjects(
+		func() error { return wantErr },
+		func() { releasedController = true },
+		func() { releasedCore = true },
+		func() { releasedEnvironment = true },
+		func(err error) { reported = err },
+	)
+	if !errors.Is(reported, wantErr) {
+		t.Fatalf("reported = %v, want %v: a Close error must reach the error callback", reported, wantErr)
+	}
+	if !releasedController || !releasedCore || !releasedEnvironment {
+		t.Fatalf("a Close error must not skip the releases: controller=%t core=%t environment=%t",
+			releasedController, releasedCore, releasedEnvironment)
+	}
+}
+
+// TestReleaseBrowserObjectsToleratesNilCallbacks covers a partially embedded
+// Browser: the controller may exist while core/environment do not, or none may.
+// Absent objects pass nil callbacks, which must be skipped, not invoked.
+func TestReleaseBrowserObjectsToleratesNilCallbacks(t *testing.T) {
+	// All nil: a Browser that never embedded. Must not panic.
+	releaseBrowserObjects(nil, nil, nil, nil, nil)
+
+	// Controller only: Close and its release run, the others are skipped.
+	var closed, releasedController bool
+	releaseBrowserObjects(
+		func() error { closed = true; return nil },
+		func() { releasedController = true },
+		nil, nil, nil,
+	)
+	if !closed || !releasedController {
+		t.Fatalf("controller-only teardown: closed=%t releasedController=%t, want both true", closed, releasedController)
+	}
+}

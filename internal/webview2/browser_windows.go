@@ -322,11 +322,11 @@ func (browser *Browser) ShuttingDown() {
 	browser.environment = nil
 	browser.mu.Unlock()
 
+	var closeController func() error
+	var releaseController, releaseCore, releaseEnvironment func()
 	if controller != nil {
-		if err := controller.Close(); err != nil {
-			browser.reportError(err)
-		}
-		asUnknown(controller).Release()
+		closeController = controller.Close
+		releaseController = func() { asUnknown(controller).Release() }
 	}
 	// GetCoreWebView2 returned a reference this Browser owns (see its doc in
 	// interfaces_controller_windows.go). Closing the controller does not drop it,
@@ -334,10 +334,46 @@ func (browser *Browser) ShuttingDown() {
 	// teardown, which grows without bound in a process that opens and closes many
 	// windows.
 	if core != nil {
-		asUnknown(core).Release()
+		releaseCore = func() { asUnknown(core).Release() }
 	}
 	if environment != nil {
-		environment.Release()
+		releaseEnvironment = environment.Release
+	}
+	releaseBrowserObjects(closeController, releaseController, releaseCore, releaseEnvironment, browser.reportError)
+}
+
+// releaseBrowserObjects closes the controller and drops the three COM
+// references a live Browser owns, each under its own deferred call.
+//
+// The separate defers are load-bearing, not style. ShuttingDown runs inside the
+// panic-recovering window procedure, and its shuttingDown guard makes a retry a
+// no-op, so a panic partway through the release sequence would strand whatever
+// had not yet been dropped - one ICoreWebView2 or the environment - for good
+// (issue #63). A panic inside a deferred call still runs the remaining deferred
+// calls, so each drop is independent; a single wrapping closure would skip the
+// rest of itself once one call panicked. Deferred calls run
+// last-registered-first, so registering the Close last keeps the
+// Close-before-Release order the runtime requires. Nil callbacks are skipped so
+// a partially embedded Browser tears down cleanly.
+//
+// It takes callbacks rather than the COM pointers so the ordering and the
+// panic-independence are testable without a live runtime (docs/decisions/0006).
+func releaseBrowserObjects(closeController func() error, releaseController, releaseCore, releaseEnvironment func(), reportErr func(error)) {
+	if releaseEnvironment != nil {
+		defer releaseEnvironment()
+	}
+	if releaseCore != nil {
+		defer releaseCore()
+	}
+	if releaseController != nil {
+		defer releaseController()
+	}
+	if closeController != nil {
+		defer func() {
+			if err := closeController(); err != nil && reportErr != nil {
+				reportErr(err)
+			}
+		}()
 	}
 }
 
