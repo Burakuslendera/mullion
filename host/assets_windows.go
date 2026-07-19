@@ -81,11 +81,15 @@ func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebVi
 		provider.log.Error("mullion: asset response failed, reason=" + logsafe.Reason(err))
 		return
 	}
+	// Deferred so a panic between here and the return cannot strand the two
+	// owned references: the event dispatch recovers panics and keeps the
+	// process alive, which would leak them for good (issue #45). The release
+	// still runs after PutResponse - by then the runtime has taken its own
+	// references, so ours are redundant.
+	defer provider.releaseResponse(webviewResponse, stream)
 	if err := args.PutResponse(webviewResponse); err != nil {
 		provider.log.Error("mullion: asset response put failed, reason=" + logsafe.Reason(err))
 	}
-	// The runtime has taken its own references now, so ours are redundant.
-	provider.releaseResponse(webviewResponse, stream)
 }
 
 func (provider *assetProvider) logAssetResponseError(response assetResponse) {
