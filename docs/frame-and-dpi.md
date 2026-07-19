@@ -210,6 +210,22 @@ re-verifies the awareness on the thread that creates the window
 (`host/host_windows.go`). A context that is genuinely different stays the fatal
 error it always was.
 
+**Initial size and placement are computed, not defaulted.**
+
+- **Symptom:** the window opens near the primary monitor's top-left, at a
+  slightly different spot each launch, and on a 125% monitor it is 20% smaller
+  than the configured size. `WM_DPICHANGED` never repairs it — it fires on a
+  DPI *change*, not at birth.
+- **Root cause:** `CreateWindowEx` received `CW_USEDEFAULT` (the shell's
+  cascade) and the raw logical `Config.Width`/`Height` as physical pixels, so
+  the logical-pixel contract was never applied at creation (issue #59).
+- **Fix:** before the `HWND` exists, resolve the primary monitor, read its
+  effective DPI (`GetDpiForMonitor` — valid because awareness is already set,
+  above), scale the logical size and center it in the monitor's **work area**
+  (`host/placement_windows.go`; the math is the pure `centeredPlacement`, pinned
+  by headless tests). An unresolvable monitor falls back to `CW_USEDEFAULT` with
+  a logged warning. See [decisions/0018](./decisions/0018-initial-placement-centered-on-primary.md).
+
 ## 7. `WM_DPICHANGED`
 
 Windows hands you a **suggested rect** in `lParam`: the position and size the
@@ -367,4 +383,4 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: §6 records the already-PMv2 acceptance with its Run-thread re-check (issue #48), the re-check cited to host_windows.go per its review; the awareness latch itself is unchanged.
+> Last updated: 2026-07-19 | Editor: Claude (Fable 5) | Change: §6 gains the computed initial placement — DPI-scaled size centered in the primary work area, `CW_USEDEFAULT` only as fallback (issue #59, decision 0018).

@@ -97,8 +97,9 @@ type Config struct {
 	// an invalid value falls back to the default. Default "mullion".
 	JSNamespace string
 
-	// Width and Height are the initial client size in logical pixels.
-	// Defaults 1024 x 768.
+	// Width and Height are the initial client size in logical pixels. The
+	// window opens centered in the primary monitor's work area, scaled to that
+	// monitor's DPI (docs/decisions/0018). Defaults 1024 x 768.
 	Width  int32
 	Height int32
 	// StartHidden creates the window without showing it and defers the WebView2

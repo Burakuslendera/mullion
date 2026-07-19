@@ -24,6 +24,11 @@ const (
 	htClose       = 20
 
 	monitorDefaultToNearest = 0x00000002
+	monitorDefaultToPrimary = 0x00000001
+
+	// MDT_EFFECTIVE_DPI for GetDpiForMonitor: the DPI the monitor is actually
+	// scaled to, which is the one layout must use.
+	mdtEffectiveDPI = 0
 
 	// SHAppBarMessage (shell32) commands and state, used to keep an auto-hide
 	// taskbar reachable while a frameless window is maximized (docs/decisions/0015).

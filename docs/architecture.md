@@ -63,7 +63,11 @@ dependencies are process-wide and irreversible.
 5. **`HWND` creation.** The window procedure is bound at class registration, so the
    first messages the window ever receives — `WM_NCCALCSIZE` among them — already
    reach the library's routing. The frameless geometry is therefore correct on the
-   first frame instead of being corrected afterwards.
+   first frame instead of being corrected afterwards. The creation rect is computed
+   first: `Config.Width`/`Height` are scaled by the primary monitor's effective DPI
+   and centered in its work area, falling back to the shell's default position only
+   when the monitor cannot be resolved
+   ([decisions/0018](./decisions/0018-initial-placement-centered-on-primary.md)).
 
 6. **WebView2 embed.** The controller is created as a child of an `HWND` that already
    exists and is already DPI-aware. Every callback (web message, web resource requested,
@@ -244,4 +248,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: step 8 records that an abnormal GetMessage failure now tears the window down like the pre-loop failure path (issue #54).
+> Last updated: 2026-07-19 | Editor: Claude (Fable 5) | Change: step 5 records the computed creation rect — DPI-scaled `Config.Width`/`Height` centered in the primary work area (issue #59, decision 0018).
