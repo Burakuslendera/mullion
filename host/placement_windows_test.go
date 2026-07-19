@@ -84,6 +84,49 @@ func TestCenteredPlacementClampsAnOversizedWindowToTheWorkArea(t *testing.T) {
 	}
 }
 
+func TestCenteredPlacementClampsAnInt32OverflowingScale(t *testing.T) {
+	// Issue #61, negative band: 1_800_000_000 logical at 125% scales to
+	// 2.25e9, past int32. The naive post-truncation clamp let the wrapped
+	// negative through (observed live: "initial placement, x=1022484608,
+	// width=-2044967296" and a silent 166px window at x=32767). The int64
+	// clamp must land on the work area instead.
+	work := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1020}
+	got, ok := centeredPlacement(work, 120, 1_800_000_000, 640)
+	if !ok {
+		t.Fatal("centeredPlacement ok = false")
+	}
+	want := initialPlacement{X: 0, Y: 110, Width: 1920, Height: 800, DPI: 120}
+	if got != want {
+		t.Fatalf("centeredPlacement(overflow) = %#v, want %#v", got, want)
+	}
+}
+
+func TestCenteredPlacementClampsThePositiveWrapBand(t *testing.T) {
+	// Issue #61, second band (only above 200% scale): 1_717_987_118 at 250%
+	// is 4_294_967_795, which truncates to 499 - a silently tiny window that
+	// a post-truncation `width <= 0` guard would NOT catch. Only clamping the
+	// exact int64 value before truncation closes this band.
+	work := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1020}
+	got, ok := centeredPlacement(work, 240, 1_717_987_118, 640)
+	if !ok {
+		t.Fatal("centeredPlacement ok = false")
+	}
+	want := initialPlacement{X: 0, Y: 0, Width: 1920, Height: 1020, DPI: 240}
+	if got != want {
+		t.Fatalf("centeredPlacement(positive wrap) = %#v, want %#v", got, want)
+	}
+}
+
+func TestCenteredPlacementRejectsAZeroScaledSize(t *testing.T) {
+	// A degenerate effective DPI (a broken driver reporting 1) can scale a
+	// small logical length to zero. That must reject into the CW_USEDEFAULT
+	// fallback, not create a zero-width window with ok=true.
+	work := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1020}
+	if got, ok := centeredPlacement(work, 1, 50, 640); ok {
+		t.Fatalf("centeredPlacement(zero-scaled) = %#v, ok = true, want false", got)
+	}
+}
+
 func TestCenteredPlacementRejectsDegenerateInput(t *testing.T) {
 	cases := map[string]struct {
 		work               rect
