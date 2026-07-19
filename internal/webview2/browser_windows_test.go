@@ -213,6 +213,31 @@ func TestReleaseBrowserObjectsReleasesEveryObjectWhenClosePanics(t *testing.T) {
 	}
 }
 
+// TestReleaseBrowserObjectsReportsACloseError locks the other direction of the
+// Close-error branch: a Close that returns a real error (rather than nil or a
+// panic) must reach reportErr, and the three releases must still run. The order
+// and panic tests only cover Close returning nil or panicking, so without this
+// a regression that dropped the reportErr call would keep the suite green.
+func TestReleaseBrowserObjectsReportsACloseError(t *testing.T) {
+	wantErr := errors.New("close failed")
+	var reported error
+	var releasedController, releasedCore, releasedEnvironment bool
+	releaseBrowserObjects(
+		func() error { return wantErr },
+		func() { releasedController = true },
+		func() { releasedCore = true },
+		func() { releasedEnvironment = true },
+		func(err error) { reported = err },
+	)
+	if !errors.Is(reported, wantErr) {
+		t.Fatalf("reported = %v, want %v: a Close error must reach the error callback", reported, wantErr)
+	}
+	if !releasedController || !releasedCore || !releasedEnvironment {
+		t.Fatalf("a Close error must not skip the releases: controller=%t core=%t environment=%t",
+			releasedController, releasedCore, releasedEnvironment)
+	}
+}
+
 // TestReleaseBrowserObjectsToleratesNilCallbacks covers a partially embedded
 // Browser: the controller may exist while core/environment do not, or none may.
 // Absent objects pass nil callbacks, which must be skipped, not invoked.
