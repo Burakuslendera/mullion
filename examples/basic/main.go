@@ -75,6 +75,15 @@ func main() {
 		CaptionControlsWidth: 138, // 3 buttons x 46px
 		ResizeBorder:         8,
 
+		// DevTools keeps the developer surface on: F12 opens the browser DevTools,
+		// and the default context menu and browser accelerator keys stay enabled.
+		// Off by default - a frameless app window is not a browser - but uncomment
+		// it while developing your frontend, or to poke the injected bridge from
+		// the DevTools console (try window.mullion.invoke("Ping")). See
+		// Config.DevTools in host/config.go.
+		//
+		// DevTools: true,
+
 		BackgroundColour: host.Colour{R: 0x16, G: 0x1a, B: 0x22, A: 0xff},
 
 		Logger: host.SlogLogger(logger),
