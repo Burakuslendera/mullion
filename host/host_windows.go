@@ -43,18 +43,19 @@ type Host struct {
 	webViewEmbedding bool
 	windowDestroyed  bool
 
-	dpiAwarenessErr   error
-	renderMu          sync.Mutex
-	renderTimer       *time.Timer
-	frontendReady     bool
-	startupMu         sync.Mutex
-	startupShowTimer  *time.Timer
-	startupShowOnce   sync.Once
-	startupTiming     *startupTiming
-	diagnostics       *nativeDiagnostics
-	sysMenuLast       sysMenuSnapshot
-	boundsMu          sync.Mutex
-	lastBoundsSyncLog boundsSyncLogState
+	dpiAwarenessErr    error
+	renderMu           sync.Mutex
+	renderTimer        *time.Timer
+	frontendReady      bool
+	frontendShellReady bool
+	startupMu          sync.Mutex
+	startupShowTimer   *time.Timer
+	startupShowOnce    sync.Once
+	startupTiming      *startupTiming
+	diagnostics        *nativeDiagnostics
+	sysMenuLast        sysMenuSnapshot
+	boundsMu           sync.Mutex
+	lastBoundsSyncLog  boundsSyncLogState
 
 	// errorPageShown guards NavigationCompletedCallback from re-navigating to the
 	// fallback error surface in a loop. It is read and written only on the UI

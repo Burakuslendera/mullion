@@ -21,6 +21,7 @@ func (host *Host) startRenderWatchdog() {
 	defer host.renderMu.Unlock()
 
 	host.frontendReady = false
+	host.frontendShellReady = false
 	if host.renderTimer != nil {
 		host.renderTimer.Stop()
 	}
@@ -77,7 +78,22 @@ func (host *Host) MarkFrontendReady() {
 // window.<ns>.shellReady(). Safe from any goroutine, exactly as
 // MarkFrontendReady: the bounds sync is posted, and the show gate already
 // posts.
+//
+// Idempotent, exactly as MarkFrontendReady: shellReady() is a reserved bridge
+// method reachable from any page the bridge trusts, so a frontend calling it
+// in a loop must not spam the log and the message queue (issue #47). The flag
+// shares frontendReady's lifecycle - startRenderWatchdog resets both - and the
+// once-per-host effects behind it (the startup timing record, the show gate)
+// keep their own guards.
 func (host *Host) MarkFrontendShellReady() {
+	host.renderMu.Lock()
+	if host.frontendShellReady {
+		host.renderMu.Unlock()
+		return
+	}
+	host.frontendShellReady = true
+	host.renderMu.Unlock()
+
 	host.recordStartupFrontendShellReady()
 	host.log.Info("mullion: frontend shell ready")
 	host.postBoundsSync("frontend shell ready bounds post", boundsSyncWParamFrontendShellReady)

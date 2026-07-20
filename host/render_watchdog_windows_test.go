@@ -110,6 +110,26 @@ func TestMarkFrontendReadyIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestMarkFrontendShellReadyIsIdempotent is the sibling of
+// TestMarkFrontendReadyIsIdempotent (issue #47). shellReady() is a reserved
+// bridge method reachable from any page the bridge trusts, so the host must not
+// rely on the frontend calling it once: without the gate every repeat re-logs
+// the INFO line and posts another bounds sync that means nothing after the
+// first call.
+func TestMarkFrontendShellReadyIsIdempotent(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	host.MarkFrontendShellReady()
+	host.MarkFrontendShellReady()
+
+	// Count the exact line: with no window the bounds post may also log a
+	// "frontend shell ready bounds post failed" warning, which a substring
+	// count would miscount as a second ready.
+	if got := strings.Count(logger.String(), "msg=mullion: frontend shell ready\n"); got != 1 {
+		t.Fatalf("frontend shell ready logged %d times, want 1:\n%s", got, logger.String())
+	}
+}
+
 func TestRenderWatchdogDisabled(t *testing.T) {
 	host, logger := newTestHost(t, Config{RenderTimeout: -1})
 	host.startRenderWatchdog()
