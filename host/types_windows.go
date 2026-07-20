@@ -113,12 +113,7 @@ const (
 	pmRemove = 0x0001
 
 	dwmwaExtendedFrameBounds     = 9
-	dwmwaCaptionButtonBounds     = 5
-	dwmwaUseImmersiveDarkMode    = 20
 	dwmwaWindowCornerPreference  = 33
-	dwmwaBorderColor             = 34
-	dwmwaCaptionColor            = 35
-	dwmwaTextColor               = 36
 	dwmWindowCornerPreferenceDef = 0
 	dwmWindowCornerPreferenceRnd = 2
 
