@@ -151,7 +151,7 @@ func (host *Host) toggleMaximiseFromMessage() {
 		err := sendWindowMessage(hwnd, wmSysCommand, scRestore, 0)
 		host.warnIf("restore send", err)
 		host.syncWebViewBounds("restore")
-		host.requestDeferredBoundsSync("restore")
+		host.requestDeferredBoundsSync(boundsSyncWParamDeferredRestore)
 		host.logNativeWindowActionState("restore", hwnd)
 		if err == nil && isZoomed(hwnd) {
 			host.log.Warn("mullion: restore unexpected state")
@@ -162,7 +162,7 @@ func (host *Host) toggleMaximiseFromMessage() {
 	err := sendWindowMessage(hwnd, wmSysCommand, scMaximize, 0)
 	host.warnIf("maximize send", err)
 	host.syncWebViewBounds("maximize")
-	host.requestDeferredBoundsSync("maximize")
+	host.requestDeferredBoundsSync(boundsSyncWParamDeferredMaximize)
 	host.logNativeWindowActionState("maximize", hwnd)
 	if err == nil && !isZoomed(hwnd) {
 		host.log.Warn("mullion: maximize unexpected state")

@@ -110,7 +110,7 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		host.syncWebViewBounds("wm_entersizemove")
 	case wmExitSizeMove:
 		host.syncWebViewBounds("wm_exitsizemove")
-		host.requestDeferredBoundsSync("wm_exitsizemove")
+		host.requestDeferredBoundsSync(boundsSyncWParamDeferredExitSizeMove)
 	}
 	return defWindowProc(hwnd, message, wParam, lParam)
 }
