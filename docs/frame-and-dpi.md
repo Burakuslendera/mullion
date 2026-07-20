@@ -168,9 +168,13 @@ monitor. The shell then treats it as a fullscreen app and stops revealing the
 taskbar on hover — it becomes unreachable by mouse. The fix is the same one
 `DefWindowProc` and Chromium apply: leave a 1px sliver on the auto-hide edge. mullion
 detects an auto-hide appbar per monitor edge (`SHAppBarMessage`) and insets the
-maximized work area by 1px there, feeding that inset area to all three maximized
-paths (`WM_GETMINMAXINFO`, `WM_NCCALCSIZE`, the maximized hit-test). It is inert
-when no auto-hide bar is present. See docs/decisions/0015.
+maximized work area by 1px there, feeding that inset area to the two paths that size
+the window (`WM_GETMINMAXINFO`, `WM_NCCALCSIZE`). It is inert when no auto-hide bar
+is present. See docs/decisions/0015. The maximized hit-test deliberately does *not*
+run the `SHAppBarMessage` probe — `WM_NCHITTEST` is the hottest input path and the
+probe is synchronous shell IPC; it clamps the already-inset window rect to the
+un-inset work area instead, which preserves the sliver because the clamp is min/max.
+See docs/decisions/0019.
 
 ## 6. Per-monitor DPI v2
 
@@ -383,4 +387,4 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-07-19 | Editor: Claude (Fable 5) | Change: §6 gains the computed initial placement — DPI-scaled size centered in the primary work area, `CW_USEDEFAULT` only as fallback (issue #59, decision 0018).
+> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: §5's auto-hide paragraph now records that the maximized hit-test stays in-process — the `SHAppBarMessage` probe is confined to the two window-sizing paths (issue #36, decision 0019).

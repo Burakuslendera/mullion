@@ -50,11 +50,16 @@ func insetForAutoHideEdges(area rect, edges autoHideEdges) rect {
 }
 
 // maximizeMonitorInfo is monitorInfoForWindow with the work area inset on every edge
-// of the window's monitor that holds an auto-hide appbar. The three maximized paths -
-// WM_GETMINMAXINFO (applyMonitorWorkArea), WM_NCCALCSIZE (applyNativeNCCalcClientRect)
-// and the maximized hit-test - all derive their geometry from this work area, so
-// insetting it once here keeps the reveal sliver on all three consistently. clampRectToArea
-// is min/max, so feeding it the already-inset window rect does not inset a second time.
+// of the window's monitor that holds an auto-hide appbar. The two maximize-geometry
+// paths - WM_GETMINMAXINFO (applyMonitorWorkArea) and WM_NCCALCSIZE
+// (applyNativeNCCalcClientRect) - derive their geometry from this work area, so
+// insetting it once here keeps the reveal sliver on both consistently.
+//
+// The maximized hit-test does NOT read it, deliberately: autoHideEdgesForMonitor is
+// synchronous shell IPC, and WM_NCHITTEST is the hottest input path (issue #36,
+// decision 0019). The hit-test clamps the actual window rect - which these two paths
+// already inset when the window was sized - to the un-inset work area, and because
+// clampRectToArea is min/max that clamp cannot undo the inset.
 //
 // Monitor is left untouched: applyMonitorWorkArea needs it to make MaxPosition
 // monitor-relative, and only the work area drives the maximized extent.
@@ -67,12 +72,18 @@ func maximizeMonitorInfo(hwnd windowHandle) (monitorInfo, bool) {
 	return info, true
 }
 
-// autoHideEdgesForMonitor asks the shell which edges of monitor hold an auto-hide
+// autoHideEdgesForMonitor is the SHAppBarMessage probe behind maximizeMonitorInfo.
+// It is a variable only so the headless routing test can count shell calls and prove
+// the maximized hit-test path never makes one (issue #36, decision 0019); production
+// code never reassigns it.
+var autoHideEdgesForMonitor = queryAutoHideEdgesForMonitor
+
+// queryAutoHideEdgesForMonitor asks the shell which edges of monitor hold an auto-hide
 // appbar. ABM_GETSTATE is a cheap global check first: if no auto-hide bar exists
 // anywhere, the per-edge queries are skipped and no edge is reported. The monitor
 // rect is taken from the same monitorInfo the rest of the frame code uses, per the
 // MonitorFromWindow warning in docs/frame-and-dpi.md section 5.
-func autoHideEdgesForMonitor(monitor rect) autoHideEdges {
+func queryAutoHideEdgesForMonitor(monitor rect) autoHideEdges {
 	var probe appBarData
 	probe.Size = uint32(unsafe.Sizeof(probe))
 	state, _, _ := procSHAppBarMessage.Call(abmGetState, uintptr(unsafe.Pointer(&probe)))
