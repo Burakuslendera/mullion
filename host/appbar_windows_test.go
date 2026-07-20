@@ -47,3 +47,55 @@ func TestInsetForAutoHideEdges(t *testing.T) {
 		t.Errorf("degenerate area must not invert: got %#v, want %#v", got, thin)
 	}
 }
+
+// TestMaximizeMonitorInfoInsetsAutoHideEdges locks the wiring of maximizeMonitorInfo
+// (docs/decisions/0015): the shell probe is asked about the window's monitor rect,
+// its answer insets the work area, and the monitor rect itself is left untouched.
+// TestInsetForAutoHideEdges pins the 1px arithmetic; this pins that the arithmetic
+// is actually reached from the maximize-geometry paths, which was previously only a
+// live observation. The seams stand in for the two Win32 queries per decision 0006.
+func TestMaximizeMonitorInfoInsetsAutoHideEdges(t *testing.T) {
+	// An auto-hide taskbar reserves no work area, so rcWork == rcMonitor - the exact
+	// configuration 0015 exists for.
+	monitor := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1080}
+
+	origInfo := monitorInfoForWindow
+	origEdges := autoHideEdgesForMonitor
+	defer func() {
+		monitorInfoForWindow = origInfo
+		autoHideEdgesForMonitor = origEdges
+	}()
+
+	monitorInfoForWindow = func(windowHandle) (monitorInfo, bool) {
+		return monitorInfo{Monitor: monitor, Work: monitor}, true
+	}
+	var probed []rect
+	autoHideEdgesForMonitor = func(monitor rect) autoHideEdges {
+		probed = append(probed, monitor)
+		return autoHideEdges{bottom: true}
+	}
+
+	info, ok := maximizeMonitorInfo(0)
+	if !ok {
+		t.Fatal("maximizeMonitorInfo = !ok, want ok")
+	}
+	if want := (rect{Left: 0, Top: 0, Right: 1920, Bottom: 1079}); info.Work != want {
+		t.Errorf("Work = %#v, want bottom inset by 1: %#v", info.Work, want)
+	}
+	if info.Monitor != monitor {
+		t.Errorf("Monitor = %#v, want untouched %#v", info.Monitor, monitor)
+	}
+	if len(probed) != 1 || probed[0] != monitor {
+		t.Errorf("shell probe rects = %#v, want exactly one probe of the monitor rect", probed)
+	}
+
+	// A failed monitor query must fail the whole lookup, never probe the shell.
+	probed = nil
+	monitorInfoForWindow = func(windowHandle) (monitorInfo, bool) { return monitorInfo{}, false }
+	if _, ok := maximizeMonitorInfo(0); ok {
+		t.Error("maximizeMonitorInfo = ok on failed monitor query, want !ok")
+	}
+	if len(probed) != 0 {
+		t.Errorf("shell probed %d times on failed monitor query, want 0", len(probed))
+	}
+}

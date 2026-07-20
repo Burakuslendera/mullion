@@ -32,7 +32,14 @@ func (host *Host) applyMonitorWorkArea(hwnd windowHandle, lParam uintptr) bool {
 	return true
 }
 
-func monitorInfoForWindow(hwnd windowHandle) (monitorInfo, bool) {
+// monitorInfoForWindow is the in-process MonitorFromWindow + GetMonitorInfoW pair.
+// It is a variable only so the headless routing tests can substitute a monitor
+// (decision 0006); production code never reassigns it. Both maximizeMonitorInfo and
+// the maximized hit-test read it, which is what lets a test prove the hit-test path
+// reaches no further than this query (issue #36, decision 0019).
+var monitorInfoForWindow = queryMonitorInfoForWindow
+
+func queryMonitorInfoForWindow(hwnd windowHandle) (monitorInfo, bool) {
 	monitor, _, _ := procMonitorFromWindow.Call(uintptr(hwnd), monitorDefaultToNearest)
 	if monitor == 0 {
 		return monitorInfo{}, false

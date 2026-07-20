@@ -185,6 +185,64 @@ func TestMaximizedHitTestRectClampsToWorkAreaWithoutEatingTopBand(t *testing.T) 
 	}
 }
 
+// TestWindowRectForMaximizedHitTestStaysInProcess locks the routing fixed by issue
+// #36 (docs/decisions/0019): the maximized hit-test rect is derived from
+// monitorInfoForWindow's un-inset work area and never probes the shell for auto-hide
+// edges. Re-routing it through maximizeMonitorInfo - the exact "consistency" cleanup
+// 0015's wording used to invite - trips both assertions: the seam counter sees the
+// SHAppBarMessage probe, and the inset work area shifts the clamped rect off the
+// expected value. The monitor seam succeeds headlessly, so the probe path is
+// reachable on any machine and the counter is a deterministic zero, not an artefact
+// of a missing display (decision 0006).
+func TestWindowRectForMaximizedHitTestStaysInProcess(t *testing.T) {
+	monitor := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1080}
+	work := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1040}
+
+	origInfo := monitorInfoForWindow
+	origEdges := autoHideEdgesForMonitor
+	defer func() {
+		monitorInfoForWindow = origInfo
+		autoHideEdgesForMonitor = origEdges
+	}()
+
+	monitorInfoForWindow = func(windowHandle) (monitorInfo, bool) {
+		return monitorInfo{Monitor: monitor, Work: work}, true
+	}
+	shellProbes := 0
+	autoHideEdgesForMonitor = func(rect) autoHideEdges {
+		shellProbes++
+		return autoHideEdges{bottom: true}
+	}
+
+	// A frame-overhang rect clamps to the full, un-inset work area. Routed through
+	// maximizeMonitorInfo this would come back with Bottom=1039 instead.
+	if got := windowRectForMaximizedHitTest(0, rect{Left: -8, Top: -8, Right: 1928, Bottom: 1048}); got != work {
+		t.Errorf("overhanging rect = %#v, want un-inset work area %#v", got, work)
+	}
+
+	// A window already sized to an auto-hide-inset work area (WM_GETMINMAXINFO did
+	// the inset - decision 0015) passes through unchanged: the min/max clamp must
+	// not undo the reveal sliver.
+	inset := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1039}
+	if got := windowRectForMaximizedHitTest(0, inset); got != inset {
+		t.Errorf("inset rect = %#v, want unchanged %#v", got, inset)
+	}
+
+	if shellProbes != 0 {
+		t.Errorf("shell probed %d times on the hit-test path, want 0 (issue #36)", shellProbes)
+	}
+
+	// A failed monitor query falls back to the raw window rect - and still no probe.
+	monitorInfoForWindow = func(windowHandle) (monitorInfo, bool) { return monitorInfo{}, false }
+	raw := rect{Left: 3, Top: 4, Right: 500, Bottom: 600}
+	if got := windowRectForMaximizedHitTest(0, raw); got != raw {
+		t.Errorf("failed monitor query rect = %#v, want raw %#v", got, raw)
+	}
+	if shellProbes != 0 {
+		t.Errorf("shell probed %d times on failed monitor query, want 0", shellProbes)
+	}
+}
+
 func TestResizeHitTestForEdge(t *testing.T) {
 	tests := map[string]int32{
 		"left":         htLeft,

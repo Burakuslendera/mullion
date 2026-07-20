@@ -89,8 +89,19 @@ func (host *Host) nativeCaptionButtonHit(hwnd windowHandle, lParam uintptr) uint
 	return uintptr(nativeCaptionButtonHitForRect(host.config.hitTestMetrics(), windowRect, cursor, dpi, zoomed))
 }
 
+// windowRectForMaximizedHitTest clamps a maximized window rect to the visible work
+// area so the hit-test bands anchor to what is on screen, not to frame overhang.
+//
+// It reads monitorInfoForWindow - in-process - and must never route through
+// maximizeMonitorInfo, whose SHAppBarMessage probe is synchronous IPC to Explorer:
+// WM_NCHITTEST fires continuously while the pointer is over the caption band, and a
+// busy shell would stall hit-testing, drag and the caption buttons with it (issue
+// #36, decision 0019). The auto-hide reveal sliver is not lost by this: the window
+// rect was already inset when the window was sized (WM_GETMINMAXINFO), and
+// clampRectToArea is min/max, so clamping that rect to the un-inset work area
+// returns the inset rect unchanged.
 func windowRectForMaximizedHitTest(hwnd windowHandle, windowRect rect) rect {
-	info, ok := maximizeMonitorInfo(hwnd)
+	info, ok := monitorInfoForWindow(hwnd)
 	if !ok {
 		return windowRect
 	}

@@ -1,6 +1,6 @@
 # 0015. Maximized geometry insets 1px on an auto-hide taskbar edge
 
-**Status:** Accepted
+**Status:** Accepted. Invariant narrowed by [0019](./0019-maximized-hittest-stays-in-process.md): the maximized hit-test no longer routes through `maximizeMonitorInfo` (issue #36).
 
 ## Context
 
