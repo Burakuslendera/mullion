@@ -25,22 +25,30 @@ var (
 // isTerminal reports whether w is a Windows console that will actually render
 // ANSI (virtual terminal) sequences. Windows Terminal and Win10+ conhost
 // support VT; a classic console may start without it, so the mode is enabled
-// here. When enabling fails - the user-toggleable legacy console accepts
-// GetConsoleMode but refuses the VT bit - this returns false, so the logger
-// degrades to plain text instead of printing the escapes verbatim (issue #28).
-// A failure is never a crash, and never raw escapes.
-func isTerminal(w io.Writer) bool {
+// here.
+//
+// vtRefused singles out the one degraded case worth telling the user about:
+// a console - the user-toggleable legacy conhost - that answered
+// GetConsoleMode but refused the VT bit. Colour is disabled there so the
+// escapes are not printed verbatim (issue #28), and ColourLogger announces the
+// degradation once, because a user who toggled the legacy console would
+// otherwise never learn why the colours vanished. A file or a pipe is not a
+// refusal - it is simply not a terminal - and stays silent.
+func isTerminal(w io.Writer) (colour, vtRefused bool) {
 	fd, ok := w.(interface{ Fd() uintptr })
 	if !ok {
-		return false
+		return false, false
 	}
 	handle := windows.Handle(fd.Fd())
 	var mode uint32
 	if err := getConsoleMode(handle, &mode); err != nil {
-		return false // a file or a pipe, not a console
+		return false, false // a file or a pipe, not a console
 	}
 	if mode&enableVirtualTerminalProcessing != 0 {
-		return true
+		return true, false
 	}
-	return setConsoleMode(handle, mode|enableVirtualTerminalProcessing) == nil
+	if setConsoleMode(handle, mode|enableVirtualTerminalProcessing) != nil {
+		return false, true
+	}
+	return true, false
 }
