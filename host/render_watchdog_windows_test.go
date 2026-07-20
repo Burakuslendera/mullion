@@ -4,6 +4,7 @@ package host
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -107,6 +108,104 @@ func TestMarkFrontendReadyIsIdempotent(t *testing.T) {
 	// would miscount as a second ready.
 	if got := strings.Count(logger.String(), "msg=mullion: frontend ready\n"); got != 1 {
 		t.Fatalf("frontend ready logged %d times, want 1:\n%s", got, logger.String())
+	}
+}
+
+// TestMarkFrontendShellReadyIsIdempotent is the sibling of
+// TestMarkFrontendReadyIsIdempotent (issue #47). shellReady() is a reserved
+// bridge method reachable from any page the bridge trusts, so the host must not
+// rely on the frontend calling it once: without the gate every repeat re-logs
+// the INFO line and posts another bounds sync that means nothing after the
+// first call.
+func TestMarkFrontendShellReadyIsIdempotent(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	host.MarkFrontendShellReady()
+	host.MarkFrontendShellReady()
+
+	// Count the exact line: with no window the bounds post may also log a
+	// "frontend shell ready bounds post failed" warning, which a substring
+	// count would miscount as a second ready.
+	if got := strings.Count(logger.String(), "msg=mullion: frontend shell ready\n"); got != 1 {
+		t.Fatalf("frontend shell ready logged %d times, want 1:\n%s", got, logger.String())
+	}
+}
+
+// TestShellReadyAndReadyAreIndependentSignals pins that the two readiness
+// gates use separate flags. A copy-paste that gated MarkFrontendShellReady on
+// frontendReady would pass both single-signal idempotency tests while silently
+// swallowing the later ready() call - no timing summary, and a shellReady()
+// would cancel the render watchdog. Here both marks run on one host and both
+// INFO lines must appear exactly once.
+func TestShellReadyAndReadyAreIndependentSignals(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	host.MarkFrontendShellReady()
+	host.MarkFrontendReady()
+
+	if got := strings.Count(logger.String(), "msg=mullion: frontend shell ready\n"); got != 1 {
+		t.Fatalf("frontend shell ready logged %d times, want 1:\n%s", got, logger.String())
+	}
+	if got := strings.Count(logger.String(), "msg=mullion: frontend ready\n"); got != 1 {
+		t.Fatalf("frontend ready logged %d times, want 1 - a shared flag would swallow it:\n%s", got, logger.String())
+	}
+}
+
+// TestMarkFrontendShellReadyReleasesTheShowGate pins the method's primary
+// purpose: the FIRST call must release the startup show gate. The idempotency
+// gate sits directly upstream of requestStartupShow, so a wrong early return -
+// or a refactor dropping the call - would leave every launch invisible until
+// the Config.ShowTimeout fallback, a user-visible dead start that all the
+// log-count tests miss (both independent auditors of the #47 fix flagged
+// exactly this gap).
+func TestMarkFrontendShellReadyReleasesTheShowGate(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	host.MarkFrontendShellReady()
+	host.MarkFrontendShellReady()
+
+	if got := strings.Count(logger.String(), "msg=mullion: initial show gate released, reason=frontend_shell_ready\n"); got != 1 {
+		t.Fatalf("show gate released %d times for shellReady, want exactly 1:\n%s", got, logger.String())
+	}
+}
+
+// TestMarkFrontendShellReadyIsIdempotentUnderConcurrency drives the gate from
+// racing goroutines - the real caller mix is the UI-thread bridge dispatch plus
+// any application goroutine, and the doc comment promises any-goroutine safety.
+// Exactly one INFO line may survive. With the correct renderMu check-and-set
+// this is deterministic; an unlocked mutant is caught here by CI's -race run,
+// which otherwise has no concurrent caller to bite on.
+func TestMarkFrontendShellReadyIsIdempotentUnderConcurrency(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			host.MarkFrontendShellReady()
+		}()
+	}
+	wg.Wait()
+
+	if got := strings.Count(logger.String(), "msg=mullion: frontend shell ready\n"); got != 1 {
+		t.Fatalf("frontend shell ready logged %d times from 8 racing calls, want 1:\n%s", got, logger.String())
+	}
+}
+
+// TestStartRenderWatchdogRearmsShellReady pins the flag's lifecycle: the shell
+// gate is per embed cycle, reset by startRenderWatchdog exactly like
+// frontendReady, so a fresh embed can report shell readiness again. Removing
+// the reset would leave the gate latched for the life of the host.
+func TestStartRenderWatchdogRearmsShellReady(t *testing.T) {
+	host, logger := newTestHost(t, Config{RenderTimeout: -1})
+
+	host.MarkFrontendShellReady()
+	host.startRenderWatchdog()
+	host.MarkFrontendShellReady()
+
+	if got := strings.Count(logger.String(), "msg=mullion: frontend shell ready\n"); got != 2 {
+		t.Fatalf("frontend shell ready logged %d times across two embed cycles, want 2:\n%s", got, logger.String())
 	}
 }
 
