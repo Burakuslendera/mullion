@@ -5,6 +5,7 @@ package host
 import (
 	"bytes"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -118,15 +119,35 @@ func TestIsTerminalRejectsNonConsoleHandle(t *testing.T) {
 
 const colourDisabledNotice = "mullion: colour disabled, reason=console cannot enable virtual terminal processing"
 
+// unsetNoColour clears an ambient NO_COLOR for the duration of the test.
+// enableColour short-circuits on the variable's mere presence (empty value
+// included, per no-color.org), so t.Setenv("NO_COLOR", "") would not help - the
+// variable must be genuinely absent for the console probe to run at all.
+func unsetNoColour(t *testing.T) {
+	t.Helper()
+	value, ok := os.LookupEnv("NO_COLOR")
+	if !ok {
+		return
+	}
+	if err := os.Unsetenv("NO_COLOR"); err != nil {
+		t.Fatalf("unset NO_COLOR: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("NO_COLOR", value) })
+}
+
 // TestColourLoggerAnnouncesVTRefusalOnce locks the degradation notice: on a
 // console that refused VT, construction emits exactly one plain WARN line
 // saying colour is disabled - without it the colours vanish with no trace of
-// why - and the logger's own lines stay plain and escape-free.
+// why - and the logger's own lines stay plain and escape-free. Two writes
+// follow the construction, so a notice wrongly emitted per write - instead of
+// once per logger - fails the exactly-one count.
 func TestColourLoggerAnnouncesVTRefusalOnce(t *testing.T) {
+	unsetNoColour(t)
 	stubLegacyConsole(t)
 	w := &fakeConsoleWriter{}
 	log := ColourLogger(w)
 	log.Error("boom")
+	log.Info("still here")
 
 	out := w.String()
 	if got := strings.Count(out, colourDisabledNotice); got != 1 {
@@ -135,8 +156,8 @@ func TestColourLoggerAnnouncesVTRefusalOnce(t *testing.T) {
 	if strings.ContainsRune(out, 0x1b) {
 		t.Fatalf("legacy-console output carries escape sequences: %q", out)
 	}
-	if !strings.Contains(out, "boom\n") {
-		t.Fatalf("log line missing from output: %q", out)
+	if !strings.Contains(out, "boom\n") || !strings.Contains(out, "still here\n") {
+		t.Fatalf("log lines missing from output: %q", out)
 	}
 }
 
@@ -163,6 +184,7 @@ func TestColourLoggerStaysSilentWhenNoColourIsExplicit(t *testing.T) {
 // pipe or a file is normal redirection, so a captured log never carries the
 // notice.
 func TestColourLoggerStaysSilentForNonTerminalSink(t *testing.T) {
+	unsetNoColour(t)
 	stubConsoleModes(t,
 		func(windows.Handle, *uint32) error { return errors.New("not a console") },
 		func(windows.Handle, uint32) error { return nil },
