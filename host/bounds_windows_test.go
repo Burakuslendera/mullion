@@ -76,11 +76,34 @@ func TestBoundsSyncSourceFromWParam(t *testing.T) {
 		{boundsSyncWParamDeferred, "deferred_window_state"},
 		{boundsSyncWParamFrontendReady, "frontend_ready"},
 		{boundsSyncWParamFrontendShellReady, "frontend_shell_ready"},
+		// The deferred window actions (issue #46): each keeps its own label so a
+		// bounds regression after a restore is distinguishable from one after an
+		// exit-size-move, and from the immediate sync of the same action.
+		{boundsSyncWParamDeferredRestore, "deferred_restore"},
+		{boundsSyncWParamDeferredMaximize, "deferred_maximize"},
+		{boundsSyncWParamDeferredExitSizeMove, "deferred_wm_exitsizemove"},
 		{99, "deferred_window_state"},
 	}
 	for _, test := range tests {
 		if got := boundsSyncSourceFromWParam(test.wParam); got != test.want {
 			t.Errorf("boundsSyncSourceFromWParam(%d) = %q, want %q", test.wParam, got, test.want)
+		}
+	}
+}
+
+// The deferred sync used to post wParam 0 -> "deferred_window_state", which
+// shouldNotifyBoundsSource treats as a parent-position notify. The new
+// deferred_ labels must stay in that set, or renaming them would silently stop
+// the deferred sync from notifying WebView2 that the parent moved (issue #46).
+func TestDeferredBoundsSourcesStillNotifyParent(t *testing.T) {
+	for _, wParam := range []uintptr{
+		boundsSyncWParamDeferredRestore,
+		boundsSyncWParamDeferredMaximize,
+		boundsSyncWParamDeferredExitSizeMove,
+	} {
+		source := boundsSyncSourceFromWParam(wParam)
+		if !shouldNotifyBoundsSource(source) {
+			t.Errorf("shouldNotifyBoundsSource(%q) = false: the deferred sync must still notify the parent moved", source)
 		}
 	}
 }

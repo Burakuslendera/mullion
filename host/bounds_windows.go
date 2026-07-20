@@ -148,39 +148,59 @@ func shouldNotifyBoundsSource(source string) bool {
 	case "show", "wm_size", "wm_move", "wm_moving", "wm_dpi_changed",
 		"wm_windowpos_changing", "wm_windowpos_changed", "wm_entersizemove",
 		"wm_exitsizemove", "frontend_shell_ready", "frontend_ready",
-		"navigation_completed", "maximize", "restore", "deferred_window_state":
+		"navigation_completed", "maximize", "restore", "deferred_window_state",
+		"deferred_restore", "deferred_maximize", "deferred_wm_exitsizemove":
 		return true
 	default:
 		return false
 	}
 }
 
-func (host *Host) requestDeferredBoundsSync(source string) {
+// requestDeferredBoundsSync posts a second bounds sync 16ms after a window
+// action whose final bounds may not have settled when the immediate sync ran
+// (restore, maximize, exit-size-move). source is a wParam code, not a string:
+// the deferred post used to drop its label and always log as the generic
+// deferred resync, so a bounds regression after a restore could not be told
+// from one after an exit-size-move (issue #46). Carrying the code keeps them
+// distinct, and distinct from the immediate sync of the same event.
+func (host *Host) requestDeferredBoundsSync(source uintptr) {
 	time.AfterFunc(16*time.Millisecond, func() {
-		host.warnIf("deferred bounds sync post", postWindowMessage(host.window(), wmNativeSyncBounds))
+		host.postBoundsSync("deferred bounds sync post", source)
 	})
 }
 
 // A wmNativeSyncBounds message carries the origin of the sync request in
 // wParam, so the UI thread keeps the source label the bounds diagnostics key on
-// (formatWebViewBoundsMismatchLog treats frontend_ready specially). Zero - what
-// every plain postWindowMessage sends - stays the deferred resync, so the
-// existing posts are unchanged.
+// (formatWebViewBoundsMismatchLog treats frontend_ready specially). The
+// deferred codes name which window action queued the resync; zero, and any
+// unknown value, stays the generic deferred resync.
 const (
 	boundsSyncWParamDeferred uintptr = iota
 	boundsSyncWParamFrontendReady
 	boundsSyncWParamFrontendShellReady
+	boundsSyncWParamDeferredRestore
+	boundsSyncWParamDeferredMaximize
+	boundsSyncWParamDeferredExitSizeMove
 )
 
 // boundsSyncSourceFromWParam maps a wmNativeSyncBounds wParam to its source
 // label. Unknown values collapse to the deferred label rather than inventing a
-// new one, so a stray message cannot mint a source no log reader has seen.
+// new one, so a stray message cannot mint a source no log reader has seen. The
+// deferred_ labels stay distinct from the immediate sync of the same action
+// (source "restore" vs "deferred_restore"), so the log shows which pass moved
+// the surface.
 func boundsSyncSourceFromWParam(wParam uintptr) string {
 	switch wParam {
 	case boundsSyncWParamFrontendReady:
 		return "frontend_ready"
 	case boundsSyncWParamFrontendShellReady:
 		return "frontend_shell_ready"
+	case boundsSyncWParamDeferredRestore:
+		return "deferred_restore"
+	case boundsSyncWParamDeferredMaximize:
+		return "deferred_maximize"
+	case boundsSyncWParamDeferredExitSizeMove:
+		return "deferred_wm_exitsizemove"
 	default:
 		return "deferred_window_state"
 	}
