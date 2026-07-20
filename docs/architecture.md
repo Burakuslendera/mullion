@@ -225,16 +225,16 @@ the frontend's `ready()` call, made only after it has actually rendered. If
 ```
 phase=<last frontend phase>   asset=<last asset served>
 asset_category=…   asset_status=…
-document=<n>  stylesheet=<n>  script=<n>  shim=<n>
-last_bridge=<method:status>   shim_observed=<bool>
+document=<n>  stylesheet=<n>  script=<n>
+last_bridge=<method:status>
 ```
 
 The counts are what make the payload diagnostic rather than decorative.
 `document=1, stylesheet=0, script=0` is an asset-serving failure — the stream lifetime
 bug in [webview2-and-assets.md](./webview2-and-assets.md) produces exactly this shape. `document=0` is a navigation or filter failure.
-Healthy counts with `phase` stuck early is a frontend fault. `shim_observed=false` means
-the bridge never loaded. One line separates four root causes that all present as the same
-white rectangle. Both timeouts are configurable; a negative value disables the mechanism.
+Healthy counts with `phase` stuck early is a frontend fault. `last_bridge=unknown` means
+no bridge call ever arrived — the injected shim never ran. One line separates four root
+causes that all present as the same white rectangle. Both timeouts are configurable; a negative value disables the mechanism.
 
 ## Known limitations
 
@@ -248,4 +248,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-19 | Editor: Claude (Fable 5) | Change: step 5 records the computed creation rect — DPI-scaled `Config.Width`/`Height` centered in the primary work area (issue #59, decision 0018).
+> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: the render-watchdog payload block drops `shim=` / `shim_observed=` — fields `timeoutSummary` never emitted; the bridge-never-loaded signal is `last_bridge=unknown` (docs-vs-code audit).
