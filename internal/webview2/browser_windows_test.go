@@ -105,6 +105,9 @@ func TestApplyBoundsPolicyKeepsSetterFailuresOnTheErrorChannel(t *testing.T) {
 	if c3State.addRefs != 1 || c3State.releases != 1 {
 		t.Fatalf("controller3 addRefs=%d releases=%d, want 1/1: the queried reference must be dropped exactly once", c3State.addRefs, c3State.releases)
 	}
+	// The fake controller reaches controller3 only through the uintptr in its
+	// state, which the collector does not treat as a reference.
+	runtime.KeepAlive(controller3)
 }
 
 // TestApplyBoundsPolicyIsSilentOnAHealthyController3 pins the common case: both
@@ -125,6 +128,7 @@ func TestApplyBoundsPolicyIsSilentOnAHealthyController3(t *testing.T) {
 	if c3State.addRefs != 1 || c3State.releases != 1 {
 		t.Fatalf("controller3 addRefs=%d releases=%d, want 1/1", c3State.addRefs, c3State.releases)
 	}
+	runtime.KeepAlive(controller3)
 }
 
 // TestHandleWebResourceRequestedReleasesTheRequest locks the lifetime of the
