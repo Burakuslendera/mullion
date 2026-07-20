@@ -49,6 +49,84 @@ func TestRegisterEventsSuccessKeepsBrowser(t *testing.T) {
 	}
 }
 
+// boundsPolicyBrowser stands a Browser on the given fake controller and records
+// what each report channel receives, for the applyBoundsPolicy severity tests.
+func boundsPolicyBrowser(controller *ICoreWebView2Controller) (browser *Browser, warnings, errs *[]error) {
+	browser = New()
+	browser.controller = controller
+	warnings, errs = &[]error{}, &[]error{}
+	browser.WarningCallback = func(err error) { *warnings = append(*warnings, err) }
+	browser.ErrorCallback = func(err error) { *errs = append(*errs, err) }
+	return browser, warnings, errs
+}
+
+// TestApplyBoundsPolicyRoutesAMissingController3ToTheWarningChannel locks the
+// severity contract of issue #32. An older runtime answers E_NOINTERFACE for
+// ICoreWebView2Controller3, a condition applyBoundsPolicy's own contract calls
+// "a warning, not a failure" - yet the miss used to route through ErrorCallback
+// and surface as ERROR on every embed, teaching an operator to distrust the one
+// level the host reserves for events that need attention.
+func TestApplyBoundsPolicyRoutesAMissingController3ToTheWarningChannel(t *testing.T) {
+	controller, _ := newFakeController(t, nil)
+	browser, warnings, errs := boundsPolicyBrowser(controller)
+
+	browser.applyBoundsPolicy()
+
+	if len(*warnings) != 1 {
+		t.Fatalf("warnings = %d (%v), want exactly 1 for the Controller3 miss", len(*warnings), *warnings)
+	}
+	if len(*errs) != 0 {
+		t.Fatalf("errors = %v, want none: a missing optional interface is not a failure (issue #32)", *errs)
+	}
+}
+
+// TestApplyBoundsPolicyKeepsSetterFailuresOnTheErrorChannel is the other half of
+// the split: PutBoundsMode / PutShouldDetectMonitorScaleChanges can only fail on
+// a runtime that does implement Controller3, so those failures are genuine and
+// must stay on the error channel - a fix that blanket-downgraded the whole
+// function to Warn would pass the miss test and silence real failures. The
+// reference QueryInterface handed out must also be dropped exactly once.
+func TestApplyBoundsPolicyKeepsSetterFailuresOnTheErrorChannel(t *testing.T) {
+	controller3, c3State := newFakeController3(t, eFail)
+	controller, _ := newFakeController(t, controller3)
+	browser, warnings, errs := boundsPolicyBrowser(controller)
+
+	browser.applyBoundsPolicy()
+
+	if len(*errs) != 2 {
+		t.Fatalf("errors = %d (%v), want 2: both failing setters are real failures", len(*errs), *errs)
+	}
+	if len(*warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for setter failures", *warnings)
+	}
+	if c3State.puts != 2 {
+		t.Fatalf("setter calls = %d, want 2: the first failure must not abort the second setting", c3State.puts)
+	}
+	if c3State.addRefs != 1 || c3State.releases != 1 {
+		t.Fatalf("controller3 addRefs=%d releases=%d, want 1/1: the queried reference must be dropped exactly once", c3State.addRefs, c3State.releases)
+	}
+}
+
+// TestApplyBoundsPolicyIsSilentOnAHealthyController3 pins the common case: both
+// setters succeed, neither channel fires, and the queried reference is dropped.
+func TestApplyBoundsPolicyIsSilentOnAHealthyController3(t *testing.T) {
+	controller3, c3State := newFakeController3(t, sOK)
+	controller, _ := newFakeController(t, controller3)
+	browser, warnings, errs := boundsPolicyBrowser(controller)
+
+	browser.applyBoundsPolicy()
+
+	if len(*warnings) != 0 || len(*errs) != 0 {
+		t.Fatalf("warnings = %v, errors = %v, want both empty on a healthy runtime", *warnings, *errs)
+	}
+	if c3State.puts != 2 {
+		t.Fatalf("setter calls = %d, want 2", c3State.puts)
+	}
+	if c3State.addRefs != 1 || c3State.releases != 1 {
+		t.Fatalf("controller3 addRefs=%d releases=%d, want 1/1", c3State.addRefs, c3State.releases)
+	}
+}
+
 // TestHandleWebResourceRequestedReleasesTheRequest locks the lifetime of the
 // reference GetRequest hands out. The event fires for every intercepted
 // resource in embedded-FS mode, so a missing release is not a one-off: it leaks

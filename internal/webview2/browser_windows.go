@@ -34,6 +34,12 @@ type Browser struct {
 	NavigationCompletedCallback  func(success bool, status WebErrorStatus)
 	ProcessFailedCallback        func(kind ProcessFailedKind)
 	ErrorCallback                func(err error)
+	// WarningCallback receives conditions the browser tolerates by design - an
+	// older runtime answering E_NOINTERFACE for an optional interface - as
+	// opposed to ErrorCallback's real failures. Splitting the channels is what
+	// lets the host keep its severity contract: ERROR is reserved for events
+	// that need attention (issue #32).
+	WarningCallback func(err error)
 
 	// UserDataFolder is where WebView2 keeps its profile. Empty means "a folder
 	// under the user's local app data, named after the executable".
@@ -55,6 +61,12 @@ func New() *Browser { return &Browser{} }
 func (browser *Browser) reportError(err error) {
 	if err != nil && browser.ErrorCallback != nil {
 		browser.ErrorCallback(err)
+	}
+}
+
+func (browser *Browser) reportWarning(err error) {
+	if err != nil && browser.WarningCallback != nil {
+		browser.WarningCallback(err)
 	}
 }
 
@@ -147,11 +159,14 @@ func (browser *Browser) registerEventsOrTearDown(register func() error) error {
 //
 // Both settings live on ICoreWebView2Controller3. An older runtime simply does
 // not have it: that is a warning, not a failure, because the defaults are close
-// enough to keep a single-DPI setup working.
+// enough to keep a single-DPI setup working. The query miss therefore goes to
+// WarningCallback - the same severity SetRasterizationScale's caller applies to
+// the identical miss - while the Put* calls, which can only fail on a runtime
+// that does have the interface, stay real errors (issue #32).
 func (browser *Browser) applyBoundsPolicy() {
 	controller3, err := browser.Controller().QueryController3()
 	if err != nil {
-		browser.reportError(err)
+		browser.reportWarning(err)
 		return
 	}
 	defer controller3.Release()

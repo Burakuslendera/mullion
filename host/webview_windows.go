@@ -81,6 +81,11 @@ func (host *Host) createWebView() error {
 	browser.ErrorCallback = func(err error) {
 		host.log.Error("mullion: webview2 runtime error, reason=" + logsafe.Reason(err))
 	}
+	browser.WarningCallback = func(err error) {
+		// Tolerated-by-design conditions - an older runtime without an optional
+		// interface - land at Warn, keeping ERROR meaningful (issue #32).
+		host.log.Warn("mullion: webview2 runtime warning, reason=" + logsafe.Reason(err))
+	}
 	browser.MessageCallback = func(message string, source string, sender *webview2.ICoreWebView2) {
 		if !host.config.messageSourceAllowed(source) && !host.errorSurfaceMessageAllowed(source) {
 			// The bridge is injected into every document, so a top-level navigation

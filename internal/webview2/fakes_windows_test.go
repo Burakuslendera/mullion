@@ -27,10 +27,13 @@ import (
 
 // fakeComState counts the calls a fake COM object receives.
 type fakeComState struct {
-	releases   int
-	addRefs    int
-	getRequest int
-	request    uintptr // what a fake event args writes out from GetRequest; 0 fails the call
+	releases    int
+	addRefs     int
+	getRequest  int
+	request     uintptr // what a fake event args writes out from GetRequest; 0 fails the call
+	queryTarget uintptr // what a fake controller's QueryInterface hands out; 0 answers E_NOINTERFACE
+	puts        int     // Put* setter calls received by a fake controller3
+	putResult   uintptr // HRESULT a fake controller3 returns from its Put* setters
 }
 
 var (
@@ -103,6 +106,75 @@ var fakeWebResourceArgsVtbl = ICoreWebView2WebResourceRequestedEventArgsVtbl{
 		writeAddress(out, state.request)
 		return sOK
 	})),
+}
+
+// fakeControllerVtbl backs a fake ICoreWebView2Controller whose QueryInterface
+// answers from the object's registered queryTarget: a real controller3 address
+// on a runtime that has the interface, or E_NOINTERFACE - the clean "no" an old
+// runtime gives (query_windows.go) - when none is registered. Handing out the
+// target AddRefs it, as real QueryInterface does, so release-balance assertions
+// hold. Only the IUnknown slots are populated; a zero slot crashes loudly if a
+// test ever reaches one.
+var fakeControllerVtbl = ICoreWebView2ControllerVtbl{
+	IUnknownVtbl: IUnknownVtbl{
+		QueryInterface: ComProc(windows.NewCallback(func(this, riid, ppv uintptr) uintptr {
+			state := fakeComStateFor(this)
+			if state == nil || state.queryTarget == 0 {
+				writeAddress(ppv, 0)
+				return eNoInterface
+			}
+			if target := fakeComStateFor(state.queryTarget); target != nil {
+				target.addRefs++
+			}
+			writeAddress(ppv, state.queryTarget)
+			return sOK
+		})),
+		AddRef:  fakeComIUnknownVtbl.AddRef,
+		Release: fakeComIUnknownVtbl.Release,
+	},
+}
+
+// fakeController3Vtbl backs a fake ICoreWebView2Controller3 whose two policy
+// setters count into puts and return the object's registered putResult, so a
+// test can play both a healthy runtime (sOK) and one whose setters fail (eFail).
+var fakeController3Vtbl = ICoreWebView2Controller3Vtbl{
+	ICoreWebView2Controller2Vtbl: ICoreWebView2Controller2Vtbl{
+		ICoreWebView2ControllerVtbl: ICoreWebView2ControllerVtbl{
+			IUnknownVtbl: fakeComIUnknownVtbl,
+		},
+	},
+	PutShouldDetectMonitorScaleChanges: fakeController3Put,
+	PutBoundsMode:                      fakeController3Put,
+}
+
+var fakeController3Put = ComProc(windows.NewCallback(func(this, value uintptr) uintptr {
+	state := fakeComStateFor(this)
+	if state == nil {
+		return eFail
+	}
+	state.puts++
+	return state.putResult
+}))
+
+// newFakeController returns a fake controller whose QueryInterface hands out
+// target, or answers E_NOINTERFACE when target is nil - the shape of an older
+// runtime that does not implement ICoreWebView2Controller3.
+func newFakeController(t *testing.T, target *ICoreWebView2Controller3) (*ICoreWebView2Controller, *fakeComState) {
+	t.Helper()
+	controller := &ICoreWebView2Controller{Vtbl: &fakeControllerVtbl}
+	state := &fakeComState{queryTarget: uintptr(unsafe.Pointer(target))}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(controller)), state))
+	return controller, state
+}
+
+// newFakeController3 returns a fake controller3 whose Put* setters return
+// putResult, and its call counters.
+func newFakeController3(t *testing.T, putResult uintptr) (*ICoreWebView2Controller3, *fakeComState) {
+	t.Helper()
+	controller3 := &ICoreWebView2Controller3{Vtbl: &fakeController3Vtbl}
+	state := &fakeComState{putResult: putResult}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(controller3)), state))
+	return controller3, state
 }
 
 // newFakeUnknown returns a bare fake IUnknown and its call counters, for
