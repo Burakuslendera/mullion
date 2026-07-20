@@ -387,4 +387,4 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-07-19 | Editor: Claude (Fable 5) | Change: §6 gains the computed initial placement — DPI-scaled size centered in the primary work area, `CW_USEDEFAULT` only as fallback (issue #59, decision 0018).
+> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: §5's auto-hide paragraph now records that the maximized hit-test stays in-process — the `SHAppBarMessage` probe is confined to the two window-sizing paths (issue #36, decision 0019).
