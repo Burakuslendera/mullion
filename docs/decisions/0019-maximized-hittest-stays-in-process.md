@@ -108,3 +108,10 @@ transitions.
 - `TestMaximizeMonitorInfoInsetsAutoHideEdges` (`appbar_windows_test.go`): the
   maximize-geometry paths still inset — the 0015 wiring, previously live-only, now
   locked headlessly.
+- Live check, 2026-07-20, on the fix build (`devel (bbcf145)`, `examples/basic`,
+  120 DPI): maximized caption buttons, titlebar drag, snap-maximize and restore all
+  correct with a visible taskbar (log: `SessionWarnCount=0, SessionErrorCount=0`);
+  with the taskbar set to auto-hide, the reveal still pops on hover while
+  maximized — the sliver survives the re-route. Primary monitor; the sizing paths
+  that produce the sliver are byte-identical to the 0015 code verified live on
+  both monitors at `f7c29ac`.
