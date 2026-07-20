@@ -130,6 +130,42 @@ func TestMarkFrontendShellReadyIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestShellReadyAndReadyAreIndependentSignals pins that the two readiness
+// gates use separate flags. A copy-paste that gated MarkFrontendShellReady on
+// frontendReady would pass both single-signal idempotency tests while silently
+// swallowing the later ready() call - no timing summary, and a shellReady()
+// would cancel the render watchdog. Here both marks run on one host and both
+// INFO lines must appear exactly once.
+func TestShellReadyAndReadyAreIndependentSignals(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	host.MarkFrontendShellReady()
+	host.MarkFrontendReady()
+
+	if got := strings.Count(logger.String(), "msg=mullion: frontend shell ready\n"); got != 1 {
+		t.Fatalf("frontend shell ready logged %d times, want 1:\n%s", got, logger.String())
+	}
+	if got := strings.Count(logger.String(), "msg=mullion: frontend ready\n"); got != 1 {
+		t.Fatalf("frontend ready logged %d times, want 1 - a shared flag would swallow it:\n%s", got, logger.String())
+	}
+}
+
+// TestStartRenderWatchdogRearmsShellReady pins the flag's lifecycle: the shell
+// gate is per embed cycle, reset by startRenderWatchdog exactly like
+// frontendReady, so a fresh embed can report shell readiness again. Removing
+// the reset would leave the gate latched for the life of the host.
+func TestStartRenderWatchdogRearmsShellReady(t *testing.T) {
+	host, logger := newTestHost(t, Config{RenderTimeout: -1})
+
+	host.MarkFrontendShellReady()
+	host.startRenderWatchdog()
+	host.MarkFrontendShellReady()
+
+	if got := strings.Count(logger.String(), "msg=mullion: frontend shell ready\n"); got != 2 {
+		t.Fatalf("frontend shell ready logged %d times across two embed cycles, want 2:\n%s", got, logger.String())
+	}
+}
+
 func TestRenderWatchdogDisabled(t *testing.T) {
 	host, logger := newTestHost(t, Config{RenderTimeout: -1})
 	host.startRenderWatchdog()
