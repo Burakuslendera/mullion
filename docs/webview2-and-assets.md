@@ -112,6 +112,8 @@ authority, it is also the only place the boundary can be enforced:
 | scheme is not `https` | `403` |
 | host is not the configured virtual host | `403` |
 | path contains a `.` or `..` segment | `403` |
+| path contains a backslash or a control byte (incl. `%5c`, `%00`) | `403` |
+| path is `favicon.ico` | `204`, answered before any file lookup |
 | path is `/` | rewritten to `index.html` |
 | file exists | `200`, `Content-Type` from the extension |
 | file missing | `404` |
@@ -120,7 +122,13 @@ authority, it is also the only place the boundary can be enforced:
 The scheme and host checks matter because WebView2 hands the callback anything
 matching the filter, and a filter is a pattern, not a trust boundary. The traversal
 check runs on the raw path segments *before* any cleaning, so normalisation cannot
-launder a rejected path into an accepted one. Responses carry `Cache-Control:
+launder a rejected path into an accepted one. The same pre-clean pass rejects a
+backslash or a control byte: `url.Parse` decodes `%5c` to a literal `\`, which the
+`/`-only segment split and `path.Clean` would both carry through as an ordinary byte,
+so on Windows it would act as a second path separator — the check stops it there. The
+`favicon.ico` row is a convenience, not a boundary: the browser probes for it on every
+navigation, and answering `204` keeps that probe from surfacing as a resource-load
+failure in the diagnostics of every run. Responses carry `Cache-Control:
 no-store`: the origin is identical across builds, so without it the WebView could
 replay a cached asset from an older build into a new one. Bodies are wrapped in a COM
 `IStream` built with `SHCreateMemStream`.
@@ -176,9 +184,12 @@ loads with zero stylesheets and zero scripts and paints nothing. No exception, n
 console message.
 
 Once both `PutContent` and `PutResponse` have run, the runtime holds every reference it
-needs and **ours are redundant, so both are released immediately** — the response and
-the stream, at the end of the same callback that created them. Nothing accumulates for
-the life of the process. This is only expressible because the library owns the COM
+needs and **ours are redundant, so both are released on a `defer`** — the response and
+the stream, at the end of the same callback that created them. The `defer` is
+load-bearing, not stylistic: the event dispatch recovers a panicking handler and keeps
+the process alive, so an inline release could be skipped by a panic between creating the
+response and returning, stranding both refs for the life of the process (issue #45).
+Nothing accumulates for the life of the process. This is only expressible because the library owns the COM
 lifetime end to end: the earlier design, which could not see the runtime's own
 references, had to retain both objects until `Run` returned and grew memory
 monotonically with the number of requests served.
@@ -189,4 +200,4 @@ express ownership in its type signature. Release too early and you get use-after
 behaviour that presents as a rendering bug rather than a memory bug; release too late,
 or never, and you get a leak that no test will fail on.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: new file — the two sections moved verbatim out of architecture.md, which had crossed the 400-line reference-doc limit (AGENTS.md, File size discipline).
+> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: boundary matrix gains the backslash/control-byte (`%5c`/`%00`) and `favicon.ico` `204` rows with their rationale; the COM-stream-lifetime section now states the release is a `defer` and why that is load-bearing (issue #45).

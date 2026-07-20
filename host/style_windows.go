@@ -75,17 +75,6 @@ func setWindowStyle(hwnd windowHandle, style uintptr) error {
 	return nil
 }
 
-func setWindowExStyle(hwnd windowHandle, exStyle uintptr) error {
-	if hwnd == 0 {
-		return windows.ERROR_INVALID_WINDOW_HANDLE
-	}
-	result, _, err := procSetWindowLongPtr.Call(uintptr(hwnd), windowLongIndex(gwlExStyle), exStyle)
-	if result == 0 && err != windows.ERROR_SUCCESS {
-		return syscallError(err)
-	}
-	return nil
-}
-
 func windowLongIndex(index int32) uintptr {
 	return uintptr(int(index))
 }

@@ -42,11 +42,8 @@ const (
 	abeRight            = 2
 	abeBottom           = 3
 
-	swHide     = 0
-	swShow     = 5
-	swMinimize = 6
-	swMaximize = 3
-	swRestore  = 9
+	swHide = 0
+	swShow = 5
 
 	swpNoZOrder        = 0x0004
 	swpNoMove          = 0x0002
@@ -65,14 +62,12 @@ const (
 	wsOverlappedWindow = wsOverlapped | wsCaption | wsSysMenu |
 		wsThickFrame | wsMinimizeBox | wsMaximizeBox
 	wsNativeWindow = wsOverlapped | wsThickFrame | wsMinimizeBox | wsMaximizeBox
-	wsChild        = 0x40000000
 
 	wmDestroy           = 0x0002
 	wmMove              = 0x0003
 	wmSize              = 0x0005
 	wmQuit              = 0x0012
 	wmEraseBkgnd        = 0x0014
-	wmPaint             = 0x000F
 	wmClose             = 0x0010
 	wmSetCursor         = 0x0020
 	wmGetMinMaxInfo     = 0x0024
@@ -106,19 +101,10 @@ const (
 	scMaximize = 0xF030
 	scRestore  = 0xF120
 
-	wmSetIcon = 0x0080
-	iconSmall = 0
-	iconBig   = 1
-
 	pmRemove = 0x0001
 
 	dwmwaExtendedFrameBounds     = 9
-	dwmwaCaptionButtonBounds     = 5
-	dwmwaUseImmersiveDarkMode    = 20
 	dwmwaWindowCornerPreference  = 33
-	dwmwaBorderColor             = 34
-	dwmwaCaptionColor            = 35
-	dwmwaTextColor               = 36
 	dwmWindowCornerPreferenceDef = 0
 	dwmWindowCornerPreferenceRnd = 2
 

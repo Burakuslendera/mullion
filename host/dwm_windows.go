@@ -49,33 +49,10 @@ func getDWMWindowCornerPreference(hwnd windowHandle) (int32, error) {
 	return preference, nil
 }
 
-func setDWMWindowColorAttribute(hwnd windowHandle, attribute uintptr, color uint32) error {
-	if hwnd == 0 {
-		return windows.ERROR_INVALID_WINDOW_HANDLE
-	}
-	value := color
-	result, _, _ := procDwmSetWindowAttribute.Call(
-		uintptr(hwnd),
-		attribute,
-		uintptr(unsafe.Pointer(&value)),
-		unsafe.Sizeof(value),
-	)
-	if result != 0 {
-		return hresultError(result)
-	}
-	return nil
-}
-
 func getDWMExtendedFrameBounds(hwnd windowHandle) (rect, error) {
 	var frame rect
 	err := getDWMWindowAttribute(hwnd, dwmwaExtendedFrameBounds, unsafe.Pointer(&frame), unsafe.Sizeof(frame))
 	return frame, err
-}
-
-func getDWMCaptionButtonBounds(hwnd windowHandle) (rect, error) {
-	var bounds rect
-	err := getDWMWindowAttribute(hwnd, dwmwaCaptionButtonBounds, unsafe.Pointer(&bounds), unsafe.Sizeof(bounds))
-	return bounds, err
 }
 
 func getDWMWindowAttribute(hwnd windowHandle, attribute uintptr, value unsafe.Pointer, size uintptr) error {
