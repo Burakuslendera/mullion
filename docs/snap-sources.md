@@ -69,3 +69,5 @@ forums, community write-ups).
 38. `[P]` [Title bar customization (`AppWindow`, Windows 11 Snap)](https://learn.microsoft.com/en-us/windows/apps/develop/title-bar)
 39. `[F]` [What is the role of XAML Islands in WinUI 3? — WindowsAppSDK discussion](https://github.com/microsoft/WindowsAppSDK/discussions/465)
 40. `[F]` [asklar/xaml-islands + CppXAML helpers](https://github.com/asklar/xaml-islands)
+
+> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: add the document footer this file was missing (agents/notes.md, Mechanics); its sibling snap-and-nonclient-region.md was given one in an earlier sweep and this list was skipped.
