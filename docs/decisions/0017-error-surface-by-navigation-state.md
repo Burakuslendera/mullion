@@ -1,6 +1,6 @@
 # 0017. The error surface is identified by navigation state, not by its source
 
-**Status:** Accepted
+**Status:** Accepted. Extended by [0020](./0020-absorb-failures-while-surface-loads.md): failure completions arriving while the surface's own load is in flight are absorbed, not read as the surface dying (issue #68).
 
 ## Context
 
@@ -90,4 +90,4 @@ source never reaches `Config.Bridge`:
   notify → postMessage → gate → reserved-method chain the caption buttons use.
 - lessons-and-dead-ends.md §14: the dead ends this record's decision replaced.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: new record for the navigation-state identification of the error surface (issue #56).
+> Last updated: 2026-07-21 | Editor: Claude (Fable 5) | Change: status line extended by 0020 — the failure-counting side of the missing-identity assumption sealed the surface on a failed Retry (issue #68); the body is unchanged, per the supersede rules.
