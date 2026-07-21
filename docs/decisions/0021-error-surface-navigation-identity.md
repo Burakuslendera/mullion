@@ -40,6 +40,15 @@ attributes completions positively (`noteNavigationOutcome`):
 - a foreign **failure** inside the surface window is absorbed, outside it
   arms.
 
+Two rules keep the attribution honest across generations and races. A
+completion cannot precede its own navigation's start, so an identified
+completion arriving while the surface's start is still unclaimed is classified
+foreign - the claim window stays open for the surface's own start. And arming
+starts a new surface generation: it resets the claimed id, so a superseded
+generation's late cancel cannot be mis-attributed to the next arming and
+unwind its claim window (a defect the pre-merge audit found and this rule
+closed; the id-less fallback likewise must not clobber a claimed id).
+
 When either id is unavailable, the machine falls back to 0020's order-based
 rules verbatim, with 0020's accepted costs. A synchronous surface-`Navigate`
 failure unwinds the arming (`noteSurfaceNavigateFailed`), closing the
@@ -109,5 +118,13 @@ completion-less residual 0020 recorded.
   `TestErrorSurfaceIdentityAttributesTheRetryStraggler` passes on both by
   design (the orderings coincide there — an equivalence lock). The nine
   id-less locks drive the fallback and hold unchanged.
+- The pre-merge audit round (three finders plus adversarial refuters): the
+  COM/ABI, ownership and plumbing lenses came back clean; the state-machine
+  lens found the stale-generation id carry, confirmed by its refuter and
+  closed by the generation rules above, with three more fails-before locks —
+  `TestErrorSurfaceLateCancelDoesNotDisturbANewArming`,
+  `TestErrorSurfaceIdentifiedCompletionsBeforeTheClaimAreForeign` and
+  `TestErrorSurfaceIdlessCompletionDoesNotDestroyTheClaimedIdentity`, each
+  observed failing against the pre-rule machine.
 
 > Last updated: 2026-07-22 | Editor: Claude (Fable 5) | Change: new record — error-surface completions attributed by navigation id (issue #68 follow-up, the identity trip-wire of 0017/0020, under issue #6's event-binding work).

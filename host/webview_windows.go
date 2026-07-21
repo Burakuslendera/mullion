@@ -370,7 +370,14 @@ func (host *Host) noteNavigationOutcome(success bool, status webview2.WebErrorSt
 		}
 		return host.noteForeignOutcome(success)
 	}
-	if navigationID != 0 && !host.errorSurfaceLoading && !host.errorSurfacePending {
+	if navigationID != 0 && host.errorSurfacePending {
+		// A completion cannot precede its own navigation's start, so while the
+		// surface's start is still unclaimed, an identified completion is
+		// necessarily some other navigation's - classifying it foreign keeps
+		// the claim window open for the surface's own start.
+		return host.noteForeignOutcome(success)
+	}
+	if navigationID != 0 && !host.errorSurfaceLoading {
 		// Identified completion with no surface story in flight: ordinary
 		// classification, same result the fallback would produce, taken here
 		// so the fallback below stays exactly 0020's machine.
@@ -431,9 +438,14 @@ func (host *Host) noteForeignOutcome(success bool) bool {
 		host.log.Debug("mullion: navigation failure absorbed while the error surface loads")
 		return false
 	}
+	// Arming starts a new surface generation: any lingering id belongs to a
+	// navigation that no longer matters here, and carrying it forward would
+	// let a superseded generation's late cancel be mis-attributed to this one
+	// and unwind its claim window before its start ever fires.
 	host.errorSurfaceActive = true
 	host.errorSurfaceLoading = true
 	host.errorSurfacePending = true
+	host.errorSurfaceNavID = 0
 	return true
 }
 
@@ -449,11 +461,12 @@ func (host *Host) noteOrderedOutcome(success bool) bool {
 		if host.errorSurfaceLoading || host.errorSurfacePending {
 			// Taken as the surface's own load completing; it is now the
 			// document on screen, and stays admitted until a navigation
-			// leaves it.
+			// leaves it. A claimed id is left alone: if this id-less
+			// completion was not actually the surface's, the surface's own
+			// identified completion must still be attributable when it comes.
 			host.errorSurfaceActive = true
 			host.errorSurfacePending = false
 			host.errorSurfaceLoading = false
-			host.errorSurfaceNavID = 0
 			return false
 		}
 		// A navigation away from the surface (a Retry that reached the origin,
@@ -465,9 +478,12 @@ func (host *Host) noteOrderedOutcome(success bool) bool {
 		host.log.Debug("mullion: navigation failure absorbed while the error surface loads")
 		return false
 	}
+	// Arming resets the generation id for the same reason as the identity
+	// arm above.
 	host.errorSurfaceActive = true
 	host.errorSurfaceLoading = true
 	host.errorSurfacePending = true
+	host.errorSurfaceNavID = 0
 	return true
 }
 

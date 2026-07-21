@@ -545,6 +545,82 @@ func TestErrorSurfaceSealsWhenItsOwnLoadFails(t *testing.T) {
 	}
 }
 
+// A superseded surface generation's canceled completion can arrive after a
+// fresh failure has already armed the NEXT surface generation. The stale id
+// must not be carried into that new arming: if it were, the old cancel would
+// be mis-attributed to the new generation, unwind its claim window before its
+// start ever fired, and leave the freshly loaded surface unadmitted - the
+// dead-buttons symptom again, now on the identity path (found by the
+// pre-merge audit of decisions/0021).
+func TestErrorSurfaceLateCancelDoesNotDisturbANewArming(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	armAndClaim(t, host, 5, 6) // generation one claimed as id 6
+	noteOK(host, 7)            // a foreign navigation wins and commits
+
+	if !noteFail(host, 8) {
+		t.Fatal("a fresh failure after the foreign document must arm the next surface generation")
+	}
+	if noteCancel(host, 6) {
+		t.Fatal("generation one's late cancel must not re-navigate")
+	}
+	if !host.noteSurfaceNavigationStarting("data:text/html,surface", 9) {
+		t.Fatal("generation two's own start must still be claimable: the stale cancel must not have closed its claim window")
+	}
+	if noteOK(host, 9) {
+		t.Fatal("generation two's own load must not trigger another navigation")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("generation two's surface must be admitted once it commits")
+	}
+}
+
+// A completion cannot precede its own navigation's start, so an identified
+// completion arriving while the surface's start is still unclaimed is
+// necessarily some other navigation's. A foreign success in that window must
+// drop the admission without closing the claim window, so the surface's own
+// late commit still re-admits it.
+func TestErrorSurfaceIdentifiedCompletionsBeforeTheClaimAreForeign(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.errorSurfaceURL = "data:text/html,surface"
+	if !noteFail(host, 5) {
+		t.Fatal("the arming failure must ask for the surface to be shown")
+	}
+	if noteOK(host, 7) {
+		t.Fatal("an identified foreign success must not trigger a surface navigation")
+	}
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("a foreign document committing must drop the admission even before the surface's start is claimed")
+	}
+	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 6) {
+		t.Fatal("the surface's own start must still be claimable after the foreign success")
+	}
+	noteOK(host, 6)
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the surface committing after the foreign document must re-admit it")
+	}
+}
+
+// A single completion whose id read failed lands in the order-based fallback
+// even though the surface's own id is known. The fallback must not destroy
+// that identity: when the surface's real, identified completion arrives, it
+// must still be attributed - not read as foreign because the fallback
+// clobbered the claimed id.
+func TestErrorSurfaceIdlessCompletionDoesNotDestroyTheClaimedIdentity(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	armAndClaim(t, host, 5, 6)
+	noteOK(host, 0) // an id-less success: the fallback takes it as the surface's load
+
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the fallback must admit the surface on the first success inside the window")
+	}
+	if noteOK(host, 6) {
+		t.Fatal("the surface's identified completion must not trigger another navigation")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the surface's own identified success must keep it admitted, not read as a foreign departure")
+	}
+}
+
 // A Navigate call that fails synchronously delivers no start and no
 // completion, ever. The arming must unwind - holding the admission open with
 // nothing left to resolve it was the completion-less residual decision 0020
