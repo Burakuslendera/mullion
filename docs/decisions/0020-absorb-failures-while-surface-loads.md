@@ -70,14 +70,16 @@ keeping it against a document the machine cannot explain.
 - **If the cannot-fail premise is ever wrong** — a surface load that genuinely
   fails — the armed admission no longer seals: it persists, completion-counted
   rather than time-bounded, until some completion arrives. Exposure is the
-  reserved window controls only; an empty source never reaches `Config.Bridge`
+  reserved methods only — the window controls plus the frontend
+  ready/phase/diagnostic signals, whose worst reachable action is closing the
+  window; an empty source never reaches `Config.Bridge`
   (`messageSourceTrusted` accepts no empty source, observed).
 - **A narrow widening of 0017's mis-admission residue.** Previously, a failure
   completion racing the surface's load sealed the machine, so a foreign
   success landing next found the admission already dropped. Absorbed instead,
   that foreign success is read as the surface's own load and its document
-  stays admitted — reserved window controls only — until the next successful
-  navigation. Reachable when a navigation initiated from the departing
+  stays admitted — the same reserved-methods bound as above — until the next
+  successful navigation. Reachable when a navigation initiated from the departing
   document succeeds while the surface's load is in flight: for example, the
   server coming up exactly between two Retry clicks.
 - `errorPageShown` now rises and falls with `errorSurfaceLoading`; the field
@@ -110,7 +112,9 @@ keeping it against a document the machine cannot explain.
   `TestErrorSurfaceSurvivesARapidRetryDoubleClick`,
   `TestErrorSurfaceAbsorbsAFailureStorm` and
   `TestErrorSurfaceStaysAdmittedWhenAFailureRacesItsOwnLoad`, proved
-  fails-before against the sealing machine; the five pre-existing
-  `TestErrorSurface*` locks unchanged and green.
+  fails-before against the sealing machine;
+  `TestErrorSurfaceSealsFailClosedOutsideTheLoadingWindow` pinning the
+  defensive branch; the five pre-existing `TestErrorSurface*` locks unchanged
+  and green.
 
 > Last updated: 2026-07-21 | Editor: Claude (Fable 5) | Change: new record for the error-surface absorb window (issue #68).
