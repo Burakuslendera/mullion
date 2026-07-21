@@ -57,30 +57,36 @@ type Host struct {
 	boundsMu           sync.Mutex
 	lastBoundsSyncLog  boundsSyncLogState
 
-	// errorPageShown guards NavigationCompletedCallback from re-navigating to the
-	// fallback error surface in a loop (issue #3). Since the absorb window
-	// (issue #68, decisions/0020) it rises and falls with errorSurfaceLoading;
-	// it is kept separate so noteNavigationOutcome can fail closed if a future
-	// path ever clears the loading flag early. Read and written only on the UI
-	// thread (the navigation-completed callback), so it needs no lock.
-	errorPageShown bool
-
-	// errorSurfaceActive and errorSurfaceLoading admit the fallback error
-	// surface's own web messages. The runtime reports the empty string as the
-	// source of a data: document (issue #56, measured live on 150.0.4078.65 at
-	// both the event args and the core), so the surface cannot be recognised by
-	// its source and the host tracks it by navigation state instead:
-	// errorSurfaceActive arms when the surface is navigated to - before its load
-	// completes, because the injected diagnostics post from document creation -
-	// and disarms when a navigation away from it succeeds. errorSurfaceLoading
-	// marks the surface's own load in flight so its success completion is not
-	// mistaken for that departure, and so failure completions racing that load -
-	// a failed Retry delivers at least one - are absorbed instead of read as the
-	// surface dying (issue #68, decisions/0020). Both are read and written only
-	// on the UI thread (the navigation-completed and web-message callbacks),
-	// like errorPageShown and host.browser.
+	// The error-surface admission state (issues #3, #56, #68; decisions/0017,
+	// 0021). The runtime reports the empty string as the source of a data:
+	// document (issue #56, measured live on 150.0.4078.65 at both the event args
+	// and the core), so the fallback error surface cannot be recognised by its
+	// source; the host tracks it by navigation state, correlated by the
+	// runtime's navigation id where available:
+	//
+	//   - errorSurfaceActive admits the surface's empty-source web messages. It
+	//     arms when the surface is navigated to - before its load completes,
+	//     because the injected diagnostics post from document creation - and
+	//     disarms when a navigation away from it commits or its own load
+	//     genuinely fails.
+	//   - errorSurfacePending is set from the decision to navigate to the
+	//     surface until its NavigationStarting is claimed; the claim is what
+	//     learns the surface's navigation id.
+	//   - errorSurfaceNavID is that id (0 = not known), which lets
+	//     noteNavigationOutcome attribute completions positively instead of
+	//     counting them (issue #68's defect class).
+	//   - errorSurfaceLoading marks the surface's own load in flight, and is
+	//     also the order-based fallback's window when identity is unavailable.
+	//   - errorSurfaceURL is the exact data: URL last navigated to, which the
+	//     claim matches NavigationStarting URIs against.
+	//
+	// All are read and written only on the UI thread (the navigation and
+	// web-message callbacks), like host.browser.
 	errorSurfaceActive  bool
+	errorSurfacePending bool
+	errorSurfaceNavID   uint64
 	errorSurfaceLoading bool
+	errorSurfaceURL     string
 }
 
 // New prepares a host. It does not create a window; Run does that.

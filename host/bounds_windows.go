@@ -253,3 +253,7 @@ func formatWebViewBoundsMismatchLog(source string, clientWidth, clientHeight, co
 func formatInt32(value int32) string {
 	return strconv.FormatInt(int64(value), 10)
 }
+
+func formatUint64(value uint64) string {
+	return strconv.FormatUint(value, 10)
+}

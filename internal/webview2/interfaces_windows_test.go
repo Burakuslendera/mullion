@@ -430,6 +430,22 @@ func TestWebMessageReceivedEventArgsVtblLayout(t *testing.T) {
 	})
 }
 
+func TestNavigationStartingEventArgsVtblLayout(t *testing.T) {
+	var v ICoreWebView2NavigationStartingEventArgsVtbl
+	checkVtbl(t, "ICoreWebView2NavigationStartingEventArgs", unsafe.Sizeof(v), 10, []slot{
+		{"QueryInterface", unsafe.Offsetof(v.QueryInterface), 0},
+		{"AddRef", unsafe.Offsetof(v.AddRef), 1},
+		{"Release", unsafe.Offsetof(v.Release), 2},
+		{"GetUri", unsafe.Offsetof(v.GetUri), 3},
+		{"GetIsUserInitiated", unsafe.Offsetof(v.GetIsUserInitiated), 4},
+		{"GetIsRedirected", unsafe.Offsetof(v.GetIsRedirected), 5},
+		{"GetRequestHeaders", unsafe.Offsetof(v.GetRequestHeaders), 6},
+		{"GetCancel", unsafe.Offsetof(v.GetCancel), 7},
+		{"PutCancel", unsafe.Offsetof(v.PutCancel), 8},
+		{"GetNavigationID", unsafe.Offsetof(v.GetNavigationID), 9},
+	})
+}
+
 func TestNavigationCompletedEventArgsVtblLayout(t *testing.T) {
 	var v ICoreWebView2NavigationCompletedEventArgsVtbl
 	checkVtbl(t, "ICoreWebView2NavigationCompletedEventArgs", unsafe.Sizeof(v), 6, []slot{
@@ -468,6 +484,14 @@ func TestInterfaceIDs(t *testing.T) {
 		{"ICoreWebView2Settings9", "{0528a73b-e92d-49f4-927a-e547dddaa37d}", IIDICoreWebView2Settings9},
 		{"ICoreWebView2Controller2", "{c979903e-d4ca-4228-92eb-47ee3fa96eab}", IIDICoreWebView2Controller2},
 		{"ICoreWebView2Controller3", "{f9614724-5d2b-41dc-aef7-73d62b51543b}", IIDICoreWebView2Controller3},
+		// The event handler IIDs are what comServer answers QueryInterface with
+		// when the runtime probes an object this package implements; a swapped
+		// nibble there surfaces as add_* failing against a healthy runtime.
+		{"ICoreWebView2WebMessageReceivedEventHandler", "{57213f19-00e6-49fa-8e07-898ea01ecbd2}", IIDICoreWebView2WebMessageReceivedEventHandler},
+		{"ICoreWebView2WebResourceRequestedEventHandler", "{ab00b74c-15f1-4646-80e8-e76341d25d71}", IIDICoreWebView2WebResourceRequestedEventHandler},
+		{"ICoreWebView2NavigationStartingEventHandler", "{9adbe429-f36d-432b-9ddc-f8881fbd76e3}", IIDICoreWebView2NavigationStartingEventHandler},
+		{"ICoreWebView2NavigationCompletedEventHandler", "{d33a35bf-1c49-4f98-93ab-006e0533fe1c}", IIDICoreWebView2NavigationCompletedEventHandler},
+		{"ICoreWebView2ProcessFailedEventHandler", "{79e0aea4-990b-42d9-aa1d-0fcc2e5bc7f1}", IIDICoreWebView2ProcessFailedEventHandler},
 	} {
 		want, err := windows.GUIDFromString(tc.text)
 		if err != nil {
