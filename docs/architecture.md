@@ -71,7 +71,8 @@ dependencies are process-wide and irreversible.
 
 6. **WebView2 embed.** The controller is created as a child of an `HWND` that already
    exists and is already DPI-aware. Every callback (web message, web resource requested,
-   navigation completed, process failed) and every injected startup script is registered
+   navigation starting, navigation completed, process failed) and every injected startup
+   script is registered
    **before** the first `Navigate`; a callback registered after navigation begins can
    miss the requests and messages the first document produces — a race that reproduces
    only on fast machines, or only on slow ones, depending on where the gap lands.

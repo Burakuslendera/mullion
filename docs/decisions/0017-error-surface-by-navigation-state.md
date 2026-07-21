@@ -1,6 +1,6 @@
 # 0017. The error surface is identified by navigation state, not by its source
 
-**Status:** Accepted. Extended by [0020](./0020-absorb-failures-while-surface-loads.md): failure completions arriving while the surface's own load is in flight are absorbed, not read as the surface dying (issue #68).
+**Status:** Accepted. Extended by [0020](./0020-absorb-failures-while-surface-loads.md): failure completions arriving while the surface's own load is in flight are absorbed, not read as the surface dying (issue #68). [0021](./0021-error-surface-navigation-identity.md) replaces the completion-ordering assumptions with navigation-id attribution; this record's ordering costs apply only when identity is unavailable (the 0021 fallback).
 
 ## Context
 

@@ -37,10 +37,11 @@ These files are that record.
 | [0014](./0014-bridge-origin-at-dispatch.md) | The injected bridge acts only on messages from the trusted origin | Accepted |
 | [0015](./0015-maximize-insets-for-autohide-taskbar.md) | Maximized geometry insets 1px on an auto-hide taskbar edge | Accepted, narrowed by 0019 |
 | [0016](./0016-single-flight-embed.md) | The WebView2 embed is single-flight, and a destroyed window cancels it | Accepted |
-| [0017](./0017-error-surface-by-navigation-state.md) | The error surface is identified by navigation state, not by its source | Accepted, extended by 0020 |
+| [0017](./0017-error-surface-by-navigation-state.md) | The error surface is identified by navigation state, not by its source | Accepted, extended by 0020, orderings replaced by 0021 |
 | [0018](./0018-initial-placement-centered-on-primary.md) | The first window is centered on the primary monitor's work area, DPI-scaled | Accepted |
 | [0019](./0019-maximized-hittest-stays-in-process.md) | The maximized hit-test never queries the shell | Accepted |
-| [0020](./0020-absorb-failures-while-surface-loads.md) | Failure completions are absorbed while the error surface loads | Accepted |
+| [0020](./0020-absorb-failures-while-surface-loads.md) | Failure completions are absorbed while the error surface loads | Superseded by 0021 |
+| [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted |
 
 ## When to write one
 
