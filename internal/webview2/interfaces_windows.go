@@ -152,6 +152,18 @@ const (
 // interpreted here, so the enumerators are not mirrored.
 type WebErrorStatus int32
 
+// The two COREWEBVIEW2_WEB_ERROR_STATUS values this module branches or reasons
+// on, transcribed from WebView2.h (the enum counts up from UNKNOWN = 0). The
+// rest of the enum reaches logs as its numeric value.
+const (
+	// WebErrorStatusConnectionAborted is a connection that ended mid-flight -
+	// the status a dead loopback endpoint produces (issue #68, observed).
+	WebErrorStatusConnectionAborted WebErrorStatus = 9
+	// WebErrorStatusOperationCanceled is how the losing navigation completes
+	// when a newer navigation supersedes it before it commits.
+	WebErrorStatusOperationCanceled WebErrorStatus = 14
+)
+
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------

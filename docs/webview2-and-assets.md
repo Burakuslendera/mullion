@@ -71,14 +71,14 @@ with it. The consequence is a rule, and it is the important one on this page:
 
 ### Event handlers are COM objects we implement
 
-`add_WebMessageReceived`, `add_WebResourceRequested`, `add_NavigationCompleted` and
-`add_ProcessFailed` each take a COM object the runtime calls back into: a vtable, an
-IUnknown implementation and a refcount, written in Go. Four constraints govern them, and
-three of the four are fatal when violated.
+`add_WebMessageReceived`, `add_WebResourceRequested`, `add_NavigationStarting`,
+`add_NavigationCompleted` and `add_ProcessFailed` each take a COM object the runtime
+calls back into: a vtable, an IUnknown implementation and a refcount, written in Go.
+Four constraints govern them, and three of the four are fatal when violated.
 
 - **Build vtables once, at package init.** `windows.NewCallback` allocates from a small,
   fixed table and never frees an entry. A callback allocated per handler *instance*
-  exhausts the table; a vtable per interface wastes it. All four handler interfaces have
+  exhausts the table; a vtable per interface wastes it. All five handler interfaces have
   the same COM shape (IUnknown + a single `Invoke` slot), so they share one vtable and
   one `NewCallback` for the whole process, and the per-instance IID lives in the object.
 - **Keep a GC root.** Once a Go object's address has been handed to COM, the Go garbage

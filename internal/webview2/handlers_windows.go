@@ -2,7 +2,7 @@
 
 package webview2
 
-// Event handlers: the four COM objects WebView2 calls back into.
+// Event handlers: the five COM objects WebView2 calls back into.
 //
 // Everything in the interfaces_* files is outbound - Go calling the runtime.
 // This file is the other direction. add_WebMessageReceived and friends take a
@@ -18,9 +18,9 @@ package webview2
 //   - The Go pointers the runtime hands us (sender, args) are borrowed for the
 //     duration of the call only.
 //
-// # Why one vtable for four interfaces
+// # Why one vtable for five interfaces
 //
-// All four interfaces have the same COM shape: IUnknown plus a single
+// All five interfaces have the same COM shape: IUnknown plus a single
 // Invoke(this, sender, args) slot, and the two arguments are interface pointers
 // in every case. They differ only in their IID and in the Go type the caller
 // wants to see. comServer already stores the IID per instance and answers
@@ -64,6 +64,11 @@ var (
 	IIDICoreWebView2WebResourceRequestedEventHandler = windows.GUID{
 		Data1: 0xab00b74c, Data2: 0x15f1, Data3: 0x4646,
 		Data4: [8]byte{0x80, 0xe8, 0xe7, 0x63, 0x41, 0xd2, 0x5d, 0x71},
+	}
+	// IIDICoreWebView2NavigationStartingEventHandler = {9adbe429-f36d-432b-9ddc-f8881fbd76e3}
+	IIDICoreWebView2NavigationStartingEventHandler = windows.GUID{
+		Data1: 0x9adbe429, Data2: 0xf36d, Data3: 0x432b,
+		Data4: [8]byte{0x9d, 0xdc, 0xf8, 0x88, 0x1f, 0xbd, 0x76, 0xe3},
 	}
 	// IIDICoreWebView2NavigationCompletedEventHandler = {d33a35bf-1c49-4f98-93ab-006e0533fe1c}
 	IIDICoreWebView2NavigationCompletedEventHandler = windows.GUID{
@@ -229,7 +234,7 @@ func interfaceFromAddress[T any](addr uintptr) *T {
 
 // --- constructors -----------------------------------------------------------
 //
-// Ownership, once for all four:
+// Ownership, once for all five:
 //
 // The returned pointer carries ONE reference, which the caller owns. Pass it to
 // the matching add_* method and then hand it to ReleaseHandler:
@@ -277,6 +282,21 @@ func NewWebResourceRequestedHandler(fn func(sender *ICoreWebView2, args *ICoreWe
 			fn(
 				interfaceFromAddress[ICoreWebView2](sender),
 				interfaceFromAddress[ICoreWebView2WebResourceRequestedEventArgs](args),
+			)
+		},
+	)
+}
+
+// NewNavigationStartingHandler wraps fn as an
+// ICoreWebView2NavigationStartingEventHandler.
+func NewNavigationStartingHandler(fn func(sender *ICoreWebView2, args *ICoreWebView2NavigationStartingEventArgs)) unsafe.Pointer {
+	return newEventHandler(
+		IIDICoreWebView2NavigationStartingEventHandler,
+		"NavigationStarting",
+		func(sender, args uintptr) {
+			fn(
+				interfaceFromAddress[ICoreWebView2](sender),
+				interfaceFromAddress[ICoreWebView2NavigationStartingEventArgs](args),
 			)
 		},
 	)

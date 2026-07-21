@@ -278,8 +278,9 @@ identity comes from a UI-thread state machine (`noteNavigationOutcome`,
 only while the surface is the current document, and only for the reserved
 window controls — `Config.Bridge` stays origin-gated (decisions/0014). The
 accepted costs of that identification, and what would retire it, are recorded
-in decisions/0017 and decisions/0020 (the failed-Retry absorb window,
-issue #68).
+in decisions/0017, 0020 (the failed-Retry absorb window, issue #68) and 0021
+(navigation-id attribution, which retired 0020's ordering and keeps it only
+as the id-less fallback).
 
 **Lesson.** When the runtime's own identity channel reports nothing, parsing
 harder is not the answer; the identity you need must come from state you
@@ -300,4 +301,4 @@ already own.
 9. **Count your escape hatches into a dependency.** When you have forked it once and bypassed it once, the abstraction is already gone; owning the binding is cheaper than pretending otherwise. (§13)
 10. **A data: document reports no source.** Identify your own surfaces from navigation state you already hold, not by parsing the source harder. (§14)
 
-> Last updated: 2026-07-21 | Editor: Claude (Fable 5) | Change: §14 now points at decisions/0020 alongside 0017 — the identification's accepted costs gained the failed-Retry absorb window (issue #68).
+> Last updated: 2026-07-22 | Editor: Claude (Fable 5) | Change: §14's pointer gains 0021 — navigation-id attribution retired 0020's ordering, which survives as the id-less fallback.

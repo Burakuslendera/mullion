@@ -180,6 +180,16 @@ func (w *ICoreWebView2) AddWebMessageReceived(handler unsafe.Pointer) (EventRegi
 	return token, hres(hr)
 }
 
+func (w *ICoreWebView2) AddNavigationStarting(handler unsafe.Pointer) (EventRegistrationToken, error) {
+	var token EventRegistrationToken
+	hr, _, _ := w.Vtbl.AddNavigationStarting.Call(
+		uintptr(unsafe.Pointer(w)),
+		uintptr(handler),
+		uintptr(unsafe.Pointer(&token)),
+	)
+	return token, hres(hr)
+}
+
 func (w *ICoreWebView2) AddNavigationCompleted(handler unsafe.Pointer) (EventRegistrationToken, error) {
 	var token EventRegistrationToken
 	hr, _, _ := w.Vtbl.AddNavigationCompleted.Call(

@@ -37,8 +37,8 @@ func captureHandlerPanics(t *testing.T) *[]string {
 }
 
 // TestEventHandlerVtblLayout pins the one offset that matters: Invoke sits
-// immediately after IUnknown, at slot 3. All four handler interfaces share this
-// vtable, so this single assertion covers all four.
+// immediately after IUnknown, at slot 3. All five handler interfaces share this
+// vtable, so this single assertion covers all five.
 func TestEventHandlerVtblLayout(t *testing.T) {
 	var v eventHandlerVtbl
 	if got, want := unsafe.Sizeof(v), 4*slotSize; got != want {
@@ -74,6 +74,7 @@ func TestEventHandlerIIDs(t *testing.T) {
 	}{
 		{"ICoreWebView2WebMessageReceivedEventHandler", "{57213f19-00e6-49fa-8e07-898ea01ecbd2}", IIDICoreWebView2WebMessageReceivedEventHandler},
 		{"ICoreWebView2WebResourceRequestedEventHandler", "{ab00b74c-15f1-4646-80e8-e76341d25d71}", IIDICoreWebView2WebResourceRequestedEventHandler},
+		{"ICoreWebView2NavigationStartingEventHandler", "{9adbe429-f36d-432b-9ddc-f8881fbd76e3}", IIDICoreWebView2NavigationStartingEventHandler},
 		{"ICoreWebView2NavigationCompletedEventHandler", "{d33a35bf-1c49-4f98-93ab-006e0533fe1c}", IIDICoreWebView2NavigationCompletedEventHandler},
 		{"ICoreWebView2ProcessFailedEventHandler", "{79e0aea4-990b-42d9-aa1d-0fcc2e5bc7f1}", IIDICoreWebView2ProcessFailedEventHandler},
 	} {
@@ -89,7 +90,7 @@ func TestEventHandlerIIDs(t *testing.T) {
 
 // Every constructor must produce an object whose first word is the shared
 // vtable, and must record its own interface's IID - that pairing is what makes
-// QueryInterface answer correctly for four different interfaces off one vtable.
+// QueryInterface answer correctly for five different interfaces off one vtable.
 func TestConstructorsRegisterSharedVtableAndOwnIID(t *testing.T) {
 	wantVtbl := uintptr(unsafe.Pointer(&eventHandlerVtable))
 
@@ -104,6 +105,9 @@ func TestConstructorsRegisterSharedVtableAndOwnIID(t *testing.T) {
 		{"WebResourceRequested",
 			NewWebResourceRequestedHandler(func(*ICoreWebView2, *ICoreWebView2WebResourceRequestedEventArgs) {}),
 			IIDICoreWebView2WebResourceRequestedEventHandler},
+		{"NavigationStarting",
+			NewNavigationStartingHandler(func(*ICoreWebView2, *ICoreWebView2NavigationStartingEventArgs) {}),
+			IIDICoreWebView2NavigationStartingEventHandler},
 		{"NavigationCompleted",
 			NewNavigationCompletedHandler(func(*ICoreWebView2, *ICoreWebView2NavigationCompletedEventArgs) {}),
 			IIDICoreWebView2NavigationCompletedEventHandler},

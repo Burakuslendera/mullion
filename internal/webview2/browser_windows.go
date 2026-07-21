@@ -20,7 +20,7 @@ import (
 // Browser is one WebView2 control embedded in a host window.
 //
 // It owns the environment, the controller and the CoreWebView2 behind them, and
-// it turns the four COM events the host cares about into plain Go callbacks.
+// it turns the five COM events the host cares about into plain Go callbacks.
 //
 // A Browser is bound to the thread that called Embed: WebView2 requires a
 // single-threaded apartment and delivers every event on that thread's message
@@ -31,9 +31,15 @@ type Browser struct {
 	// must not change afterwards.
 	MessageCallback              func(message string, source string, sender *ICoreWebView2)
 	WebResourceRequestedCallback func(request *ICoreWebView2WebResourceRequest, args *ICoreWebView2WebResourceRequestedEventArgs)
-	NavigationCompletedCallback  func(success bool, status WebErrorStatus)
-	ProcessFailedCallback        func(kind ProcessFailedKind)
-	ErrorCallback                func(err error)
+	// NavigationStartingCallback fires when a top-level navigation begins.
+	// navigationID is the runtime's identity for it; the matching completion
+	// reports the same id, which is what lets the host attribute completions
+	// to the navigation that caused them (decisions/0021). A redirect fires
+	// this again with the same id and isRedirected set.
+	NavigationStartingCallback  func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool)
+	NavigationCompletedCallback func(success bool, status WebErrorStatus, navigationID uint64)
+	ProcessFailedCallback       func(kind ProcessFailedKind)
+	ErrorCallback               func(err error)
 	// WarningCallback receives conditions the browser tolerates by design - an
 	// older runtime answering E_NOINTERFACE for an optional interface - as
 	// opposed to ErrorCallback's real failures. Splitting the channels is what
@@ -223,13 +229,37 @@ func (browser *Browser) registerEvents() error {
 		return err
 	}
 
+	if err := addEvent(NewNavigationStartingHandler(func(_ *ICoreWebView2, args *ICoreWebView2NavigationStartingEventArgs) {
+		if browser.NavigationStartingCallback == nil {
+			return
+		}
+		// The getters degrade independently on purpose: identity is the
+		// load-bearing value, and a URI read failing must not cost the id. A
+		// failed id read reports 0, which no real navigation uses - callers
+		// treat it as "identity unavailable" (decisions/0021).
+		uri, _ := args.GetUri()
+		id, err := args.GetNavigationID()
+		if err != nil {
+			browser.reportWarning(err)
+		}
+		userInitiated, _ := args.GetIsUserInitiated()
+		redirected, _ := args.GetIsRedirected()
+		browser.NavigationStartingCallback(uri, id, userInitiated, redirected)
+	}), core.AddNavigationStarting); err != nil {
+		return err
+	}
+
 	if err := addEvent(NewNavigationCompletedHandler(func(_ *ICoreWebView2, args *ICoreWebView2NavigationCompletedEventArgs) {
 		if browser.NavigationCompletedCallback == nil {
 			return
 		}
 		success, _ := args.GetIsSuccess()
 		status, _ := args.GetWebErrorStatus()
-		browser.NavigationCompletedCallback(success, status)
+		id, err := args.GetNavigationID()
+		if err != nil {
+			browser.reportWarning(err)
+		}
+		browser.NavigationCompletedCallback(success, status, id)
 	}), core.AddNavigationCompleted); err != nil {
 		return err
 	}
