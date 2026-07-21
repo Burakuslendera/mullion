@@ -240,9 +240,11 @@ func (host *Host) navigateOrTearDown(navigate func() error) error {
 //
 // It runs on the UI thread from NavigationCompletedCallback, so errorPageShown needs
 // no lock. The recursion guard is belt-and-braces: the fallback is a data: page that
-// loads success=true and so cannot itself reach this branch, but the guard means a
-// future change that made it fail could not loop either. Any successful load re-arms
-// the guard, so a Retry that fails again shows the surface again.
+// loads success=true and so cannot itself reach this branch, and if a future change
+// made it fail, the completion would land inside the absorb window and be ignored
+// rather than re-navigated (decisions/0020) - it could not loop either way. Any
+// successful load re-arms the guard, so a Retry that fails again shows the surface
+// again.
 func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success bool) {
 	if !host.noteNavigationOutcome(success) {
 		return
@@ -271,13 +273,18 @@ func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success boo
 // about:blank, and Config.Bridge stays out of reach regardless
 // (messageSourceTrusted).
 //
-// The machine also assumes the first success completion after arming is the
-// surface's own load - it has no navigation identity to check. A page-initiated
-// navigation superseding the surface's Navigate and completing success-first
-// would keep the admission armed against that document; the observed runtime
-// ordering (the superseded navigation completes with false first, which lands in
-// the surface-failed branch below and clears the flags) self-heals it. The
-// accepted costs and their trip-wires are recorded in decisions/0017.
+// The machine has no navigation identity, so it classifies completions by
+// order alone, and two assumptions follow. A failure completion arriving while
+// the surface's own load is in flight is not the surface dying - the surface is
+// a data: URL whose load realistically cannot fail, while a failed Retry
+// delivers a second failure completion 23ms after the one that armed the
+// surface (issue #68, observed) and a rapid Retry double-click delivers more -
+// so it is absorbed. And the first success completion after arming is taken as
+// the surface's own load; a page-initiated navigation that supersedes the
+// surface's Navigate and completes success while the surface is still loading
+// is mis-taken for it, and its document stays admitted for the reserved window
+// controls until the next successful navigation. The accepted costs and their
+// trip-wires are recorded in decisions/0017 and decisions/0020.
 func (host *Host) noteNavigationOutcome(success bool) bool {
 	if success {
 		host.errorPageShown = false
@@ -292,10 +299,23 @@ func (host *Host) noteNavigationOutcome(success bool) bool {
 		host.errorSurfaceActive = false
 		return false
 	}
+	if host.errorSurfaceLoading {
+		// A failure completion racing the surface's own load: a failed Retry's
+		// second completion, or another failed navigation - not the surface
+		// dying (issue #68). Absorb it: sealing here is what dead-ended the
+		// visible surface's caption buttons, and returning false keeps the
+		// no-re-navigation recursion guard (decisions/0020).
+		host.log.Debug("mullion: navigation failure absorbed while the error surface loads")
+		return false
+	}
 	if host.errorPageShown {
+		// Unreachable through the transitions above: errorPageShown is true
+		// only between arming and the next success completion, and arming sets
+		// errorSurfaceLoading, which only a success completion clears - so the
+		// absorb branch shadows this one. Kept fail-closed for a future path
+		// that clears the loading flag early: in a state the machine cannot
+		// explain, the admission must drop, not persist (decisions/0020).
 		host.log.Warn("mullion: fallback error surface load failed, not retrying")
-		// The surface itself failed to load, so nothing on screen is mullion's
-		// own page; an empty source must not stay admitted against it.
 		host.errorSurfaceActive = false
 		host.errorSurfaceLoading = false
 		return false

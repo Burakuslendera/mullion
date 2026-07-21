@@ -193,12 +193,15 @@ func TestNavigateFailureStopsTheRenderWatchdog(t *testing.T) {
 	}
 }
 
-// The tests below lock the error-surface admission state machine (issue #56).
-// The runtime reports a data: document's source as the empty string - measured
-// live at both the event args and the core - so the fallback error surface can
-// only be recognised by navigation state, and these transitions are what decide
-// whether its caption buttons work. Each test walks noteNavigationOutcome the
-// way NavigationCompletedCallback would.
+// The tests below lock the error-surface admission state machine (issues #56
+// and #68). The runtime reports a data: document's source as the empty string -
+// measured live at both the event args and the core - so the fallback error
+// surface can only be recognised by navigation state, and these transitions are
+// what decide whether its caption buttons work. The machine has no navigation
+// identity - completions are classified by order alone - so failure completions
+// racing the surface's own load are absorbed rather than read as the surface
+// dying (decisions/0020). Each test walks noteNavigationOutcome the way
+// NavigationCompletedCallback would.
 
 // A host that never saw a navigation failure must keep rejecting the empty
 // source: it is also what about:blank-adjacent opaque documents report, and
@@ -279,20 +282,124 @@ func TestErrorSurfaceRearmsWhenRetryFailsAgain(t *testing.T) {
 	}
 }
 
-// When the surface itself fails to load, nothing on screen is mullion's own
-// page, so the admission must drop with it - a stale allow against an unknown
-// document is the hole the gate exists to close.
-func TestErrorSurfaceDisarmsWhenTheSurfaceItselfFailsToLoad(t *testing.T) {
+// A failure completion while the surface's own load is in flight is not the
+// surface dying: observed live (issue #68), a Retry against a still-down server
+// delivers a second failure completion 23ms after the one that armed the
+// surface. Reading it as the surface's own load failing - which is what this
+// test's driving sequence used to lock, as
+// TestErrorSurfaceDisarmsWhenTheSurfaceItselfFailsToLoad - sealed the admission
+// and left the surface that then finished loading with dead caption buttons.
+// The surface is a data: URL whose load realistically cannot fail, so the
+// failure is absorbed: no re-navigation (the recursion guard), no seal, and the
+// admission stays with the surface (decisions/0020).
+func TestErrorSurfaceStaysAdmittedWhenAFailureRacesItsOwnLoad(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 	host.noteNavigationOutcome(false) // failure: surface armed and navigated
 
 	if host.noteNavigationOutcome(false) {
-		t.Fatal("the surface failing to load must not re-navigate in a loop")
+		t.Fatal("a failure during the surface's load must not re-navigate: that is the loop the recursion guard exists for")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("a failed Retry's second completion must not disarm the surface on screen (issue #68)")
+	}
+	if strings.Contains(logger.String(), "fallback error surface load failed") {
+		t.Fatal("an absorbed failure must not be reported as the surface dying")
+	}
+	if !strings.Contains(logger.String(), "navigation failure absorbed") {
+		t.Fatal("an absorbed failure must leave a debug trace, or a genuinely dead surface becomes undiagnosable")
+	}
+}
+
+// The issue #68 ordering, as observed live: a Retry against a still-down server
+// fails and re-arms the surface, its second failure completion lands while the
+// surface loads, and the surface's own success completion arrives last. That
+// success must be read as the surface's load - not as a navigation away - so
+// the surface the user is looking at keeps working caption buttons.
+func TestErrorSurfaceSurvivesAFailedRetry(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.noteNavigationOutcome(false) // initial load fails: surface armed
+	host.noteNavigationOutcome(true)  // the surface's own load
+	host.noteNavigationOutcome(false) // Retry fails: surface re-armed and re-navigated
+	host.noteNavigationOutcome(false) // the failed Retry's second completion
+	host.noteNavigationOutcome(true)  // the surface's own load, again
+
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the re-shown surface must stay admitted after a failed Retry's double completion (issue #68)")
+	}
+	// The success above must have resolved the surface's load: the next success
+	// is a departure and must disarm, or a recovered frontend inherits a stale
+	// empty-source admission.
+	host.noteNavigationOutcome(true)
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("a navigation away must still disarm the admission after an absorbed failure")
+	}
+}
+
+// A rapid Retry double-click delivers at least one more failure completion
+// before the surface's load resolves. Absorption is unbounded on purpose: an
+// absorb-exactly-one bound would seal on the extra failure and re-create the
+// dead surface one click deeper.
+func TestErrorSurfaceSurvivesARapidRetryDoubleClick(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.noteNavigationOutcome(false) // initial load fails: surface armed
+	host.noteNavigationOutcome(true)  // the surface's own load
+	host.noteNavigationOutcome(false) // Retry click one fails: surface re-armed
+	host.noteNavigationOutcome(false) // its second completion
+	host.noteNavigationOutcome(false) // Retry click two's failure
+	host.noteNavigationOutcome(true)  // the surface's own load
+
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("absorption must hold for every failure racing the surface's load, not just the first")
+	}
+}
+
+// Absorption is total while the surface's load is in flight: however many
+// failure completions a pathological schedule delivers, none may re-navigate
+// and none may take the admission away from the surface that will finish
+// loading.
+func TestErrorSurfaceAbsorbsAFailureStorm(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	if !host.noteNavigationOutcome(false) {
+		t.Fatal("the first failure must arm and navigate the surface")
+	}
+	for i := 0; i < 8; i++ {
+		if host.noteNavigationOutcome(false) {
+			t.Fatalf("failure %d during the surface's load asked to re-navigate: recursion", i+2)
+		}
+		if !host.errorSurfaceMessageAllowed("") {
+			t.Fatalf("failure %d during the surface's load dropped the admission", i+2)
+		}
+	}
+	host.noteNavigationOutcome(true) // the surface's own load
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the surface must be admitted once its load completes, storm or no storm")
+	}
+	if strings.Contains(logger.String(), "fallback error surface load failed") {
+		t.Fatal("a storm inside the loading window must not be reported as the surface dying")
+	}
+}
+
+// The seal branch - "fallback error surface load failed, not retrying" - is
+// unreachable through noteNavigationOutcome's own transitions once failures
+// inside the loading window are absorbed: errorPageShown is true only between
+// arming and the next success completion, and arming sets errorSurfaceLoading,
+// which only a success completion clears. The branch is kept fail-closed for a
+// future path that clears the loading flag early, and this test pins that
+// contract by constructing the state directly: a failure the machine cannot
+// explain must drop the admission, not re-navigate against it (decisions/0020).
+func TestErrorSurfaceSealsFailClosedOutsideTheLoadingWindow(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	host.errorPageShown = true
+	host.errorSurfaceActive = true
+	host.errorSurfaceLoading = false
+
+	if host.noteNavigationOutcome(false) {
+		t.Fatal("the fail-closed branch must not re-navigate")
 	}
 	if host.errorSurfaceMessageAllowed("") {
-		t.Fatal("a surface that failed to load must not keep the empty source admitted")
+		t.Fatal("a failure state the machine cannot explain must drop the admission")
 	}
 	if !strings.Contains(logger.String(), "fallback error surface load failed") {
-		t.Fatal("the dead-surface branch must say so in the log")
+		t.Fatal("the fail-closed branch must say so in the log")
 	}
 }
