@@ -119,5 +119,13 @@ keeping it against a document the machine cannot explain.
   `TestErrorSurfaceSealsFailClosedOutsideTheLoadingWindow` pinning the
   defensive branch; the five pre-existing `TestErrorSurface*` locks unchanged
   and green.
+- Live re-verification on the issue's repro rig (2026-07-21, build
+  `devel (a7c8bfd, modified)`, runtime 150.0.4078.83): three failed-Retry
+  rounds each delivered two `ConnectionAborted` completions ~20ms apart, the
+  second absorbed at debug every time; the surface's caption buttons worked
+  after every round, with zero `web message rejected` and zero seal lines. On
+  recovery — the server started while the surface was up — Retry loaded the
+  frontend with a clean success completion and the bridge flowed. The rapid
+  double-click burst remains covered headlessly only.
 
 > Last updated: 2026-07-21 | Editor: Claude (Fable 5) | Change: new record for the error-surface absorb window (issue #68).
