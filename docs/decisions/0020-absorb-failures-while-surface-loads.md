@@ -67,13 +67,16 @@ keeping it against a document the machine cannot explain.
 
 ## Consequences
 
-- **If the cannot-fail premise is ever wrong** — a surface load that genuinely
-  fails — the armed admission no longer seals: it persists, completion-counted
-  rather than time-bounded, until some completion arrives. Exposure is the
-  reserved methods only — the window controls plus the frontend
-  ready/phase/diagnostic signals, whose worst reachable action is closing the
-  window; an empty source never reaches `Config.Bridge`
-  (`messageSourceTrusted` accepts no empty source, observed).
+- **If the surface's load ever fails to deliver its success completion** —
+  the cannot-fail premise proving wrong, or the host's `Navigate` call itself
+  failing synchronously (`warnIf`-logged; no completion will ever come) — the
+  armed admission no longer seals: it persists, completion-counted rather than
+  time-bounded. Failure completions are absorbed; the admission survives the
+  first success completion (read as the surface's own load) and drops only at
+  the one after it. Exposure is the reserved methods only — the window
+  controls plus the frontend ready/phase/diagnostic signals, whose worst
+  reachable action is closing the window; an empty source never reaches
+  `Config.Bridge` (`messageSourceTrusted` accepts no empty source, observed).
 - **A narrow widening of 0017's mis-admission residue.** Previously, a failure
   completion racing the surface's load sealed the machine, so a foreign
   success landing next found the admission already dropped. Absorbed instead,
