@@ -31,7 +31,10 @@ renderer-initiated top-level `data:` navigations). The claimed id then
 attributes completions positively (`noteNavigationOutcome`):
 
 - the surface's own **success** re-admits it, whatever landed before it;
-- the surface's own **OperationCanceled** is supersede cleanup, at debug;
+- the surface's own **OperationCanceled** is supersede cleanup — the
+  machine's classification logs at debug; the completion callback's generic
+  `navigation failed` WARN still precedes it, as for every failed
+  completion;
 - any other failure of the surface's own navigation is the genuine seal —
   admission drops, nothing re-navigates;
 - a foreign **success** commits a foreign document, so the admission drops
@@ -75,10 +78,15 @@ completion-less residual 0020 recorded.
   `fallback error surface load failed, not retrying` — is reachable again,
   and only for the surface's own genuinely failed load.
 - **Mis-claim residual.** While the surface `Navigate` is pending, a start
-  reporting an empty or foreign-`data:` URI is claimed. Such a start can only
-  come from the departing-document class the 0017 pre-commit window already
-  admits, and the exposure bound is the same: the reserved methods, never
-  `Config.Bridge`, until the next resolving completion.
+  reporting an empty or foreign-`data:` URI is claimed (a failed `GetUri`
+  read maps to the empty form too). Such a start can only come from the
+  departing-document class the 0017 pre-commit window already admits, and the
+  exposure bound is the same: the reserved methods, never `Config.Bridge`,
+  until the next resolving completion. The same mis-claim also has an
+  availability tail: the surface's own start then passes unclaimed, so its
+  commit reads foreign and the visible surface is left unadmitted until the
+  next arming. Both halves ride on the claim tolerances, which the live
+  probe's tolerance-narrowing addresses.
 - **The fallback inherits 0020 wholesale.** Wherever an id is unavailable,
   0020's machine and its recorded costs apply; the nine id-less test locks
   pin that the fallback stays byte-equivalent in behaviour.
@@ -108,8 +116,10 @@ completion-less residual 0020 recorded.
   `build/native/include/WebView2.h`): the `NavigationStarting` args 10-slot
   order and IID `{5b495469-e119-438a-9b18-7604f25f2e49}`, the handler IID
   `{9adbe429-f36d-432b-9ddc-f8881fbd76e3}`, and
-  `COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED` = 14 — transcribed and
-  locked by the vtable layout tests and `TestInterfaceIDs`.
+  `COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED` = 14. The vtable order
+  is locked by the layout tests and the IIDs by `TestInterfaceIDs`; the enum
+  values are transcription-only — no independent form exists for a test to
+  compare them against.
 - `host/webview_windows_test.go`: the identity locks proved fails-before
   against an identity-blind mutant of the machine —
   `TestErrorSurfaceSurvivesAForeignSuccessDuringItsLoad`,
