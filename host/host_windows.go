@@ -58,8 +58,11 @@ type Host struct {
 	lastBoundsSyncLog  boundsSyncLogState
 
 	// errorPageShown guards NavigationCompletedCallback from re-navigating to the
-	// fallback error surface in a loop. It is read and written only on the UI
-	// thread (the navigation-completed callback), so it needs no lock. See issue #3.
+	// fallback error surface in a loop (issue #3). Since the absorb window
+	// (issue #68, decisions/0020) it rises and falls with errorSurfaceLoading;
+	// it is kept separate so noteNavigationOutcome can fail closed if a future
+	// path ever clears the loading flag early. Read and written only on the UI
+	// thread (the navigation-completed callback), so it needs no lock.
 	errorPageShown bool
 
 	// errorSurfaceActive and errorSurfaceLoading admit the fallback error
@@ -71,9 +74,11 @@ type Host struct {
 	// completes, because the injected diagnostics post from document creation -
 	// and disarms when a navigation away from it succeeds. errorSurfaceLoading
 	// marks the surface's own load in flight so its success completion is not
-	// mistaken for that departure. Both are read and written only on the UI
-	// thread (the navigation-completed and web-message callbacks), like
-	// errorPageShown and host.browser.
+	// mistaken for that departure, and so failure completions racing that load -
+	// a failed Retry delivers at least one - are absorbed instead of read as the
+	// surface dying (issue #68, decisions/0020). Both are read and written only
+	// on the UI thread (the navigation-completed and web-message callbacks),
+	// like errorPageShown and host.browser.
 	errorSurfaceActive  bool
 	errorSurfaceLoading bool
 }
