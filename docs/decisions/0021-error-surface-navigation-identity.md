@@ -136,5 +136,19 @@ completion-less residual 0020 recorded.
   `TestErrorSurfaceIdentifiedCompletionsBeforeTheClaimAreForeign` and
   `TestErrorSurfaceIdlessCompletionDoesNotDestroyTheClaimedIdentity`, each
   observed failing against the pre-rule machine.
+- Live verification on the issue #68 rig (2026-07-22, `devel (d015dd2,
+  modified)`, runtime 150.0.4078.83), which settled the open premise: the
+  runtime reports a `data:` navigation's **full URI** at
+  `NavigationStarting`, so the claim matched exactly all three times
+  (`identified, id=3/6/9`); the tolerances were never exercised and no
+  mis-claim occurred, so they stay as written for unobserved runtime
+  variance. Each failed Retry raised **two distinct navigations** to the
+  origin — consecutive ids, the second starting right after the first's
+  failure completion and aborting ~3ms later — which the machine absorbed as
+  foreign while the claim window correctly refused the second navigation's
+  http start. This also settles issue #68's open question: the doubled
+  failure was a second navigation, not a supersede echo. Recovery was clean
+  (the origin's success dropped the admission; the frontend's bridge flowed)
+  with zero rejects and zero seal lines across the session.
 
 > Last updated: 2026-07-22 | Editor: Claude (Fable 5) | Change: new record — error-surface completions attributed by navigation id (issue #68 follow-up, the identity trip-wire of 0017/0020, under issue #6's event-binding work).
