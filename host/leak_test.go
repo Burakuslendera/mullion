@@ -285,3 +285,76 @@ func TestLeakScanScansNonASCIINames(t *testing.T) {
 		t.Fatalf("leak-scan did not name %q in its output, so it was not scanned under its real name\n%s", baitName, out)
 	}
 }
+
+// TestLeakScanScansCommitMessages locks the commit-message half of the scan
+// (issue #71): leak-scan.ps1 flags a forbidden shape in a commit MESSAGE, not
+// only in a tracked file. That half is what a shallow CI checkout (the default
+// fetch-depth of 1) silently truncated to the tip commit; with full history it
+// must catch a marker in any commit's message. This runs the real script against
+// a throwaway repo whose single, otherwise-clean commit carries an absolute
+// Windows path in its message, and asserts the run flags a commit.
+func TestLeakScanScansCommitMessages(t *testing.T) {
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not on PATH; this locks a PowerShell script and only runs where pwsh exists")
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	root := t.TempDir()
+	scriptsDir := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	realScript, err := os.ReadFile(filepath.Join(moduleRoot(t), "scripts", "leak-scan.ps1"))
+	if err != nil {
+		t.Fatalf("read leak-scan.ps1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(scriptsDir, "leak-scan.ps1"), realScript, 0o644); err != nil {
+		t.Fatalf("copy leak-scan.ps1: %v", err)
+	}
+	// The tracked file is clean; the forbidden shape lives only in the commit
+	// message, so a finding can come only from the commit-message half.
+	if err := os.WriteFile(filepath.Join(root, "readme.txt"), []byte("nothing to see here\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	// Author/committer identity via the environment so the commit does not depend
+	// on the runner's global git config; line-ending policy pinned as in the
+	// non-ASCII test.
+	gitRun := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(git, args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	gitRun("init", "-q")
+	gitRun("config", "core.autocrlf", "false")
+	gitRun("config", "core.safecrlf", "false")
+	gitRun("add", "-A")
+	gitRun("commit", "-q", "-m", "leak in the message: C:\\Users\\example\\secret")
+
+	cmd := exec.Command(pwsh, "-NoProfile", "-File", filepath.Join(scriptsDir, "leak-scan.ps1"))
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	exitCode := 0
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode = exitErr.ExitCode()
+	} else if err != nil {
+		t.Fatalf("running leak-scan.ps1: %v\n%s", err, out)
+	}
+
+	if exitCode == 0 {
+		t.Fatalf("leak-scan reported clean: the marker in the commit message was not scanned\n%s", out)
+	}
+	if !strings.Contains(string(out), "commit") {
+		t.Fatalf("leak-scan finding does not reference a commit, so the commit-message half did not run\n%s", out)
+	}
+}
