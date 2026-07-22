@@ -159,7 +159,7 @@ func resolveAssetRequest(virtualHost, rawURI string) (assetRequest, int) {
 	if parsed.Host != virtualHost {
 		return assetRequest{path: "wrong_host", category: "wrong_host"}, http.StatusForbidden
 	}
-	if containsBackslashOrControl(parsed.Path) || hasTraversalSegment(parsed.Path) {
+	if containsBackslashColonOrControl(parsed.Path) || hasTraversalSegment(parsed.Path) {
 		return assetRequest{path: "traversal", category: "traversal"}, http.StatusForbidden
 	}
 	cleanPath := path.Clean("/" + strings.TrimPrefix(parsed.Path, "/"))
@@ -167,31 +167,51 @@ func resolveAssetRequest(virtualHost, rawURI string) (assetRequest, int) {
 		cleanPath = "/index.html"
 	}
 	assetPath := strings.TrimPrefix(cleanPath, "/")
-	if assetPath == "" || strings.HasPrefix(assetPath, "../") || assetPath == ".." {
+	// Final self-sufficient gate: fs.ValidPath is the canonical rule for a name an
+	// fs.FS will accept - non-empty, valid UTF-8, slash-separated, with no ".",
+	// ".." or empty element and no leading or trailing slash. The UTF-8 requirement
+	// is load-bearing here: it rejects a raw invalid byte (e.g. a lone 0x80-0x9f)
+	// that the rune-based control check above decodes to U+FFFD and lets pass.
+	// Asserting it means the boundary does not lean on path.Clean or the caller's
+	// fs.FS to have rejected a malformed path.
+	if !fs.ValidPath(assetPath) {
 		return assetRequest{path: "traversal", category: "traversal"}, http.StatusForbidden
 	}
 	return assetRequest{path: assetPath, category: "asset"}, 0
 }
 
+// hasTraversalSegment rejects a path segment that is - or that Windows' DOS-to-NT
+// path conversion would collapse to - a "." or ".." traversal element. That
+// conversion strips trailing dots and spaces (the "MagicDot" behaviour), so
+// ".. ", "...", ".. ." can normalise to ".." or "." on some Windows builds, while
+// path.Clean is lexical and folds only an exact "..". A segment made of nothing
+// but dots and spaces is therefore rejected here rather than trusting the OS or
+// the caller's fs.FS not to normalise it into an escape. No legitimate asset name
+// is only dots and spaces, so this never rejects a real file.
 func hasTraversalSegment(value string) bool {
 	for _, segment := range strings.Split(value, "/") {
-		if segment == "." || segment == ".." {
+		if segment != "" && strings.Trim(segment, ". ") == "" {
 			return true
 		}
 	}
 	return false
 }
 
-// containsBackslashOrControl rejects input the traversal check above cannot
+// containsBackslashColonOrControl rejects bytes the traversal check above cannot
 // reason about. hasTraversalSegment splits on '/' only, and path.Clean (the
-// `path` package) treats '\' as an ordinary byte - so a percent-encoded
-// backslash (%5c), which url.Parse decodes to a literal '\', survives both as a
-// path separator on Windows. A control byte has no place in an asset path
-// either. The boundary rejects these itself rather than trusting the caller's
-// fs.FS not to resolve them.
-func containsBackslashOrControl(value string) bool {
-	for index := 0; index < len(value); index++ {
-		if char := value[index]; char == '\\' || char < 0x20 || char == 0x7f {
+// `path` package) treats '\' as an ordinary byte - so a percent-encoded backslash
+// (%5c), which url.Parse decodes to a literal '\', survives both as a path
+// separator on Windows. A ':' selects a drive letter or an NTFS alternate data
+// stream and has no place in an asset path; nor does a control character. This
+// folds C0, DEL and the C1 block (U+0080-U+009F) to match logsafe.stripControl,
+// and ranges over runes so a legitimate multi-byte UTF-8 name - whose UTF-8
+// continuation bytes fall in 0x80-0xbf - is not mistaken for a C1 control. A raw
+// invalid byte (a lone 0x80-0x9f) decodes to U+FFFD and passes here; the
+// fs.ValidPath gate rejects it as invalid UTF-8. The boundary rejects these
+// itself rather than trusting the caller's fs.FS.
+func containsBackslashColonOrControl(value string) bool {
+	for _, r := range value {
+		if r == '\\' || r == ':' || r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
 			return true
 		}
 	}
