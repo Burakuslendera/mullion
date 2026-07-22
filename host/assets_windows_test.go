@@ -5,6 +5,8 @@ package host
 import (
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -117,13 +119,21 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 		{name: "wrong scheme", uri: "http://" + testVirtualHost + "/index.html", wantPath: "wrong_scheme", wantCategory: "wrong_scheme", wantStatus: http.StatusForbidden},
 		{name: "traversal", uri: testOrigin + "/../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "backslash traversal (%5c)", uri: testOrigin + "/..%5c..%5csecret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
-		// The control-byte branch of containsBackslashOrControl (issue #31).
-		// url.Parse decodes a percent-encoded control byte to a literal one in
-		// Path - hasTraversalSegment (splits on '/') and path.Clean both leave
-		// it untouched, so only this branch stops it reaching fs.ReadFile.
+		// The control-byte, colon, dot-normalisation and invalid-UTF-8 rejects of
+		// containsBackslashColonOrControl, hasTraversalSegment and the fs.ValidPath
+		// gate (issues #31, #66). url.Parse decodes a percent-encoded byte to a
+		// literal one in Path and path.Clean is lexical, so without these the byte
+		// reaches fs.ReadFile and the boundary would lean on the OS or the fs.FS.
 		{name: "null byte (%00)", uri: testOrigin + "/a%00b", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "escape byte (%1b)", uri: testOrigin + "/a%1bb.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "delete byte (%7f)", uri: testOrigin + "/a%7fb", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		// Valid-UTF-8 C1 is caught by the rune check; a raw lone C1 byte decodes to
+		// U+FFFD and passes it, so the fs.ValidPath gate (invalid UTF-8) catches it.
+		{name: "c1 byte, valid utf-8 (%c2%85)", uri: testOrigin + "/a%c2%85b.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "raw invalid byte (%85)", uri: testOrigin + "/a%85b.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "trailing-space dotdot (%20)", uri: testOrigin + "/..%20/secret.txt", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "triple-dot segment", uri: testOrigin + "/.../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "colon drive/ADS (%3a)", uri: testOrigin + "/file.txt%3astream", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
@@ -133,6 +143,54 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 				t.Fatalf("resolveAssetRequest() = {%q %q}, %d, want {%q %q}, %d", got.path, got.category, gotStatus, test.wantPath, test.wantCategory, test.wantStatus)
 			}
 		})
+	}
+}
+
+// TestResolveAssetRequestServesNonASCIIName proves the C1-control reject in
+// containsBackslashColonOrControl (issue #66) ranges over runes, not bytes: a
+// legitimate multi-byte UTF-8 asset name is served even though its UTF-8
+// continuation bytes (here 0x97 and 0x9c) fall inside the 0x80-0x9f C1 range at
+// the byte level. A byte-level check would reject this name; a rune-level one
+// must not, which is why the check iterates runes.
+func TestResolveAssetRequestServesNonASCIIName(t *testing.T) {
+	// A two-character CJK name (U+65E5 U+672C) plus ".html", built from runes so
+	// this source stays ASCII, requested percent-encoded as its UTF-8 bytes.
+	want := string(rune(0x65e5)) + string(rune(0x672c)) + ".html"
+	got, status := resolveAssetRequest(testVirtualHost, testOrigin+"/%e6%97%a5%e6%9c%ac.html")
+	if got.path != want || got.category != "asset" || status != 0 {
+		t.Fatalf("resolveAssetRequest() = {%q %q}, %d, want {%q %q}, 0", got.path, got.category, status, want, "asset")
+	}
+}
+
+// TestAssetBoundaryOSDirFSDoesNotEscape pins the load-bearing OS assumption behind
+// the filter (issue #66): even if a trailing-dot/space ".." reached
+// fs.ReadFile(os.DirFS(root), ...) - which resolveAssetRequest now rejects itself
+// - the OS must not normalise ".. ", "...", ".. ." into ".." and walk out of the
+// root. This is the headless equivalent of the issue's live probe; a regression in
+// Go's os.DirFS, or a Windows build that collapses these, fails here rather than
+// silently opening the asset boundary.
+func TestAssetBoundaryOSDirFSDoesNotEscape(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "webroot")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir web root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<html>ok</html>"), 0o644); err != nil {
+		t.Fatalf("write index.html: %v", err)
+	}
+	// Planted as a sibling of the web root: reachable only by escaping it.
+	if err := os.WriteFile(filepath.Join(base, "secret.txt"), []byte("SECRET"), 0o644); err != nil {
+		t.Fatalf("write secret: %v", err)
+	}
+
+	dirFS := os.DirFS(root)
+	if _, err := fs.ReadFile(dirFS, "index.html"); err != nil {
+		t.Fatalf("index.html should read from inside the web root: %v", err)
+	}
+	for _, escape := range []string{"../secret.txt", ".. /secret.txt", ".../secret.txt", ".. ./secret.txt"} {
+		if data, err := fs.ReadFile(dirFS, escape); err == nil {
+			t.Fatalf("os.DirFS escaped the web root via %q: read %q", escape, data)
+		}
 	}
 }
 
@@ -155,13 +213,21 @@ func TestAssetProviderResolveDiagnosticCategories(t *testing.T) {
 		{name: "wrong scheme", uri: "http://" + testVirtualHost + "/index.html", wantPath: "wrong_scheme", wantCategory: "wrong_scheme", wantStatus: http.StatusForbidden},
 		{name: "traversal", uri: testOrigin + "/../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "backslash traversal (%5c)", uri: testOrigin + "/..%5c..%5csecret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
-		// The control-byte branch of containsBackslashOrControl (issue #31).
-		// url.Parse decodes a percent-encoded control byte to a literal one in
-		// Path - hasTraversalSegment (splits on '/') and path.Clean both leave
-		// it untouched, so only this branch stops it reaching fs.ReadFile.
+		// The control-byte, colon, dot-normalisation and invalid-UTF-8 rejects of
+		// containsBackslashColonOrControl, hasTraversalSegment and the fs.ValidPath
+		// gate (issues #31, #66). url.Parse decodes a percent-encoded byte to a
+		// literal one in Path and path.Clean is lexical, so without these the byte
+		// reaches fs.ReadFile and the boundary would lean on the OS or the fs.FS.
 		{name: "null byte (%00)", uri: testOrigin + "/a%00b", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "escape byte (%1b)", uri: testOrigin + "/a%1bb.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "delete byte (%7f)", uri: testOrigin + "/a%7fb", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		// Valid-UTF-8 C1 is caught by the rune check; a raw lone C1 byte decodes to
+		// U+FFFD and passes it, so the fs.ValidPath gate (invalid UTF-8) catches it.
+		{name: "c1 byte, valid utf-8 (%c2%85)", uri: testOrigin + "/a%c2%85b.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "raw invalid byte (%85)", uri: testOrigin + "/a%85b.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "trailing-space dotdot (%20)", uri: testOrigin + "/..%20/secret.txt", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "triple-dot segment", uri: testOrigin + "/.../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "colon drive/ADS (%3a)", uri: testOrigin + "/file.txt%3astream", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
