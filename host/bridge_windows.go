@@ -52,9 +52,14 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 
 	if !allowBridge {
 		// A restricted source reaches only the reserved window controls above,
-		// never the application's own Go methods (decisions/0014).
+		// never the application's own Go methods (decisions/0014). Drop it with no
+		// reply - the same no-correlation stance the outer origin gate takes for a
+		// foreign source (webview_windows.go): a bridgeError reply is correlatable,
+		// letting a hostile data: iframe confirm it holds the restricted admission.
+		// The error surface only ever calls reserved methods, so it never awaits a
+		// reply this withholds (issue #70).
 		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Message(request.Method))
-		return bridgeError(request.ID, "restricted source")
+		return ""
 	}
 
 	if host.config.Bridge == nil {
