@@ -101,6 +101,9 @@ func TestAssetProviderResolve(t *testing.T) {
 			if !containsHeader(response.headers, "Cache-Control: no-store") {
 				t.Fatalf("headers = %q, want no-store cache control", response.headers)
 			}
+			if !containsHeader(response.headers, "X-Content-Type-Options: nosniff") {
+				t.Fatalf("headers = %q, want nosniff", response.headers)
+			}
 		})
 	}
 }

@@ -60,6 +60,16 @@ $pathFixtures = @(
     "host/diagnostics_windows_test.go"
 )
 
+# Action pins in the CI workflow are full commit SHAs by design: pinning a
+# third-party action to an immutable ref is the supply-chain hardening issue #13
+# asked for, and a 40-hex commit SHA is exactly the "artefact hash" shape. The
+# workflow file is exempt from that one rule only - the same targeted carve-out
+# the path fixtures above get from the absolute-path rule - so every other rule
+# (non-ASCII, absolute paths, upstream names) still scans it.
+$hashFixtures = @(
+    ".github/workflows/ci.yml"
+)
+
 # git ls-files octal-escapes and quotes any path with non-ASCII bytes when
 # core.quotePath is on (its default): a file so named comes back as the literal
 # "\303\251name.go", which -LiteralPath below cannot open - the read fails and,
@@ -89,6 +99,9 @@ foreach ($file in $files) {
     }
     foreach ($rule in $rules) {
         if ($rule.Name -eq "absolute Windows path" -and $pathFixtures -contains $file) {
+            continue
+        }
+        if ($rule.Name -eq "artefact hash" -and $hashFixtures -contains $file) {
             continue
         }
         # -LiteralPath, not -Path: -Path treats its argument as a wildcard, so a

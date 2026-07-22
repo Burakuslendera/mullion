@@ -243,8 +243,15 @@ func errorAssetResponse(status int, request assetRequest) assetResponse {
 	}
 }
 
+// assetHeaders builds the response header block for a served asset. mullion
+// always emits an explicit Content-Type, so nosniff is inert for every type it
+// generates except the sniffable ones (text/plain): it stops bytes an app serves
+// as text/plain on the bridge origin from being content-sniffed to text/html and
+// executed (issue #13). The no-store family keeps the in-process asset stream
+// from being cached, so an edit to the fs.FS is picked up on the next load.
 func assetHeaders(contentType string) string {
 	return "Content-Type: " + contentType + "\r\n" +
+		"X-Content-Type-Options: nosniff\r\n" +
 		"Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n" +
 		"Pragma: no-cache\r\n" +
 		"Expires: 0\r\n"
