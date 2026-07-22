@@ -185,6 +185,11 @@ func TestRedactHomeKeepsThePathAndDropsTheUser(t *testing.T) {
 		{"the home directory itself", long, `%USERPROFILE%`},
 		{"a sibling with a longer name is not inside it", long + `2\rt`, long + `2\rt`},
 		{"a path elsewhere is left alone", `D:\fixed\120.0.0.1`, `D:\fixed\120.0.0.1`},
+		// A runtime on a network share is never under the home directory, so the
+		// redaction above never sees it; the internal host name is collapsed.
+		{"a UNC host is collapsed, keeping the share path", `\\BUILD-NAS\tools\webview2\120.0.0.1`, `\\<host>\tools\webview2\120.0.0.1`},
+		{"a forward-slash UNC host is collapsed too", `//BUILD-NAS/tools/rt`, `//<host>/tools/rt`},
+		{"a bare UNC host still loses its name", `\\BUILD-NAS`, `\\<host>`},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -222,5 +227,35 @@ func TestFormatNeverPrintsTheHomeDirectory(t *testing.T) {
 	}
 	if !strings.Contains(out, `%USERPROFILE%\webview2\120.0.0.1`) {
 		t.Fatalf("the redacted path lost its meaning:\n%s", out)
+	}
+}
+
+// Several report fields are read from the registry (ProductName, a GPU
+// DriverDesc) or the environment (the pinned-folder path) and are not
+// disk-verified, and Format's output is printed straight to a terminal. A
+// smuggled ESC/OSC/BEL must be folded before it can rewrite the console title or
+// erase provenance in front of the operator - the same class the loader strips
+// from the "pv" version (issue #22), here from its sibling sources (issue #40).
+func TestFormatFoldsControlBytesFromUntrustedFields(t *testing.T) {
+	report := healthy()
+	report.OS = "Windows 11 \x1b]0;pwned\x07 Pro"
+	report.GPUs = []string{"Evil\x1b[2K Adapter (driver \x7f1.0)"}
+	report.WebView2.Found = false
+	report.WebView2.Problem = "pinned folder \x08has no runtime"
+	report.WebView2.PinnedEnv = "D:\\pins\\rt\x85name"
+
+	out := Format(report)
+	for _, r := range out {
+		// The only control character a formatted block may carry is the newline
+		// between its lines; field and note add those after folding each value.
+		if (r < 0x20 && r != '\n') || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			t.Fatalf("a control byte %#x survived into the pasted block:\n%q", r, out)
+		}
+	}
+	// Folding must not eat the readable text around the escape.
+	for _, want := range []string{"Windows 11", "Adapter", "pwned"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("folding dropped legible text %q:\n%s", want, out)
+		}
 	}
 }

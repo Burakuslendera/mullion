@@ -14,7 +14,7 @@ func Reason(err error) string {
 func Message(message string) string {
 	message = strings.ReplaceAll(message, "\r", " ")
 	message = strings.ReplaceAll(message, "\n", " ")
-	message = stripControl(message)
+	message = StripControl(message)
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return "unknown"
@@ -28,13 +28,14 @@ func Message(message string) string {
 	return strings.Join(parts, " ")
 }
 
-// stripControl folds every C0/C1 control character to a space. CR and LF are
-// already handled by Message before this runs; this closes the rest of the
-// range - ESC, BEL, backspace, NUL and the C1 block - so a frontend-controlled
-// string cannot smuggle an ANSI/OSC terminal escape, a title rewrite or a
-// provenance-erasing backspace through to the caller's Logger. The classic CRLF
-// log-forging vector was already blocked; the escape-sequence vector was not.
-func stripControl(message string) string {
+// StripControl folds every C0/C1 control character - including CR and LF, ESC,
+// BEL, backspace, NUL and the C1 block - to a space, so a string cannot smuggle
+// an ANSI/OSC terminal escape, a title rewrite, an injected line or a
+// provenance-erasing backspace through to a terminal. Message calls it after
+// handling CR/LF itself; it is exported so another internal package that prints
+// untrusted strings to a console - the registry and environment values in
+// mullion doctor (issue #40) - can apply the same guard at its own boundary.
+func StripControl(message string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
 			return ' '
@@ -44,7 +45,7 @@ func stripControl(message string) string {
 }
 
 func FileName(path string) string {
-	name := strings.TrimSpace(stripControl(path))
+	name := strings.TrimSpace(StripControl(path))
 	name = strings.Trim(name, `"'`)
 	name = strings.TrimRight(name, `\/`)
 	if index := strings.LastIndexAny(name, `\/`); index >= 0 {

@@ -12,6 +12,8 @@ package doctor
 import (
 	"fmt"
 	"strings"
+
+	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
 // Report is everything `mullion doctor` prints.
@@ -191,13 +193,22 @@ func identifiesTheBuild(version string) bool {
 	}
 }
 
+// field and note are the two helpers every value line passes through, so they
+// are where the report is made safe to paste into a terminal. Some of the values
+// are read from the registry (ProductName, DisplayVersion, a GPU DriverDesc /
+// DriverVersion) or the environment (the pinned-folder path), none of it
+// disk-verified, and doctor.Format's output is printed straight to the console.
+// Folding control bytes here - the same guard the loader applies to the "pv"
+// version (issue #22) - stops a smuggled ESC/OSC/BEL from reaching the terminal
+// through any field, present or future (issue #40). The label is a literal, so
+// only the value is folded; the monitor line is numbers and needs no guard.
 func field(out *strings.Builder, label, value string) {
-	fmt.Fprintf(out, "%-11s%s\n", label+":", value)
+	fmt.Fprintf(out, "%-11s%s\n", label+":", logsafe.StripControl(value))
 }
 
 // note is a continuation line under the field above it.
 func note(out *strings.Builder, value string) {
-	fmt.Fprintf(out, "%-11s%s\n", "", value)
+	fmt.Fprintf(out, "%-11s%s\n", "", logsafe.StripControl(value))
 }
 
 func fallback(value, whenEmpty string) string {
@@ -207,21 +218,50 @@ func fallback(value, whenEmpty string) string {
 	return value
 }
 
-// redactHome replaces the user's profile directory with %USERPROFILE%, in any
-// of the spellings Windows uses for it.
+// redactHome removes identifying information from a path the report must print:
+// the user's profile directory, replaced with %USERPROFILE% in any of the
+// spellings Windows uses for it, and - for a runtime on a network share, which
+// is never under the home directory - the UNC host name (collapseUNCHost).
 //
 // The runtime folder has to be printed - "which binary was actually loaded" is
 // the first question of any WebView2 failure - but a fixed-version runtime is
-// often pinned somewhere under the home directory, and the block this command
-// prints is written to be pasted into a public issue. The path keeps its
-// meaning; the user name does not survive it.
+// often pinned somewhere under the home directory or on a build share, and the
+// block this command prints is written to be pasted into a public issue. The
+// path keeps its meaning; the user name and the internal host name do not
+// survive it. A foreign *local* user name - a profile directory sitting on a
+// drive other than the home one - cannot be redacted (the home spellings only
+// know the current user) and is left as it came, the one gap this cannot close.
 func redactHome(path string, homes []string) string {
 	for _, home := range homes {
 		if redacted, ok := withoutHome(path, home); ok {
 			return redacted
 		}
 	}
-	return path
+	return collapseUNCHost(path)
+}
+
+// collapseUNCHost rewrites the host component of a UNC path to <host>, so a
+// runtime on a network share (\\BUILD-NAS\tools\webview2\...) discloses the
+// share path without the internal machine name. A non-UNC path - the common
+// Program Files or home-relative runtime - has no host component and is returned
+// unchanged, so this never touches a path that carries no host name.
+func collapseUNCHost(path string) string {
+	if len(path) < 3 || !isSep(path[0]) || !isSep(path[1]) {
+		return path
+	}
+	rest := path[2:]
+	end := strings.IndexAny(rest, `\/`)
+	switch {
+	case end == 0:
+		return path // no host component (malformed); nothing to collapse
+	case end < 0:
+		end = len(rest) // a bare \\host with no share: still hide the name
+	}
+	return path[:2] + "<host>" + rest[end:]
+}
+
+func isSep(b byte) bool {
+	return b == '\\' || b == '/'
 }
 
 func withoutHome(path, home string) (string, bool) {
