@@ -2,15 +2,16 @@
 
 package host
 
-import (
-	"syscall"
-	"unsafe"
-)
+import "unsafe"
 
-var (
-	ntdll             = syscall.NewLazyDLL("kernel32.dll")
-	procRtlMoveMemory = ntdll.NewProc("RtlMoveMemory")
-)
+// procRtlMoveMemory copies raw bytes to and from memory Win32 owns by pointer:
+// the MINMAXINFO passed by reference on WM_GETMINMAXINFO and the suggested RECT
+// on WM_DPICHANGED. RtlMoveMemory is a kernel32 export, so it resolves from the
+// shared System32-only kernel32 handle in win32_windows.go - there is no second
+// DLL to load here. Using that handle keeps every load site in this package on
+// windows.NewLazySystemDLL, whose search path is narrower than the
+// syscall.NewLazyDLL (misleadingly named "ntdll") this used to call.
+var procRtlMoveMemory = kernel32.NewProc("RtlMoveMemory")
 
 func readMinMaxInfo(src uintptr) (minMaxInfo, bool) {
 	var value minMaxInfo
