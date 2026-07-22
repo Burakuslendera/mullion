@@ -128,8 +128,13 @@ git rev-parse --verify --quiet HEAD > $null 2>&1
 if ($LASTEXITCODE -eq 0) {
     $commitFileOnly = "commit trailer in a file", "artefact hash", "executable name"
     $commitRules = $patterns | Where-Object { $commitFileOnly -notcontains $_.Name }
-    foreach ($sha in @(git log --format=%H)) {
+    $commitShas = @(git log --format=%H)
+    # A failed log enumeration must not read as an empty, clean history - the same
+    # fail-closed rule the tracked-file enumeration above uses (issue #71).
+    if ($LASTEXITCODE -ne 0) { throw "git log failed (exit $LASTEXITCODE)" }
+    foreach ($sha in $commitShas) {
         $body = (git log -1 --format=%B $sha) -join "`n"
+        if ($LASTEXITCODE -ne 0) { throw "git log for $sha failed (exit $LASTEXITCODE)" }
         foreach ($rule in $commitRules) {
             foreach ($m in [regex]::Matches($body, $rule.Pattern, "IgnoreCase")) {
                 $found += [pscustomobject]@{

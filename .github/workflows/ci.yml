@@ -21,7 +21,12 @@ jobs:
     env:
       MULLION_REQUIRE_WEBVIEW2: "1"
     steps:
+      # Full history, not the default shallow clone: leak-scan below scans commit
+      # messages (git log), which a fetch-depth=1 checkout truncates to the single
+      # tip/merge commit. See issue #71.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
