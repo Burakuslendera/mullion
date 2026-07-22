@@ -119,7 +119,7 @@ func TestBridgeRejectsUnknownResizeEdge(t *testing.T) {
 // window controls, but a non-reserved method must never reach Config.Bridge.
 func TestBridgeRestrictedSourceReachesOnlyReservedMethods(t *testing.T) {
 	called := false
-	host, _ := newTestHost(t, Config{
+	host, logger := newTestHost(t, Config{
 		StartHidden: true,
 		Bridge: func(string) string {
 			called = true
@@ -132,13 +132,21 @@ func TestBridgeRestrictedSourceReachesOnlyReservedMethods(t *testing.T) {
 	if !strings.Contains(reply, `"ok":true`) {
 		t.Fatalf("reserved method blocked from a restricted source: %q", reply)
 	}
-	// An application method must NOT reach Config.Bridge from a restricted source.
+	// An application method must NOT reach Config.Bridge from a restricted source,
+	// and gets no reply - the same no-correlation stance the outer origin gate
+	// takes for a foreign source, so a hostile data: iframe cannot confirm it
+	// holds the restricted admission (decisions/0014, issue #70).
 	reply = host.handleWebMessage(`{"id":"2","method":"GetSecret","args":[]}`, false)
 	if called {
 		t.Fatal("a restricted source reached Config.Bridge")
 	}
-	if !strings.Contains(reply, `"ok":false`) {
-		t.Fatalf("restricted application call should be rejected, got %q", reply)
+	if reply != "" {
+		t.Fatalf("restricted application call should get no reply, got %q", reply)
+	}
+	// The rejection is still diagnosed host-side; only the frontend reply is
+	// withheld, so the drop must not become silent to the operator too.
+	if !strings.Contains(logger.String(), "rejected from a restricted source") {
+		t.Fatalf("restricted rejection was not logged:\n%s", logger.String())
 	}
 	// The same method DOES reach the bridge from a trusted source (allowBridge=true).
 	host.handleWebMessage(`{"id":"3","method":"GetSecret","args":[]}`, true)
