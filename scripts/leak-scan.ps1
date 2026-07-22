@@ -60,9 +60,25 @@ $pathFixtures = @(
     "host/diagnostics_windows_test.go"
 )
 
-$files = git ls-files | Where-Object {
-    $name = Split-Path $_ -Leaf
-    ($skip -notcontains $name) -and (-not $_.EndsWith(".png"))
+# git ls-files octal-escapes and quotes any path with non-ASCII bytes when
+# core.quotePath is on (its default): a file so named comes back as the literal
+# "\303\251name.go", which -LiteralPath below cannot open - the read fails and,
+# without the guard in the scan loop, the file is skipped while the run still
+# reports clean. Ask git for the raw byte names (core.quotePath=false), split on
+# the NUL that -z writes between them, and set the console to UTF-8 so PowerShell
+# decodes git's UTF-8 path bytes rather than the ambient code page. This is the
+# git-quoting sibling of the glob-quoting skip #16 closed with -LiteralPath, which
+# does not cover it. A raw newline in a name - forbidden on Windows - is normalised
+# by PowerShell's line-based capture, so such a name is not reliably scanned on a
+# case-sensitive file system.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+$tracked = (git -c core.quotePath=false ls-files -z) -join "`n" -split "`0"
+# A failed enumeration must not read as an empty, clean tree.
+if ($LASTEXITCODE -ne 0) { throw "git ls-files failed (exit $LASTEXITCODE)" }
+$files = $tracked | Where-Object {
+    ($_ -ne "") -and
+    ($skip -notcontains (Split-Path $_ -Leaf)) -and
+    (-not $_.EndsWith(".png"))
 }
 
 $found = @()
@@ -77,8 +93,21 @@ foreach ($file in $files) {
         }
         # -LiteralPath, not -Path: -Path treats its argument as a wildcard, so a
         # tracked file whose name contains glob metacharacters ([ ] on Windows)
-        # would fail to resolve and be silently skipped by the scan below.
-        $hits = Select-String -LiteralPath $file -Pattern $rule.Pattern -AllMatches -ErrorAction SilentlyContinue
+        # would fail to resolve. A file the scan cannot open must fail loudly, not
+        # vanish - that is the point of #16 - so report a read failure as a
+        # finding instead of swallowing it with -ErrorAction SilentlyContinue, and
+        # stop scanning a file we already know we cannot read.
+        try {
+            $hits = Select-String -LiteralPath $file -Pattern $rule.Pattern -AllMatches -ErrorAction Stop
+        } catch {
+            $found += [pscustomobject]@{
+                File  = $file
+                Line  = 0
+                Rule  = "unscannable file"
+                Match = $_.Exception.Message
+            }
+            break
+        }
         foreach ($hit in $hits) {
             $found += [pscustomobject]@{
                 File  = $file

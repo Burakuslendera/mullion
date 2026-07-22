@@ -2,6 +2,7 @@ package host
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -184,5 +185,103 @@ func TestNoNonASCIIInSource(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walk: %v", err)
+	}
+}
+
+// TestLeakScanScansNonASCIINames locks the fix for issue #29 in scripts/leak-scan.ps1.
+//
+// git ls-files quotes any tracked path containing non-ASCII bytes when
+// core.quotePath is on (the default): a file actually named "<e-acute>name.go"
+// comes back as the octal-escaped literal "\303\251name.go". The old scan handed
+// that literal to Select-String -LiteralPath, which cannot open it, and swallowed
+// the error with -ErrorAction SilentlyContinue - so a leak in a non-ASCII-named
+// file sailed straight past a run that still reported clean. This is the sibling
+// of the glob-name skip that #16 closed with -LiteralPath; that fix does not
+// cover this one.
+//
+// The leak_test.go guards above walk the file system directly and so never hit
+// git's quoting; only the PowerShell scan does. This test therefore runs the real
+// script against a throwaway repo holding one non-ASCII-named file with a planted
+// marker, and asserts the scan flags it - which it can only do if it enumerated
+// the file under its real name. It is the sole regression lock on the script, so
+// it runs wherever pwsh exists (Windows and Linux CI) and skips elsewhere.
+func TestLeakScanScansNonASCIINames(t *testing.T) {
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not on PATH; this locks a PowerShell script and only runs where pwsh exists")
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	// The script locates the repo root as the parent of its own directory and
+	// scans from there, so the throwaway repo must mirror that layout: a copy of
+	// the real script under <root>/scripts, with the bait file at <root>.
+	root := t.TempDir()
+	scriptsDir := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	realScript, err := os.ReadFile(filepath.Join(moduleRoot(t), "scripts", "leak-scan.ps1"))
+	if err != nil {
+		t.Fatalf("read leak-scan.ps1: %v", err)
+	}
+	scriptCopy := filepath.Join(scriptsDir, "leak-scan.ps1")
+	if err := os.WriteFile(scriptCopy, realScript, 0o644); err != nil {
+		t.Fatalf("copy leak-scan.ps1: %v", err)
+	}
+
+	// A file named with a non-ASCII byte (U+00E9), built from a rune so this
+	// test's own source stays ASCII, carrying a marker the scan is built to catch:
+	// an absolute Windows path. If the file is scanned, that is a finding; if it is
+	// skipped, the run reports clean. The name is asserted on below, so it must not
+	// appear anywhere else the scan would report it - it does not.
+	baitName := string(rune(0x00e9)) + "name.go"
+	const marker = "leak here: C:\\Users\\example\\secret"
+	baitBody := []byte("package x\n// " + marker + "\n")
+	if err := os.WriteFile(filepath.Join(root, baitName), baitBody, 0o644); err != nil {
+		t.Fatalf("write bait file: %v", err)
+	}
+
+	// A fresh repo with core.quotePath forced on, so the trigger does not depend on
+	// the runner's global git config. Nothing is committed: git ls-files reports
+	// staged files, and with no HEAD the script's commit-message scan is skipped,
+	// leaving the bait file as the only thing that can produce a finding.
+	gitRun := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(git, args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	gitRun("init", "-q")
+	gitRun("config", "core.quotePath", "true")
+	// Pin line-ending policy so a contributor whose global git has safecrlf/autocrlf
+	// set does not get git add rejecting the LF-only bait, which would fail this test
+	// red for a reason unrelated to what it locks.
+	gitRun("config", "core.autocrlf", "false")
+	gitRun("config", "core.safecrlf", "false")
+	gitRun("add", "-A")
+
+	cmd := exec.Command(pwsh, "-NoProfile", "-File", scriptCopy)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	exitCode := 0
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode = exitErr.ExitCode()
+	} else if err != nil {
+		t.Fatalf("running leak-scan.ps1: %v\n%s", err, out)
+	}
+
+	// Exit 1 alone proves a finding; requiring the real name in the output proves
+	// it was this file, scanned under its true name rather than the octal-escaped
+	// literal git quotes it to.
+	if exitCode == 0 {
+		t.Fatalf("leak-scan reported clean: the non-ASCII-named file was silently skipped\n%s", out)
+	}
+	if !strings.Contains(string(out), baitName) {
+		t.Fatalf("leak-scan did not name %q in its output, so it was not scanned under its real name\n%s", baitName, out)
 	}
 }
