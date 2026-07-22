@@ -16,22 +16,25 @@ import (
 // (leak_test.go) forbids the two more common loopback literals outside loopback.go,
 // and the builder does not validate the host anyway.
 
-// decodeErrorPageHTML strips the data:text/html, prefix and percent-decodes the
-// payload back to the HTML the WebView would parse. A decode failure means the
-// builder did not produce a valid data: URL.
+// decodeErrorPageHTML strips the data:text/html;charset=utf-8, prefix and
+// percent-decodes the payload back to the HTML the WebView would parse. A decode
+// failure means the builder did not produce a valid data: URL. Requiring the
+// exact prefix here locks the explicit charset (issue #13): drop it from
+// errorPageURL and every test through this helper fails on the prefix.
 //
 // It also asserts the payload ends exactly at the document: the template lives in
 // errorpage.html, whose trailing newline(s) the builder must trim, and this is the
 // one place every test passes through, so a regression cannot slip past it.
 func decodeErrorPageHTML(t *testing.T, page string) string {
 	t.Helper()
-	if !strings.HasPrefix(page, "data:text/html,") {
-		t.Fatalf("error page is not a data:text/html URL: %.40q", page)
+	const prefix = "data:text/html;charset=utf-8,"
+	if !strings.HasPrefix(page, prefix) {
+		t.Fatalf("error page is not a data:text/html;charset=utf-8 URL: %.40q", page)
 	}
 	if parsed, err := url.Parse(page); err != nil || parsed.Scheme != "data" {
 		t.Fatalf("error page does not parse as a data URL: scheme=%q err=%v", parsed.Scheme, err)
 	}
-	decoded, err := url.PathUnescape(strings.TrimPrefix(page, "data:text/html,"))
+	decoded, err := url.PathUnescape(strings.TrimPrefix(page, prefix))
 	if err != nil {
 		t.Fatalf("error page payload is not valid percent-encoding: %v", err)
 	}

@@ -53,7 +53,13 @@ func errorPageURL(config Config, failedURL string) string {
 	// could leave it with more than one - so trim them all: the data: payload is
 	// exactly the document and nothing after it. errorpage_test.go locks this.
 	document := replacer.Replace(strings.TrimRight(errorPageTemplate, "\n"))
-	return "data:text/html," + url.PathEscape(document)
+	// An explicit charset: the document is ASCII (leak-scan holds errorpage.html to
+	// the ASCII rule and every interpolated value is escaped or numeric), so this
+	// fixes no concrete bug, but it states the encoding rather than leaving the
+	// browser to assume one (issue #13). surfaceURIMatches tolerates the exact URL,
+	// an empty URI and any data: prefix, so the added parameter does not disturb the
+	// error-surface navigation-identity match (decisions/0021).
+	return "data:text/html;charset=utf-8," + url.PathEscape(document)
 }
 
 // cssColour renders a Colour as CSS rgba(), with alpha in the 0..1 range CSS uses,
