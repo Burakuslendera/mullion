@@ -10,6 +10,13 @@ on:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
 
+# Least-privilege GITHUB_TOKEN: this workflow only reads the repo - it builds,
+# tests and scans, and writes nothing back (no PR comments, no releases). The
+# default token grant is read/write; narrowing it to contents:read means a
+# compromised step cannot push, comment or cut a release (issue #13).
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -24,10 +31,10 @@ jobs:
       # Full history, not the default shallow clone: leak-scan below scans commit
       # messages (git log), which a fetch-depth=1 checkout truncates to the single
       # tip/merge commit. See issue #71.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.22"
 
@@ -61,8 +68,8 @@ jobs:
     # work. This job is what keeps it honest.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.22"
 
