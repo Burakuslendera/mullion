@@ -196,7 +196,8 @@ func readEdgeUpdateClient(root registry.Key, path string, access uint32) (versio
 		// that was deleted.
 		return "", "", false
 	}
-	// "location" is optional; the default install root covers its absence.
+	// "location" is optional; the default install root covers its absence. It is
+	// validated where it becomes a path: runtimeFolders drops a relative one.
 	location, _, _ = key.GetStringValue("location")
 	return version, strings.TrimSpace(location), true
 }
@@ -308,7 +309,15 @@ func runtimeFolders(location, version, defaultRoot string) []string {
 	}
 
 	location = strings.TrimSpace(location)
-	if location != "" {
+	// Only an absolute location becomes a folder. EdgeUpdate publishes absolute
+	// install paths; a relative one - a malformed or planted registry value -
+	// would be probed against the process CWD (fileExists calls os.Stat) and
+	// could reach LoadLibraryEx as a CWD-relative path, so it is dropped and
+	// discovery falls back to the default install root. filepath.IsAbs also
+	// rejects the drive-relative ("C:runtime") and rooted-but-drive-relative
+	// ("\runtime") forms, which resolve against a per-drive CWD; a UNC path is
+	// absolute and is kept.
+	if location != "" && filepath.IsAbs(location) {
 		if version != "" {
 			add(filepath.Join(location, version))
 		}

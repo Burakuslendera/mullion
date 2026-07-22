@@ -123,6 +123,33 @@ func TestRuntimeFolders(t *testing.T) {
 		t.Fatalf("folders = %v, want only the default root", folders)
 	}
 
+	// A relative location is dropped: probed against the process CWD it could
+	// reach LoadLibraryEx as a CWD-relative path. Discovery falls back to the
+	// default install root, and every folder offered stays absolute.
+	for _, rel := range []string{
+		`EdgeWebView\Application`, // bare relative
+		`.\runtime`,               // explicitly CWD-relative
+		`C:runtime`,               // drive-relative (a per-drive CWD)
+		`\runtime`,                // rooted but drive-relative
+	} {
+		folders = runtimeFolders(rel, "150.0.4078.65", root)
+		if len(folders) != 1 || folders[0] != filepath.Join(root, "150.0.4078.65") {
+			t.Fatalf("runtimeFolders(%q, ...) = %v, want only the default root", rel, folders)
+		}
+		for _, folder := range folders {
+			if !filepath.IsAbs(folder) {
+				t.Fatalf("runtimeFolders(%q, ...) offered a relative folder %q", rel, folder)
+			}
+		}
+	}
+
+	// An absolute UNC location is a legitimate network install and is honoured.
+	const unc = `\\BUILD-NAS\tools\webview2`
+	folders = runtimeFolders(unc, "150.0.4078.65", root)
+	if len(folders) == 0 || folders[0] != filepath.Join(unc, "150.0.4078.65") {
+		t.Fatalf("runtimeFolders(UNC) = %v, want the versioned UNC folder first", folders)
+	}
+
 	if got := runtimeFolders("", "", ""); got != nil {
 		t.Errorf("runtimeFolders with nothing known = %v, want nil", got)
 	}
