@@ -4,7 +4,6 @@ package host
 
 import (
 	"errors"
-	"strconv"
 
 	"github.com/Burakuslendera/mullion/internal/logsafe"
 	"github.com/Burakuslendera/mullion/internal/webview2"
@@ -12,18 +11,6 @@ import (
 
 func (host *Host) ensureWebView(source string) error {
 	return host.ensureWebViewWith(source, host.createWebView)
-}
-
-// clampSourceForLog bounds a rejected source before it is reduced for the debug
-// log: a foreign data: or blob: URI can be arbitrarily long, and the first bytes
-// are what identify it. The cut can land mid-rune; logsafe's reduction tolerates
-// that, and an imperfect tail beats an unbounded log line.
-func clampSourceForLog(source string) string {
-	const limit = 160
-	if len(source) <= limit {
-		return source
-	}
-	return source[:limit]
 }
 
 // ensureWebViewWith is ensureWebView with the embed injected, so the
@@ -97,17 +84,7 @@ func (host *Host) createWebView() error {
 			// The bridge is injected into every document, so a top-level navigation
 			// away from the frontend must not be able to drive Config.Bridge. Drop
 			// the message silently - a foreign origin gets no reply to correlate.
-			// The debug line carries the reduced raw source because the WARN's
-			// origin form collapses every schemeless value to the same ":unknown",
-			// which is what made issue #56 need a live probe to diagnose. That
-			// collapse is urlOrigin's, and it stays; what changes is that an
-			// http(s) origin now survives the reduction at all - through Message
-			// this line read "httpevil.example", the host welded to a clipped
-			// scheme, which is the whole of issue #78. A value with no http(s)
-			// origin still falls through logsafe.URL to Message and reduces
-			// byte for byte as before, ":unknown" included.
-			host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.URL(urlOrigin(source)))
-			host.log.Debug("mullion: web message rejected, raw source=" + logsafe.URL(clampSourceForLog(source)) + ", len=" + strconv.Itoa(len(source)))
+			host.logRejectedWebMessage(source)
 			return
 		}
 		// A data: source (the error surface, or a hostile data: iframe) is allowed
@@ -131,16 +108,7 @@ func (host *Host) createWebView() error {
 		}
 	}
 	browser.NavigationStartingCallback = func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool {
-		// The uri is clamped and reduced like a rejected message source: a
-		// navigation target is foreign input, and a data: URI is arbitrarily
-		// long. logsafe.URL, not Message, because Message's path sanitizer
-		// deletes the host of an http(s) URL - this is the line every live
-		// navigation check is read from (issue #78). The id is what ties this
-		// line to the completion that follows.
-		host.log.Debug("mullion: navigation starting, id=" + formatUint64(navigationID) +
-			", user_initiated=" + strconv.FormatBool(isUserInitiated) +
-			", redirected=" + strconv.FormatBool(isRedirected) +
-			", uri=" + logsafe.URL(clampSourceForLog(uri)))
+		host.logNavigationStarting(uri, navigationID, isUserInitiated, isRedirected)
 		return host.noteAndGateNavigation(uri, navigationID, isUserInitiated)
 	}
 	browser.NavigationCompletedCallback = func(success bool, status webview2.WebErrorStatus, navigationID uint64) {

@@ -169,6 +169,15 @@ a pass/fail with an observable result — "looks fine" is not a result.
       `navigation aborted, not arming the error surface` and the frontend stays
       (decisions/0024). Repeat it — the abort is a race and does not fire on
       every attempt.
+      The clicked navigation is told apart from the app's own startup navigation
+      by the trailing `?` on its `navigation starting` line
+      (`uri=https://mullion.local/index.html?` against
+      `uri=https://mullion.local/index.html`); the query *value* is dropped from
+      the log (decisions/0025). Match it literally — `?` is a regex
+      metacharacter, so an unescaped `index.html?` matches both lines. Use
+      `Select-String -SimpleMatch` or `index\.html\?$`. If a check ever needs
+      more than two navigations told apart, give them distinct paths rather than
+      distinct queries.
 - [ ] **Second `Run` in the same process after a pre-loop failure.** With a
       driver that runs the host twice in one process, make the first `Run`
       fail before the message loop (e.g. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`

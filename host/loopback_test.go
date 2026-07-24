@@ -1,10 +1,6 @@
 package host
 
-import (
-	"testing"
-
-	"github.com/Burakuslendera/mullion/internal/logsafe"
-)
+import "testing"
 
 // This file is exempt from the loopback-literal check in TestNoNetworkListener: it,
 // like loopback.go, names the loopback hosts on purpose - to prove Config.URL is
@@ -71,38 +67,6 @@ func TestAssetSourceSummaryStatesTheSourceAndRedactsPath(t *testing.T) {
 	ext := Config{URL: "http://127.0.0.1:8080/private?token=secret"}.normalise()
 	if got := assetSourceSummary(ext); got != "mullion: asset source=external-url, url=http://127.0.0.1:8080" {
 		t.Fatalf("assetSourceSummary (external) = %q, want the path and query dropped", got)
-	}
-}
-
-// The rejected-message WARN logs logsafe.URL(urlOrigin(source)), and this locks
-// that composition, because the callback it runs in needs a live runtime and a
-// headless test cannot reach it.
-//
-// Before issue #78 the reduction was logsafe.Message, whose path sanitizer reads
-// the "p:/" of "http://" as a Windows drive letter and the "//" as a UNC start.
-// Either match swallowed the rest, so the one field that says which origin was
-// rejected reached the log as "httpevil.example" - and "http://x:8443" lost even
-// part of its scheme, arriving as "httx:8443".
-//
-// The other half is that a source with no http(s) origin is reduced exactly as
-// before, byte for byte: logsafe.URL hands it back to Message. That matters
-// because the empty source is the form the runtime actually reports for a data:
-// document (issue #56), and ":unknown" is the value the live probe for that
-// issue was read against - this change must not move it.
-func TestRejectedOriginLogFormNamesTheOrigin(t *testing.T) {
-	for _, c := range []struct{ source, want string }{
-		{"https://evil.example/x?token=secret", "https://evil.example"},
-		{"http://evil.example:8443/x", "http://evil.example:8443"},
-		{"https://mullion.local/index.html", "https://mullion.local"},
-		// No http(s) origin to name: the pre-existing reduction, unchanged. The
-		// empty source is the one the runtime reports in practice (issue #56).
-		{"", ":unknown"},
-		{"data:text/html,<b>hi</b>", "data:"},
-		{"about:blank", "about:"},
-	} {
-		if got := logsafe.URL(urlOrigin(c.source)); got != c.want {
-			t.Errorf("origin log form for %q = %q, want %q", c.source, got, c.want)
-		}
 	}
 }
 
