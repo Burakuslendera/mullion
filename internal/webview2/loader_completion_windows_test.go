@@ -18,7 +18,7 @@ import (
 
 func newTestCompletedHandler(t *testing.T) *completedHandler {
 	t.Helper()
-	handler := newCompletedHandler(uintptr(unsafe.Pointer(&controllerCompletedVtable)), iidControllerCompletedHandler)
+	handler := newCompletedHandler(uintptr(unsafe.Pointer(&completedVtable)), iidControllerCompletedHandler)
 	t.Cleanup(handler.release)
 	return handler
 }

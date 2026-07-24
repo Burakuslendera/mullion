@@ -1,0 +1,240 @@
+//go:build windows
+
+package host
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/Burakuslendera/mullion/internal/webview2"
+)
+
+// The completions that must NOT arm the fallback surface, and the one start
+// that must never be cancelled. Two suppressions sit in front of the machine:
+// benignAbort, which reads ConnectionAborted as harmless only where mullion
+// served the bytes itself and the navigation was on-origin (issue #72,
+// decisions/0024), and noteGateCancelledOutcome, which consumes the
+// PinNavigationToOrigin gate's own OperationCanceled before the machine sees it
+// (issue #6, decisions/0023). Both fail open by design: without identity the
+// surface arms.
+
+// The tests below lock what an aborted navigation means (issue #72,
+// decisions/0024). A same-origin document navigation was observed completing
+// ConnectionAborted although its asset had been served 200, with the runtime
+// starting the navigation again by itself - and arming on that abort replaced a
+// live frontend with the fallback page, whose Retry aborted the same way, so it
+// looped until an attempt happened to survive.
+
+// Serving the embedded fs.FS in process, an abort of a navigation that was
+// headed for the trusted origin cannot mean "could not load": mullion produced
+// every byte of it.
+func TestErrorSurfaceAbortDoesNotArmWhenAssetsAreServedInProcess(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	// The start the completion below belongs to - issue #72's sequence. The gate
+	// is off in this config, so this only records the target.
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3, true)
+
+	if noteFail(host, 3) {
+		t.Fatal("an aborted navigation must not ask for the fallback surface when mullion serves the assets itself")
+	}
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("nothing was armed, so the empty source must stay rejected")
+	}
+	if !strings.Contains(logger.String(), "navigation aborted, not arming the error surface") {
+		t.Fatal("a suppressed abort must say so, or it is indistinguishable in a report from a failure that went missing")
+	}
+}
+
+// The other side of the same rule: with Config.URL set the caller serves the
+// frontend over a socket, and ConnectionAborted is exactly what a dead endpoint
+// produces (measured live, issue #68 and 0020's timeline) - the case the
+// fallback surface exists for.
+func TestErrorSurfaceAbortStillArmsWhenTheCallerServesTheURL(t *testing.T) {
+	host, _ := newSurfaceHost(t)
+	// The start has to be recorded, or the exemption is refused on the id and
+	// this test would pass with the mode condition deleted.
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3, true)
+
+	if !noteFail(host, 3) {
+		t.Fatal("an aborted navigation against a caller-served URL must still show the fallback surface")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the arming must admit the empty source the surface posts from")
+	}
+}
+
+// The exemption is for the abort status alone. Any other failure in process is
+// still a failure and still arms.
+func TestErrorSurfaceOtherFailuresStillArmInProcess(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	// Recorded so this reaches the status check: without a start the exemption
+	// is refused on the id and the assertion below would hold either way.
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3, true)
+
+	if !host.noteNavigationOutcome(false, statusNone, 3) {
+		t.Fatal("only an abort is benign in process; another failure must still arm")
+	}
+}
+
+// Without an id nothing ties this completion to the navigation whose asset was
+// served, so the exemption does not apply and decision 0020's machine stands.
+// Suppressing the surface on that guess would fail open in the one case it is
+// for.
+func TestErrorSurfaceAbortWithoutIdentityStillArms(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+
+	if !noteFail(host, 0) {
+		t.Fatal("an id-less abort must still arm: 0020's machine is the fallback wherever identity is unavailable")
+	}
+}
+
+// Serving the assets in process does not keep the top frame on the trusted
+// origin: PinNavigationToOrigin is off by default, so a link or a script
+// assignment can take it anywhere, and that navigation is a real socket load
+// mullion serves none of. Its abort is a real failure and must still arm - or
+// the user is left on a chromeless foreign page with no caption buttons, which
+// is issue #3, the state the surface exists to prevent.
+func TestErrorSurfaceAbortOffOriginStillArms(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	// Gate off: this start is recorded, never cancelled and never routed.
+	host.noteAndGateNavigation("https://evil.example/", 3, true)
+
+	if !noteFail(host, 3) {
+		t.Fatal("an aborted off-origin navigation must still show the fallback surface")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the arming must admit the empty source the surface posts from")
+	}
+}
+
+// The exemption belongs to the navigation the runtime last reported starting.
+// A completion for an older one cannot borrow that answer - nothing says where
+// *it* was going - so it falls through and arms, the safe direction.
+func TestErrorSurfaceAbortWithAStaleIdStillArms(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/a.html", 3, true)
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/b.html", 4, true)
+
+	if !noteFail(host, 3) {
+		t.Fatal("an abort whose id is not the last start's must arm")
+	}
+}
+
+// The seal - the surface's own load failing - must stay locked in the default
+// in-process mode, not only in the external-URL mode the identity tests model.
+// Without this, widening the abort exemption to noteSurfaceOwnOutcome would
+// leave the whole suite green while a failed surface load stopped sealing.
+func TestErrorSurfaceSealsInProcessToo(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	host.errorSurfaceURL = "data:text/html,surface"
+	if !host.noteNavigationOutcome(false, statusNone, 5) {
+		t.Fatal("the arming failure must ask for the surface to be shown")
+	}
+	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 6) {
+		t.Fatal("the surface's own start must be claimed")
+	}
+
+	if host.noteNavigationOutcome(false, webview2.WebErrorStatusConnectionAborted, 6) {
+		t.Fatal("the surface's own load failing must not re-navigate in a loop")
+	}
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("nothing on screen is mullion's page, so the admission must drop")
+	}
+	if !strings.Contains(logger.String(), "fallback error surface load failed") {
+		t.Fatal("the surface dying must be reported")
+	}
+}
+
+// The suppression is a no-op besides its log line, and that has to stay true:
+// the surface itself can be on screen when an abort arrives - its Retry aborting
+// is exactly issue #72's loop - and dropping the admission there would kill the
+// visible surface's caption buttons, which is the issue #56 symptom.
+func TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.errorSurfaceURL = "data:text/html,surface"
+	if !host.noteNavigationOutcome(false, statusNone, 1) {
+		t.Fatal("the arming failure must ask for the surface to be shown")
+	}
+	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 2) {
+		t.Fatal("the surface's own start must be claimed")
+	}
+	if noteOK(host, 2) {
+		t.Fatal("the surface's own load must not trigger another navigation")
+	}
+
+	// The surface is the document on screen. Its Retry aborts in process.
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3, true)
+	if noteFail(host, 3) {
+		t.Fatal("the aborted Retry must not re-navigate")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the visible surface must keep its admission, or its caption buttons go dead")
+	}
+}
+
+// TestGateCancelledCompletionDoesNotArmTheSurface locks the F1 fix: a navigation
+// the PinNavigationToOrigin gate cancels completes with OperationCanceled, and
+// that completion must be consumed as a deliberate cancel rather than reaching
+// the error-surface machine, which would read a foreign failure as "navigate to
+// the fallback surface" and tear down the live frontend (issue #6, decisions/0023).
+func TestGateCancelledCompletionDoesNotArmTheSurface(t *testing.T) {
+	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+
+	// The gate cancels a foreign navigation and records its id. Routing the
+	// target is not this test's concern and does not happen: every test host
+	// stubs the system-browser seam (newTestHost, issue #76).
+	if !host.shouldCancelNavigation("https://evil.example/", 7, true) {
+		t.Fatal("gate did not cancel a foreign navigation")
+	}
+	if host.cancelledNavID != 7 {
+		t.Fatalf("cancelledNavID = %d, want 7", host.cancelledNavID)
+	}
+
+	// Its OperationCanceled completion is consumed - the error-surface machine is
+	// never reached, so nothing arms and the live frontend stays.
+	if !host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 7) {
+		t.Fatal("the cancelled navigation's completion was not recognised")
+	}
+	if host.errorSurfaceActive || host.errorSurfacePending || host.errorSurfaceLoading {
+		t.Fatalf("the gate's own cancel armed the error surface: active=%v pending=%v loading=%v",
+			host.errorSurfaceActive, host.errorSurfacePending, host.errorSurfaceLoading)
+	}
+	if host.cancelledNavID != 0 {
+		t.Fatalf("cancelledNavID = %d after the completion, want 0 (cleared)", host.cancelledNavID)
+	}
+
+	// An unrelated completion is not consumed, and a genuinely foreign failure in
+	// steady state still arms the fallback surface - the guard is scoped to the
+	// gate's own cancel, not every OperationCanceled.
+	if host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 99) {
+		t.Fatal("noteGateCancelledOutcome consumed an unrelated completion")
+	}
+	if !host.noteNavigationOutcome(false, webview2.WebErrorStatusOperationCanceled, 99) {
+		t.Fatal("a genuinely foreign failure in steady state must still arm the surface")
+	}
+}
+
+// TestNoteAndGateNavigationNeverCancelsTheSurface locks the F2 fix: when the
+// error-surface claim matches a NavigationStarting - including the tolerated
+// empty-URI form the runtime can report for a data: start - the gate is skipped,
+// so it never cancels mullion's own fallback page (issue #6, decisions/0023).
+func TestNoteAndGateNavigationNeverCancelsTheSurface(t *testing.T) {
+	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+	host.errorSurfaceURL = "data:text/html,surface"
+	host.errorSurfacePending = true
+
+	// The surface's own start reported as an empty URI (a GetUri failure or the
+	// runtime erasing the data: URI) is claimed, and must NOT be cancelled even
+	// though "" is off-origin to the gate.
+	if host.noteAndGateNavigation("", 4, false) {
+		t.Fatal("the gate cancelled the surface's own navigation (empty URI)")
+	}
+	if host.errorSurfacePending {
+		t.Fatal("the surface start was not claimed")
+	}
+
+	// Outside the claim window, a foreign navigation is still cancelled.
+	if !host.noteAndGateNavigation("https://evil.example/", 5, true) {
+		t.Fatal("the gate did not cancel a foreign navigation outside the claim")
+	}
+}

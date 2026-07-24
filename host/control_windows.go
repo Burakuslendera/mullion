@@ -95,9 +95,8 @@ func (host *Host) showFromMessage() bool {
 		host.recordStartupWindowVisible()
 		host.log.Info("mullion: window visible")
 		return true
-	} else {
-		host.log.Warn("mullion: show unexpected state")
 	}
+	host.log.Warn("mullion: show unexpected state")
 	return false
 }
 

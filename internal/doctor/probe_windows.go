@@ -5,6 +5,7 @@ package doctor
 import (
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -226,20 +227,11 @@ func graphicsAdapters() []string {
 		}
 
 		entry := description + " (driver " + driver + ")"
-		if !listed(found, entry) {
+		if !slices.Contains(found, entry) {
 			found = append(found, entry)
 		}
 	}
 	return found
-}
-
-func listed(list []string, value string) bool {
-	for _, item := range list {
-		if item == value {
-			return true
-		}
-	}
-	return false
 }
 
 func displays() []Monitor {

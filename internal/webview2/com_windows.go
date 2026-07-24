@@ -10,9 +10,10 @@
 // of the runtime's own EmbeddedBrowserWebView.dll (see loader_windows.go).
 //
 // This file is the outbound COM plumbing that everything else stands on - the
-// call bridge, IUnknown, HRESULT handling, and the laundering rules for memory
-// Windows owns. The inbound half - comServer, the shared IUnknown for COM
-// objects implemented in Go - lives in comserver_windows.go. Two directions of
+// call bridge, IUnknown and HRESULT handling. The inbound half - comServer, the
+// shared IUnknown for COM objects implemented in Go - lives in
+// comserver_windows.go, and the rules for reading and writing memory Windows
+// owns, which every inbound method needs, in com_memory_windows.go. Two directions of
 // traffic exist and they have different hazards:
 //
 //   - Outbound (we call COM): a COM object is a pointer to a pointer to a
@@ -48,23 +49,6 @@ const (
 	ePointer     uintptr = 0x80004003
 	eFail        uintptr = 0x80004005
 	eOutOfMemory uintptr = 0x8007000E
-)
-
-var (
-	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
-	ole32    = windows.NewLazySystemDLL("ole32.dll")
-
-	// RtlMoveMemory is how we read and write memory that Windows owns.
-	//
-	// The obvious alternative - casting the uintptr Windows hands us straight
-	// to an unsafe.Pointer - is rejected by `go vet`'s unsafeptr check, and the
-	// check is right to be suspicious: such a uintptr is not tracked by the GC.
-	// Copying through RtlMoveMemory keeps every Go-side value a real Go pointer
-	// and every Windows-side value a plain integer address, so the two never
-	// masquerade as each other. memory_windows.go in the root package uses the
-	// same technique for WM_NCCALCSIZE payloads.
-	procRtlMoveMemory  = kernel32.NewProc("RtlMoveMemory")
-	procCoTaskMemAlloc = ole32.NewProc("CoTaskMemAlloc")
 )
 
 // IIDIUnknown is the identity every COM object must answer QueryInterface for.
@@ -191,91 +175,4 @@ func hres(hr uintptr) error {
 		return nil
 	}
 	return HResultError(uint32(hr))
-}
-
-// --- Reading and writing memory that Windows owns -------------------------
-//
-// Everything below launders values between Go memory and a bare address. The
-// rule enforced here: a uintptr that came from Windows is never converted to a
-// Go pointer, and a Go pointer is never handed out as a bare address except as
-// an argument to a syscall (where //go:uintptrescapes keeps it pinned).
-
-// readGUID copies a GUID out of memory owned by the caller of a COM method,
-// e.g. the riid argument of QueryInterface.
-func readGUID(src uintptr) (windows.GUID, bool) {
-	var value windows.GUID
-	if src == 0 {
-		return value, false
-	}
-	_, _, _ = procRtlMoveMemory.Call(uintptr(unsafe.Pointer(&value)), src, unsafe.Sizeof(value))
-	return value, true
-}
-
-// writeAddress stores a machine word (an interface pointer, a string pointer, a
-// nil) into an out-parameter supplied by COM.
-func writeAddress(dst uintptr, value uintptr) bool {
-	if dst == 0 {
-		return false
-	}
-	stored := value
-	_, _, _ = procRtlMoveMemory.Call(dst, uintptr(unsafe.Pointer(&stored)), unsafe.Sizeof(stored))
-	return true
-}
-
-// writeBOOL stores a Win32 BOOL (4 bytes, not Go's 1-byte bool) into an
-// out-parameter supplied by COM.
-func writeBOOL(dst uintptr, value bool) bool {
-	if dst == 0 {
-		return false
-	}
-	var stored int32
-	if value {
-		stored = 1
-	}
-	_, _, _ = procRtlMoveMemory.Call(dst, uintptr(unsafe.Pointer(&stored)), unsafe.Sizeof(stored))
-	return true
-}
-
-// unknownFromAddress reinterprets an interface pointer that COM passed to us as
-// an integer (a completion handler's `result` argument, for example) as an
-// *IUnknown.
-//
-// The bit pattern is copied into a typed pointer variable rather than cast,
-// for the reason given on procRtlMoveMemory. The address points into the
-// runtime's memory, never into the Go heap, so the GC will scan the resulting
-// word, find it outside every heap span, and ignore it - which is precisely
-// what we want.
-func unknownFromAddress(addr uintptr) *IUnknown {
-	if addr == 0 {
-		return nil
-	}
-	var out *IUnknown
-	source := addr
-	_, _, _ = procRtlMoveMemory.Call(
-		uintptr(unsafe.Pointer(&out)),
-		uintptr(unsafe.Pointer(&source)),
-		unsafe.Sizeof(source),
-	)
-	return out
-}
-
-// coTaskMemString copies s into memory allocated with CoTaskMemAlloc and
-// returns its address, because COM string out-parameters must be freeable by
-// the caller with CoTaskMemFree. An empty string yields a null pointer, which
-// is what the WebView2 SDK's own options object returns for an unset property.
-func coTaskMemString(s string) (uintptr, error) {
-	if s == "" {
-		return 0, nil
-	}
-	encoded, err := windows.UTF16FromString(s)
-	if err != nil {
-		return 0, err
-	}
-	size := uintptr(len(encoded)) * unsafe.Sizeof(encoded[0])
-	mem, _, _ := procCoTaskMemAlloc.Call(size)
-	if mem == 0 {
-		return 0, errors.New("webview2: CoTaskMemAlloc failed")
-	}
-	_, _, _ = procRtlMoveMemory.Call(mem, uintptr(unsafe.Pointer(&encoded[0])), size)
-	return mem, nil
 }

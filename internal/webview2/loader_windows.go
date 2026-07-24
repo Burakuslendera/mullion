@@ -94,7 +94,7 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 	options := newEnvironmentOptions(opts)
 	defer options.release()
 
-	handler := newCompletedHandler(uintptr(unsafe.Pointer(&environmentCompletedVtable)), iidEnvironmentCompletedHandler)
+	handler := newCompletedHandler(uintptr(unsafe.Pointer(&completedVtable)), iidEnvironmentCompletedHandler)
 	// Our reference is held until Invoke has run. Releasing it right after the
 	// create call would rely on the runtime having taken its own reference; it
 	// does, but a lifetime bug there is a use-after-free inside the browser, and
@@ -155,25 +155,17 @@ type environmentVtbl struct {
 // Like CreateEnvironment, this pumps messages until the completion handler
 // fires, and must run on the window's own thread.
 func (e *Environment) CreateController(parent windows.Handle) (*IUnknown, error) {
-	return e.CreateControllerWithTimeout(parent, DefaultTimeout)
-}
-
-// CreateControllerWithTimeout is CreateController with an explicit bound.
-func (e *Environment) CreateControllerWithTimeout(parent windows.Handle, timeout time.Duration) (*IUnknown, error) {
 	if e == nil || e.unknown == nil {
 		return nil, errors.New("webview2: environment is not open")
 	}
 	if parent == 0 {
 		return nil, errors.New("webview2: controller needs a parent window")
 	}
-	if timeout <= 0 {
-		timeout = DefaultTimeout
-	}
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	handler := newCompletedHandler(uintptr(unsafe.Pointer(&controllerCompletedVtable)), iidControllerCompletedHandler)
+	handler := newCompletedHandler(uintptr(unsafe.Pointer(&completedVtable)), iidControllerCompletedHandler)
 	defer handler.release()
 
 	vtbl := (*environmentVtbl)(unsafe.Pointer(e.unknown.Vtbl))
@@ -189,7 +181,7 @@ func (e *Environment) CreateControllerWithTimeout(parent windows.Handle, timeout
 		return nil, fmt.Errorf("webview2: CreateCoreWebView2Controller: %w", err)
 	}
 
-	result, err := waitFor(handler.done, timeout, "the WebView2 controller")
+	result, err := waitFor(handler.done, DefaultTimeout, "the WebView2 controller")
 	if err != nil {
 		handler.abandon()
 		return nil, err

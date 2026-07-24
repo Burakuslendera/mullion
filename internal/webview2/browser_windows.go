@@ -2,12 +2,13 @@
 
 package webview2
 
-// The Browser's lifecycle: embedding, event registration and teardown. The
-// surface methods a host calls on an embedded control live in
+// The Browser's lifecycle: the type itself, embedding, and the report channels
+// the rest of the family speaks through. Event registration lives in
+// browser_events_windows.go, teardown in browser_teardown_windows.go, and the
+// surface methods a host calls on an embedded control in
 // browser_surface_windows.go.
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,147 +194,6 @@ func (browser *Browser) applyBoundsPolicy() {
 	}
 }
 
-// addEvent registers one handler and immediately drops the package's reference
-// to it.
-//
-// add_* takes its own reference, so the object survives this release and lives
-// until the WebView is torn down. Holding on to our reference as well would leak
-// one COM object per handler; releasing before add_* would hand the runtime a
-// freed object.
-func addEvent(handler unsafe.Pointer, register func(unsafe.Pointer) (EventRegistrationToken, error)) error {
-	_, err := register(handler)
-	ReleaseHandler(handler)
-	return err
-}
-
-func (browser *Browser) registerEvents() error {
-	core := browser.CoreWebView2()
-	if core == nil {
-		return errors.New("webview2: core webview unavailable")
-	}
-
-	if err := addEvent(NewWebMessageReceivedHandler(func(sender *ICoreWebView2, args *ICoreWebView2WebMessageReceivedEventArgs) {
-		if browser.MessageCallback == nil {
-			return
-		}
-		message, err := args.TryGetWebMessageAsString()
-		if err != nil {
-			// A frontend may post a structured message rather than a string.
-			// The bridge protocol here is string-based, so dropping it is
-			// correct - there is nothing the host could do with it.
-			return
-		}
-		// GetSource is the URI of the document that posted the message; the host
-		// uses it to keep the bridge pinned to the trusted origin.
-		source, _ := args.GetSource()
-		browser.MessageCallback(message, source, sender)
-	}), core.AddWebMessageReceived); err != nil {
-		return err
-	}
-
-	if err := addEvent(NewWebResourceRequestedHandler(func(_ *ICoreWebView2, args *ICoreWebView2WebResourceRequestedEventArgs) {
-		browser.handleWebResourceRequested(args)
-	}), core.AddWebResourceRequested); err != nil {
-		return err
-	}
-
-	if err := addEvent(NewNavigationStartingHandler(func(_ *ICoreWebView2, args *ICoreWebView2NavigationStartingEventArgs) {
-		if browser.NavigationStartingCallback == nil {
-			return
-		}
-		// The getters degrade independently on purpose: identity is the
-		// load-bearing value, and a URI read failing must not cost the id. A
-		// failed id read reports 0, which no real navigation uses - callers
-		// treat it as "identity unavailable" (decisions/0021).
-		uri, _ := args.GetUri()
-		id, err := args.GetNavigationID()
-		if err != nil {
-			browser.reportWarning(err)
-		}
-		userInitiated, _ := args.GetIsUserInitiated()
-		redirected, _ := args.GetIsRedirected()
-		if browser.NavigationStartingCallback(uri, id, userInitiated, redirected) {
-			if err := args.PutCancel(true); err != nil {
-				browser.reportWarning(err)
-			}
-		}
-	}), core.AddNavigationStarting); err != nil {
-		return err
-	}
-
-	if err := addEvent(NewNavigationCompletedHandler(func(_ *ICoreWebView2, args *ICoreWebView2NavigationCompletedEventArgs) {
-		if browser.NavigationCompletedCallback == nil {
-			return
-		}
-		success, _ := args.GetIsSuccess()
-		status, _ := args.GetWebErrorStatus()
-		id, err := args.GetNavigationID()
-		if err != nil {
-			browser.reportWarning(err)
-		}
-		browser.NavigationCompletedCallback(success, status, id)
-	}), core.AddNavigationCompleted); err != nil {
-		return err
-	}
-
-	if err := addEvent(NewNewWindowRequestedHandler(func(_ *ICoreWebView2, args *ICoreWebView2NewWindowRequestedEventArgs) {
-		// Suppress the runtime's default new window first - a detached
-		// CoreWebView2 with no host chrome is meaningless for a single-window
-		// frameless host (issue #6). If suppression fails (a broken args object),
-		// the runtime opens its own window, so do not also route the URI to the
-		// system browser: that would double-open. Otherwise the suppression stands
-		// even when the callback is unset or the URI read fails.
-		if err := args.PutHandled(true); err != nil {
-			browser.reportWarning(err)
-			return
-		}
-		if browser.NewWindowRequestedCallback == nil {
-			return
-		}
-		uri, _ := args.GetUri()
-		userInitiated, _ := args.GetIsUserInitiated()
-		browser.NewWindowRequestedCallback(uri, userInitiated)
-	}), core.AddNewWindowRequested); err != nil {
-		return err
-	}
-
-	return addEvent(NewProcessFailedHandler(func(_ *ICoreWebView2, args *ICoreWebView2ProcessFailedEventArgs) {
-		if browser.ProcessFailedCallback == nil {
-			return
-		}
-		kind, _ := args.GetProcessFailedKind()
-		browser.ProcessFailedCallback(kind)
-	}), core.AddProcessFailed)
-}
-
-// handleWebResourceRequested resolves the request out of the event args, hands
-// it to the host callback, and releases it when the callback returns.
-//
-// GetRequest returns a reference this package owns (interfaces_webresource_windows.go),
-// and this is the only code that can drop it: ICoreWebView2WebResourceRequest
-// exposes no exported Release, so the host-side callback could not release the
-// request even if it knew it had to. Without the release here, one COM object
-// leaks per intercepted request - every document, stylesheet, script, image and
-// fetch in embedded-FS mode - and grows without bound for the life of the
-// window. The deferred release also runs when the callback panics, so a
-// recovered handler panic (handlers_windows.go) does not turn into a leak.
-//
-// The args pointer is borrowed for the duration of the event and is left
-// untouched (see the ownership note in handlers_windows.go); only the
-// GetRequest result is owned here.
-func (browser *Browser) handleWebResourceRequested(args *ICoreWebView2WebResourceRequestedEventArgs) {
-	if browser.WebResourceRequestedCallback == nil || args == nil {
-		return
-	}
-	request, err := args.GetRequest()
-	if err != nil {
-		browser.reportError(err)
-		return
-	}
-	defer asUnknown(request).Release()
-	browser.WebResourceRequestedCallback(request, args)
-}
-
 // userDataFolder resolves where WebView2 keeps its profile.
 //
 // Leaving this empty is a trap: WebView2 then falls back to a folder next to the
@@ -378,86 +238,4 @@ func (browser *Browser) Environment() *ICoreWebView2Environment {
 	browser.mu.Lock()
 	defer browser.mu.Unlock()
 	return browser.environment.Interface()
-}
-
-// ShuttingDown closes the controller and drops the browser's references.
-//
-// It is called from the window procedure while the HWND is still alive: closing
-// the controller after its parent window is gone leaves the runtime's own
-// child windows orphaned, and the teardown reports failures nobody can act on.
-func (browser *Browser) ShuttingDown() {
-	browser.mu.Lock()
-	if browser.shuttingDown {
-		browser.mu.Unlock()
-		return
-	}
-	browser.shuttingDown = true
-	controller := browser.controller
-	core := browser.core
-	environment := browser.environment
-	browser.controller = nil
-	browser.core = nil
-	browser.environment = nil
-	browser.mu.Unlock()
-
-	var closeController func() error
-	var releaseController, releaseCore, releaseEnvironment func()
-	if controller != nil {
-		closeController = controller.Close
-		releaseController = func() { asUnknown(controller).Release() }
-	}
-	// GetCoreWebView2 returned a reference this Browser owns (see its doc in
-	// interfaces_controller_windows.go). Closing the controller does not drop it,
-	// so release it explicitly - otherwise one ICoreWebView2 leaks on every
-	// teardown, which grows without bound in a process that opens and closes many
-	// windows.
-	if core != nil {
-		releaseCore = func() { asUnknown(core).Release() }
-	}
-	if environment != nil {
-		releaseEnvironment = environment.Release
-	}
-	releaseBrowserObjects(closeController, releaseController, releaseCore, releaseEnvironment, browser.reportError)
-}
-
-// releaseBrowserObjects closes the controller and drops the three COM
-// references a live Browser owns, each under its own deferred call.
-//
-// The separate defers are load-bearing, not style. ShuttingDown runs inside the
-// panic-recovering window procedure, and its shuttingDown guard makes a retry a
-// no-op, so a panic partway through the release sequence would strand whatever
-// had not yet been dropped - one ICoreWebView2 or the environment - for good
-// (issue #63). A panic inside a deferred call still runs the remaining deferred
-// calls, so each drop is independent; a single wrapping closure would skip the
-// rest of itself once one call panicked. Deferred calls run
-// last-registered-first, so registering the Close last keeps the
-// Close-before-Release order the runtime requires. Nil callbacks are skipped so
-// a partially embedded Browser tears down cleanly.
-//
-// It takes callbacks rather than the COM pointers so the ordering and the
-// panic-independence are testable without a live runtime (docs/decisions/0006).
-func releaseBrowserObjects(closeController func() error, releaseController, releaseCore, releaseEnvironment func(), reportErr func(error)) {
-	if releaseEnvironment != nil {
-		defer releaseEnvironment()
-	}
-	if releaseCore != nil {
-		defer releaseCore()
-	}
-	if releaseController != nil {
-		defer releaseController()
-	}
-	if closeController != nil {
-		defer func() {
-			if err := closeController(); err != nil && reportErr != nil {
-				reportErr(err)
-			}
-		}()
-	}
-}
-
-// IsShuttingDown reports whether ShuttingDown has run.
-func (browser *Browser) IsShuttingDown() bool {
-	browser.mu.Lock()
-	defer browser.mu.Unlock()
-	return browser.shuttingDown
 }

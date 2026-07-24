@@ -427,7 +427,7 @@ func TestEnvironmentOptionsReportsItsValuesToTheRuntime(t *testing.T) {
 func TestCompletedHandlerIsReleasedNotLeaked(t *testing.T) {
 	before := liveServerCount()
 	handler := newCompletedHandler(
-		uintptr(unsafe.Pointer(&environmentCompletedVtable)),
+		uintptr(unsafe.Pointer(&completedVtable)),
 		iidEnvironmentCompletedHandler,
 	)
 	if liveServerCount() != before+1 {

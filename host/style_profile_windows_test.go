@@ -106,3 +106,9 @@ func TestNativeFrameProfileExtendsClientArea(t *testing.T) {
 		t.Fatal("caption_sysmenu_native_nccalc must use DefWindowProc")
 	}
 }
+
+// wsOverlappedWindow is Win32's composite for a standard window. Production
+// never names it - the host composes the bits it wants directly - but it is the
+// input every style test starts from, which is the whole reason it exists.
+const wsOverlappedWindow = wsOverlapped | wsCaption | wsSysMenu |
+	wsThickFrame | wsMinimizeBox | wsMaximizeBox

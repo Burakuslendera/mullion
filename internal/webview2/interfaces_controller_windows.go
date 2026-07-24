@@ -96,18 +96,6 @@ func (c *ICoreWebView2Controller) PutBounds(bounds Rect) error {
 	return hres(hr)
 }
 
-func (c *ICoreWebView2Controller) GetIsVisible() (bool, error) {
-	var visible int32
-	hr, _, _ := c.Vtbl.GetIsVisible.Call(
-		uintptr(unsafe.Pointer(c)),
-		uintptr(unsafe.Pointer(&visible)),
-	)
-	if err := hres(hr); err != nil {
-		return false, err
-	}
-	return boolFromBOOL(visible), nil
-}
-
 func (c *ICoreWebView2Controller) PutIsVisible(visible bool) error {
 	hr, _, _ := c.Vtbl.PutIsVisible.Call(
 		uintptr(unsafe.Pointer(c)),
@@ -189,18 +177,6 @@ type ICoreWebView2Controller3 struct {
 	Vtbl *ICoreWebView2Controller3Vtbl
 }
 
-func (c *ICoreWebView2Controller3) GetRasterizationScale() (float64, error) {
-	var scale float64
-	hr, _, _ := c.Vtbl.GetRasterizationScale.Call(
-		uintptr(unsafe.Pointer(c)),
-		uintptr(unsafe.Pointer(&scale)),
-	)
-	if err := hres(hr); err != nil {
-		return 0, err
-	}
-	return scale, nil
-}
-
 // PutRasterizationScale sets the scale WebView2 rasterizes at.
 //
 // ABI: `double` is the second argument, so the callee reads it from XMM1, not
@@ -225,18 +201,6 @@ func (c *ICoreWebView2Controller3) PutShouldDetectMonitorScaleChanges(detect boo
 		boolToBOOL(detect),
 	)
 	return hres(hr)
-}
-
-func (c *ICoreWebView2Controller3) GetBoundsMode() (BoundsMode, error) {
-	var mode BoundsMode
-	hr, _, _ := c.Vtbl.GetBoundsMode.Call(
-		uintptr(unsafe.Pointer(c)),
-		uintptr(unsafe.Pointer(&mode)),
-	)
-	if err := hres(hr); err != nil {
-		return 0, err
-	}
-	return mode, nil
 }
 
 // PutBoundsMode pairs with PutShouldDetectMonitorScaleChanges(false):

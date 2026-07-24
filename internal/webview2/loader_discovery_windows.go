@@ -121,20 +121,6 @@ func findRuntime() (resolved, error) {
 	return found, nil
 }
 
-// versionOfRuntime reads the version of a runtime that no registry entry
-// describes: first from the binary's version resource, then from the folder
-// name, which both the Evergreen layout and the fixed-version package name
-// after the version. Returns "" when neither can say.
-func versionOfRuntime(clientPath, folder string) string {
-	if version, err := fileVersion(clientPath); err == nil && isInstalledVersion(version) {
-		return version
-	}
-	if base := sanitizeVersion(filepath.Base(folder)); isInstalledVersion(base) {
-		return base
-	}
-	return ""
-}
-
 // discoverCandidates asks the environment and the registry. It touches no disk.
 func discoverCandidates() []candidate {
 	var out []candidate
@@ -207,32 +193,36 @@ func readEdgeUpdateClient(root registry.Key, path string, access uint32) (versio
 // exists is injected so the whole selection rule - precedence, version
 // ordering, the refusal to fall back past a pin - is testable without a
 // WebView2 install.
+// firstExistingClient returns the first client DLL that exists under any of a
+// candidate's folders, and whether there was one. The folder order is the
+// candidate's own, so the first hit is the one that wins - which is why this
+// returns on the first match rather than collecting. Extracted so selectRuntime
+// reads as the precedence rule it is, instead of three nested loops and a flag
+// to escape them.
+func firstExistingClient(item candidate, arch string, exists func(string) bool) (resolved, bool) {
+	for _, folder := range item.folders {
+		for _, path := range clientPaths(folder, arch) {
+			if !exists(path) {
+				continue
+			}
+			return resolved{
+				Folder:    folder,
+				ClientDLL: path,
+				Version:   item.version,
+				Source:    item.source,
+				Fixed:     item.pinned,
+			}, true
+		}
+	}
+	return resolved{}, false
+}
+
 func selectRuntime(candidates []candidate, arch string, exists func(string) bool) (resolved, error) {
 	var best resolved
 	var haveBest bool
 
 	for _, item := range candidates {
-		var match resolved
-		var matched bool
-		for _, folder := range item.folders {
-			for _, path := range clientPaths(folder, arch) {
-				if !exists(path) {
-					continue
-				}
-				match = resolved{
-					Folder:    folder,
-					ClientDLL: path,
-					Version:   item.version,
-					Source:    item.source,
-					Fixed:     item.pinned,
-				}
-				matched = true
-				break
-			}
-			if matched {
-				break
-			}
-		}
+		match, matched := firstExistingClient(item, arch, exists)
 
 		if item.pinned {
 			if !matched {

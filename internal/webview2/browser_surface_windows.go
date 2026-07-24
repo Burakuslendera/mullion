@@ -3,8 +3,9 @@
 package webview2
 
 // The Browser's surface methods: the operations a host performs on an embedded
-// control. Split from browser_windows.go, which keeps the lifecycle - Embed,
-// event registration and teardown.
+// control. Split from browser_windows.go, which keeps the type and Embed;
+// event registration lives in browser_events_windows.go and teardown in
+// browser_teardown_windows.go.
 
 import (
 	"errors"
@@ -69,16 +70,6 @@ func (browser *Browser) Eval(script string) error {
 	return err
 }
 
-// PostWebMessageAsString sends a string to the frontend's
-// chrome.webview message listener.
-func (browser *Browser) PostWebMessageAsString(message string) error {
-	core := browser.CoreWebView2()
-	if core == nil {
-		return errors.New("webview2: post before embed")
-	}
-	return core.PostWebMessageAsString(message)
-}
-
 // Show makes the control visible.
 //
 // Showing the host window is not enough: the controller has its own visibility,
@@ -103,25 +94,6 @@ func (browser *Browser) Hide() error {
 	err := controller.PutIsVisible(false)
 	browser.reportError(err)
 	return err
-}
-
-// PutBounds resizes the control. Bounds are physical pixels; see
-// applyBoundsPolicy.
-func (browser *Browser) PutBounds(bounds Rect) error {
-	controller := browser.Controller()
-	if controller == nil {
-		return errors.New("webview2: bounds before embed")
-	}
-	return controller.PutBounds(bounds)
-}
-
-// GetBounds reads back the control's rectangle.
-func (browser *Browser) GetBounds() (Rect, error) {
-	controller := browser.Controller()
-	if controller == nil {
-		return Rect{}, errors.New("webview2: bounds before embed")
-	}
-	return controller.GetBounds()
 }
 
 // NotifyParentWindowPositionChanged tells the control its host moved. Without

@@ -28,6 +28,14 @@ func Message(message string) string {
 	return strings.Join(parts, " ")
 }
 
+// IsControl reports whether r is a C0 or C1 control character, or DEL. It is the
+// one definition of "control byte" in the tree: the asset boundary rejects the
+// same set at its own edge (host/assets_windows.go), and two copies of a
+// character-class rule is how they drift apart.
+func IsControl(r rune) bool {
+	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)
+}
+
 // StripControl folds every C0/C1 control character - including CR and LF, ESC,
 // BEL, backspace, NUL and the C1 block - to a space, so a string cannot smuggle
 // an ANSI/OSC terminal escape, a title rewrite, an injected line or a
@@ -37,7 +45,7 @@ func Message(message string) string {
 // mullion doctor (issue #40) - can apply the same guard at its own boundary.
 func StripControl(message string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+		if IsControl(r) {
 			return ' '
 		}
 		return r

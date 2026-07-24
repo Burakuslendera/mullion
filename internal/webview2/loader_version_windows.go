@@ -216,3 +216,17 @@ func resolveTargetVersion(requested, runtimeVersion string) string {
 	}
 	return fallbackTargetVersion
 }
+
+// versionOfRuntime reads the version of a runtime that no registry entry
+// describes: first from the binary's version resource, then from the folder
+// name, which both the Evergreen layout and the fixed-version package name
+// after the version. Returns "" when neither can say.
+func versionOfRuntime(clientPath, folder string) string {
+	if version, err := fileVersion(clientPath); err == nil && isInstalledVersion(version) {
+		return version
+	}
+	if base := sanitizeVersion(filepath.Base(folder)); isInstalledVersion(base) {
+		return base
+	}
+	return ""
+}

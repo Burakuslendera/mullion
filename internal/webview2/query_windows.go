@@ -126,5 +126,5 @@ func NewMemoryStream(content []byte) (*IStream, error) {
 	// of the package uses, rather than a direct cast: it points into COM memory,
 	// never into the Go heap, and casting a uintptr is exactly the pattern the
 	// compiler cannot verify.
-	return (*IStream)(unsafe.Pointer(unknownFromAddress(result))), nil
+	return interfaceFromAddress[IStream](result), nil
 }

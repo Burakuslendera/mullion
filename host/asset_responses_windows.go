@@ -3,7 +3,6 @@
 package host
 
 import (
-	"github.com/Burakuslendera/mullion/internal/logsafe"
 	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
@@ -22,14 +21,14 @@ func (provider *assetProvider) createWebResourceResponse(environment *webview2.I
 	webviewResponse, err := environment.CreateWebResourceResponse(nil, int32(response.status), response.reason, response.headers)
 	if err != nil {
 		if stream != nil {
-			_ = stream.Release()
+			stream.Release()
 		}
 		return nil, nil, err
 	}
 	if stream != nil {
 		if err := webviewResponse.PutContent(stream); err != nil {
-			_ = webviewResponse.Release()
-			_ = stream.Release()
+			webviewResponse.Release()
+			stream.Release()
 			return nil, nil, err
 		}
 	}
@@ -46,13 +45,9 @@ func (provider *assetProvider) createWebResourceResponse(environment *webview2.I
 // monotonically with the number of asset requests.
 func (provider *assetProvider) releaseResponse(response *webview2.ICoreWebView2WebResourceResponse, stream *webview2.IStream) {
 	if response != nil {
-		if err := response.Release(); err != nil {
-			provider.log.Warn("mullion: asset response release failed, reason=" + logsafe.Reason(err))
-		}
+		response.Release()
 	}
 	if stream != nil {
-		if err := stream.Release(); err != nil {
-			provider.log.Warn("mullion: asset stream release failed, reason=" + logsafe.Reason(err))
-		}
+		stream.Release()
 	}
 }

@@ -136,14 +136,6 @@ func (provider *assetProvider) resolve(rawURI string) assetResponse {
 	}
 }
 
-func resolveAssetPath(virtualHost, rawURI string) (string, int) {
-	request, status := resolveAssetRequest(virtualHost, rawURI)
-	if status != 0 {
-		return "", status
-	}
-	return request.path, status
-}
-
 // resolveAssetRequest maps a request URI to an asset path, or to the HTTP status
 // that rejects it. The virtual host is passed in rather than read from a package
 // constant so that the request filter, the navigation target and this allow-list
@@ -211,7 +203,7 @@ func hasTraversalSegment(value string) bool {
 // itself rather than trusting the caller's fs.FS.
 func containsBackslashColonOrControl(value string) bool {
 	for _, r := range value {
-		if r == '\\' || r == ':' || r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+		if r == '\\' || r == ':' || logsafe.IsControl(r) {
 			return true
 		}
 	}

@@ -94,7 +94,7 @@ controls only, never the application's own Go methods.
 
 `host/loopback.go` (`messageSourceAllowed`, `trustedOrigin`), the dispatch check
 in `host/webview_windows.go`, and the source threaded through
-`internal/webview2/browser_windows.go`. `TestMessageSourceAllowed`
+`internal/webview2/browser_events_windows.go`. `TestMessageSourceAllowed`
 (`host/loopback_test.go`) locks the allow/reject matrix. Issue #6 carries the full
 analysis and the reproduction reasoning.
 
