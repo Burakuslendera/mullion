@@ -24,7 +24,8 @@ Working rule throughout: a claim is only "verified" if it was observed at runtim
 - [12. Performance notes: where the WebView2 levers actually are](#12-performance-notes-where-the-webview2-levers-actually-are)
 - [13. Building on a third-party WebView2 binding](#13-building-on-a-third-party-webview2-binding--the-slow-squeeze)
 - [14. A data: document has no reportable source](#14-a-data-document-has-no-reportable-source)
-- [15. The short version](#15-the-short-version)
+- [15. A sanitiser that mangles its input plausibly is worse than one that fails](#15-a-sanitiser-that-mangles-its-input-plausibly-is-worse-than-one-that-fails)
+- [16. The short version](#16-the-short-version)
 
 ---
 
@@ -303,7 +304,49 @@ it.
 
 ---
 
-## 15. The short version
+## 15. A sanitiser that mangles its input plausibly is worse than one that fails
+
+`internal/logsafe.Message` was written to strip Windows paths out of error
+strings. Its drive-letter rule is `<alpha> ':' <separator>`, which is inside
+`http://` at the `p` and inside `https://` at the `s`; its UNC rule is `//`,
+which every `scheme://host` URL contains. So every URL it ever reduced came out
+as its last path segment with a clipped scheme welded to the front:
+
+```
+https://mullion.local/index.html?in=1  ->  httpindex.html?in=1
+https://evil.example                   ->  httpevil.example
+```
+
+Nothing caught this for the life of three issues. The output still looked like a
+diagnostic: it had the right shape, it started with `http`, and it named a real
+file. The live verifications for #6, #68 and #72 were all read off `uri=` fields
+that had already lost their host, and nobody reading them noticed, because a
+mangled value that looks reduced is indistinguishable from a value that was
+correctly reduced.
+
+Two dead ends came out of fixing it.
+
+**Bounding the input.** The first fix reduced with `net/url` but kept the
+existing call-site clamp, which cut the value at 160 bytes *before* parsing.
+A URL prefix is a valid URL. Pad a hostname so the cut lands on a label boundary
+and `mullion.local.evil.example` logs as `mullion.local` - not garbled, not
+marked, just a different and more trustworthy host. The same clamp deletes an
+`@` past the limit, after which Go reads the credential as the host and prints
+it. The first version was strictly worse than the bug: it converted visible
+garbage into confident wrongness, and a reader acts on the second.
+The rule that came out of it: **bound the reduction, never the input, and never
+cut a host at all - print it whole or do not print it.**
+
+**Folding control bytes to spaces.** `Message` neutralises a control byte by
+turning it into a space. These log lines are `key=value, key=value`, so for a
+host - where Go permits `,` and `=` unescaped - the neutraliser *manufactures*
+the field separator it exists to defend against. A host of
+`evil.example,<C1>user_initiated=false` becomes a second, forged field. Refusing
+the host outright was the only version that held.
+
+The decision is [0025](decisions/0025-urls-are-logged-as-urls.md).
+
+## 16. The short version
 
 1. **Search the DOM before the frame.** Native-looking symptoms are frequently web bugs. (§7)
 2. **Log the container, not the content.** A tiny render is usually a tiny rect. (§2)
@@ -316,5 +359,7 @@ it.
 9. **Count your escape hatches into a dependency.** When you have forked it once and bypassed it once, the abstraction is already gone; owning the binding is cheaper than pretending otherwise. (§13)
 10. **A data: document reports no source.** Identify your own surfaces from navigation state you already hold, not by parsing the source harder. (§14)
 11. **An ambiguous status code is not a diagnosis.** The same failure status meant two different things; the state that told them apart was already recorded at the navigation's start. (§14)
+12. **A sanitiser can remove the wrong half.** Reducing more than intended is not automatically safe: the URL reducer deleted the host and kept the query, which is the identifying half gone and the disclosing half kept. (§15)
+13. **Bound the output, not the input.** Truncating before parsing produces a well-formed value that names something else; a well-formed lie beats visible garbage past every reader. (§15)
 
-> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: §14 gains the ambiguous-status tail — the same failure status meant a dead endpoint and an abandoned navigation, and the navigation's recorded target is what separates them (issue #72, decisions/0024).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new §15 - a path sanitiser silently mangled every URL it reduced, and the first fix (clamp before parse) turned that into a well-formed wrong host; two short-version entries added (issue #78, decisions/0025).

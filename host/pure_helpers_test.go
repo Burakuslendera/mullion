@@ -2,27 +2,10 @@
 
 package host
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 // Locks for small pure helpers an audit found untested. Each is a genuine
 // fails-before: reverting the helper's guarantee fails the corresponding case.
-
-// clampSourceForLog bounds the untrusted rejected-source string in the #56 debug
-// line: a foreign data:/blob: URI can be arbitrarily long, and only the first
-// bytes identify it, so a source over the limit is cut and one at the limit is
-// left alone. Dropping the cut would let the source produce an unbounded log line.
-func TestClampSourceForLog(t *testing.T) {
-	atLimit := strings.Repeat("a", 160)
-	if got := clampSourceForLog(atLimit); got != atLimit {
-		t.Fatalf("clampSourceForLog cut a source already at the 160-byte limit")
-	}
-	if got := clampSourceForLog(strings.Repeat("b", 300)); len(got) != 160 {
-		t.Fatalf("clampSourceForLog(300 bytes) = len %d, want 160", len(got))
-	}
-}
 
 // isHotBoundsSyncSource gates both the deferred-webview early return in
 // syncWebViewBounds and the log dedup, so which sources are "hot" (the

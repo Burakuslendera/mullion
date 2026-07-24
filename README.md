@@ -167,8 +167,10 @@ own controllable fallback surface rather than the browser's error page. Full
 reasoning: [decisions/0012](docs/decisions/0012-config-url-loopback.md).
 
 `Logger` takes pre-sanitised single strings — file system paths are reduced to
-their base name before they reach you, so messages can be forwarded verbatim
-without leaking user paths. `SlogLogger(*slog.Logger)` is provided.
+their base name, and URLs to scheme, host and path, with the query and fragment
+dropped and only a bare `?` or `#` left to record that they were there. Messages
+can be forwarded verbatim without leaking a user path or a token someone put in a
+query string. `SlogLogger(*slog.Logger)` is provided.
 
 ## Frontend API
 

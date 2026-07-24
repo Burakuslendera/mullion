@@ -121,8 +121,11 @@ touching hit-testing or the non-client area.
   violation. `scripts/leak-scan.ps1` holds every source extension to the same
   ASCII rule as `.go`.
 - User-supplied strings — filesystem paths, URIs, bridge payloads — pass through
-  `internal/logsafe` before they reach a log line. Diagnostics should be readable
-  without being a disclosure.
+  `internal/logsafe` before they reach a log line, and through the reducer that
+  fits the input. A URI takes `logsafe.URL`, never `logsafe.Message` or
+  `logsafe.FileName`: the path sanitizer reads the `s:/` of `https://` as a
+  Windows drive letter and deletes the host (issue #78, decisions/0025).
+  Diagnostics should be readable without being a disclosure.
 - Exported API changes are a compatibility event: new `Config` fields must have a
   zero value that preserves current behaviour.
 
