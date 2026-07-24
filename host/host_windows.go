@@ -95,6 +95,18 @@ type Host struct {
 	// deliberate and the current document stays - so handleNavigationOutcome
 	// treats this id's failure as benign cleanup (decisions/0023). UI thread only.
 	cancelledNavID uint64
+
+	// navStartID is the id of the last top-level navigation the runtime reported
+	// starting, and navStartInOrigin whether that navigation targeted the trusted
+	// origin. They answer the one question a completion cannot: where its
+	// navigation was going, which is what decides whether an aborted one could
+	// have failed for real (benignAbort, decisions/0024). One slot is enough
+	// because the pair is only ever read for the completion whose id still
+	// matches: a completion for any older navigation finds a different id and
+	// falls through to the ordinary failure path, which is the safe direction.
+	// UI thread only.
+	navStartID       uint64
+	navStartInOrigin bool
 }
 
 // New prepares a host. It does not create a window; Run does that.

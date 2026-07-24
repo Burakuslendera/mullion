@@ -88,11 +88,26 @@ func (host *Host) noteGateCancelledOutcome(success bool, status webview2.WebErro
 // from the callback so the claim-beats-gate rule and the gate are both
 // headless-testable (issue #6, decisions/0023).
 func (host *Host) noteAndGateNavigation(uri string, navigationID uint64, isUserInitiated bool) bool {
+	host.noteNavigationTarget(uri, navigationID)
 	if host.noteSurfaceNavigationStarting(uri, navigationID) {
 		host.log.Debug("mullion: error surface navigation identified, id=" + formatUint64(navigationID))
 		return false
 	}
 	return host.shouldCancelNavigation(uri, navigationID, isUserInitiated)
+}
+
+// noteNavigationTarget records where the navigation that is starting was going,
+// keyed by its id, because the completion will not say (decisions/0024). It runs
+// before the surface claim and the gate, so it sees every start, including the
+// surface's own - whose data: URI is not the trusted origin, which is the right
+// answer: an aborted surface load is resolved by identity, never by this pair.
+//
+// An unreadable URI reaches here as the empty string, which is not the trusted
+// origin either, so a start the runtime could not describe never earns the
+// abort exemption.
+func (host *Host) noteNavigationTarget(uri string, navigationID uint64) {
+	host.navStartID = navigationID
+	host.navStartInOrigin = sameHTTPOrigin(uri, host.config.trustedOrigin())
 }
 
 // noteSurfaceNavigationStarting claims a NavigationStarting event as the
@@ -181,20 +196,20 @@ func (host *Host) noteNavigationOutcome(success bool, status webview2.WebErrorSt
 		if navigationID == host.errorSurfaceNavID {
 			return host.noteSurfaceOwnOutcome(success, status)
 		}
-		return host.noteForeignOutcome(success, status)
+		return host.noteForeignOutcome(success, status, navigationID)
 	}
 	if navigationID != 0 && host.errorSurfacePending {
 		// A completion cannot precede its own navigation's start, so while the
 		// surface's start is still unclaimed, an identified completion is
 		// necessarily some other navigation's - classifying it foreign keeps
 		// the claim window open for the surface's own start.
-		return host.noteForeignOutcome(success, status)
+		return host.noteForeignOutcome(success, status, navigationID)
 	}
 	if navigationID != 0 && !host.errorSurfaceLoading {
 		// Identified completion with no surface story in flight: ordinary
 		// classification, same result the fallback would produce, taken here
 		// so the fallback below stays exactly 0020's machine.
-		return host.noteForeignOutcome(success, status)
+		return host.noteForeignOutcome(success, status, navigationID)
 	}
 	return host.noteOrderedOutcome(success)
 }
@@ -231,7 +246,7 @@ func (host *Host) noteSurfaceOwnOutcome(success bool, status webview2.WebErrorSt
 
 // noteForeignOutcome handles a completion positively attributed to a
 // navigation that is not the surface's.
-func (host *Host) noteForeignOutcome(success bool, status webview2.WebErrorStatus) bool {
+func (host *Host) noteForeignOutcome(success bool, status webview2.WebErrorStatus, navigationID uint64) bool {
 	if success {
 		// A foreign document committed, so the empty source is foreign again.
 		// A still-unresolved surface navigation stays claimable: if the
@@ -251,7 +266,7 @@ func (host *Host) noteForeignOutcome(success bool, status webview2.WebErrorStatu
 		host.log.Debug("mullion: navigation failure absorbed while the error surface loads")
 		return false
 	}
-	if host.benignAbort(status) {
+	if host.benignAbort(status, navigationID) {
 		host.log.Debug("mullion: navigation aborted, not arming the error surface, status=" + formatInt32(int32(status)))
 		return false
 	}
@@ -269,24 +284,41 @@ func (host *Host) noteForeignOutcome(success bool, status webview2.WebErrorStatu
 // benignAbort reports whether an attributed failure completion is an abort that
 // must not arm the fallback surface (issue #72, decisions/0024).
 //
-// ConnectionAborted is a connection that ended mid-flight. What that means
-// depends on whether there is a connection at all. With Config.URL set there is:
-// the status is exactly what a dead loopback endpoint produces (measured live,
-// issue #68 and 0020's timeline), so it is a genuine "could not load" and the
-// surface is what it exists for. Serving the embedded fs.FS in process, there is
-// no socket and no endpoint to be unreachable - the bytes come from
-// WebResourceRequested on this thread - so the same status can only mean the
-// runtime abandoned a navigation it had started, which a renderer-initiated
-// same-origin document navigation was observed to do while its asset was served
-// 200 (issue #72). Arming there replaces a live frontend with the fallback page
-// over a navigation that was never going to fail.
+// ConnectionAborted is a connection that ended mid-flight, and whether that can
+// mean "could not load" depends on whether this navigation had a connection at
+// all. Two conditions have to hold together, and both are about where the bytes
+// for *this* navigation came from:
+//
+//   - mullion serves the frontend itself, from the embedded fs.FS through
+//     WebResourceRequested (Config.URL empty). With Config.URL set the caller
+//     serves it over a socket, and a dead endpoint has been seen to produce this
+//     status (issue #68), which is the case the surface exists for.
+//   - the navigation was headed for the trusted origin. Config.URL being empty
+//     does not keep the top frame there: PinNavigationToOrigin is opt-in and off
+//     by default (decisions/0023), so a frontend link or a script assignment can
+//     take the top frame to any origin, and that navigation is a real socket
+//     load whose abort is a real failure. noteNavigationTarget is what remembers
+//     the answer; a completion carries no URI of its own.
+//
+// Both true, the status can only mean the runtime abandoned a navigation it had
+// started - which a renderer-initiated same-origin document navigation was
+// observed doing while its asset was served 200 (issue #72). Arming there
+// replaces a live frontend with the fallback page over a navigation that was
+// never going to fail.
+//
+// The id must still match the navigation that started, so a completion for an
+// older navigation - the one case where the recorded target is not this
+// completion's - falls through and arms, which is the safe direction.
 //
 // It deliberately does not extend to noteOrderedOutcome: without an id there is
 // nothing to say this completion belongs to the navigation whose asset was
 // served, and suppressing the surface on that guess would fail open in the one
 // case the surface is for. Absent identity, 0020's machine stands.
-func (host *Host) benignAbort(status webview2.WebErrorStatus) bool {
-	return status == webview2.WebErrorStatusConnectionAborted && host.config.servesAssetsInProcess()
+func (host *Host) benignAbort(status webview2.WebErrorStatus, navigationID uint64) bool {
+	if status != webview2.WebErrorStatusConnectionAborted || !host.config.servesAssetsInProcess() {
+		return false
+	}
+	return navigationID != 0 && navigationID == host.navStartID && host.navStartInOrigin
 }
 
 // noteOrderedOutcome is the order-based fallback for completions the machine

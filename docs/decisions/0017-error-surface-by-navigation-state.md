@@ -82,7 +82,7 @@ source never reaches `Config.Bridge`:
 
 - Issue #56: the live report (ten rejections per run), and the probe
   measurements — `""` at both `GetSource` levels, runtime 150.0.4078.65.
-- `host/webview_windows_test.go`: the six `TestErrorSurface*` state-machine
+- `host/errorsurface_windows_test.go`: the six `TestErrorSurface*` state-machine
   tests, proved fails-before against a neutralised gate (the three admit-side
   tests fail, the three reject-side tests hold).
 - The live re-run after the fix: zero rejections; the surface's
