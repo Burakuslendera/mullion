@@ -162,6 +162,21 @@ func SetHandlerPanicHook(hook func(event string, recovered any, stack []byte)) {
 	panicHookMu.Unlock()
 }
 
+// HandlerPanicHook returns the reporter currently installed, or nil if there is
+// none and recovered panics are still going to stderr.
+//
+// It exists for the host's wiring test. "A recovered handler panic reaches
+// Config.Logger" is only true if the hook this package will actually call routes
+// there, and the installed hook is otherwise unobservable from outside the
+// package - a test that called the host's own reporter directly would keep
+// passing with the SetHandlerPanicHook call deleted, which is exactly the state
+// this hook spent its whole life in.
+func HandlerPanicHook() func(event string, recovered any, stack []byte) {
+	panicHookMu.RLock()
+	defer panicHookMu.RUnlock()
+	return panicHook
+}
+
 func reportHandlerPanic(event string, recovered any, stack []byte) {
 	panicHookMu.RLock()
 	hook := panicHook

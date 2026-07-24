@@ -54,6 +54,12 @@ func (host *Host) ensureWebViewWith(source string, create func() error) error {
 	defer func() { host.webViewEmbedding = false }()
 
 	host.log.Debug("mullion: webview create requested, source=" + logsafe.Message(source))
+	// Before create, because create is what brings the event handlers into
+	// existence and a handler that panics before the hook is installed reports to
+	// stderr instead of this host's logger. Installed here rather than inside
+	// createWebView so the wiring sits on the seam the suite can drive without a
+	// runtime: everything below this line needs a live WebView2.
+	host.installHandlerPanicLogging()
 	if err := create(); err != nil {
 		host.log.Error("mullion: webview2 embed failed, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
 		return err

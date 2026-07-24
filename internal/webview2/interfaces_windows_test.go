@@ -233,9 +233,14 @@ func TestCoreWebView2VtblLayout(t *testing.T) {
 	})
 }
 
-func TestSettingsVtblLayout(t *testing.T) {
-	var v ICoreWebView2SettingsVtbl
-	checkVtbl(t, "ICoreWebView2Settings", unsafe.Sizeof(v), 21, []slot{
+// settingsSlots is the base ICoreWebView2Settings prefix, and the root of the
+// settingsNSlots family below: each revision embeds the previous one at offset
+// zero, so settingsNSlots returns the whole flattened layout of revision N. That
+// is both what a caller sees through a QueryInterface'd ICoreWebView2SettingsN
+// pointer and the prefix every later revision inherits, which is why one list
+// per revision serves the intermediate tests and the Settings9 anchor alike.
+func settingsSlots(v *ICoreWebView2SettingsVtbl) []slot {
+	return []slot{
 		{"QueryInterface", unsafe.Offsetof(v.QueryInterface), 0},
 		{"AddRef", unsafe.Offsetof(v.AddRef), 1},
 		{"Release", unsafe.Offsetof(v.Release), 2},
@@ -257,7 +262,75 @@ func TestSettingsVtblLayout(t *testing.T) {
 		{"PutIsZoomControlEnabled", unsafe.Offsetof(v.PutIsZoomControlEnabled), 18},
 		{"GetIsBuiltInErrorPageEnabled", unsafe.Offsetof(v.GetIsBuiltInErrorPageEnabled), 19},
 		{"PutIsBuiltInErrorPageEnabled", unsafe.Offsetof(v.PutIsBuiltInErrorPageEnabled), 20},
-	})
+	}
+}
+
+func settings2Slots(v *ICoreWebView2Settings2Vtbl) []slot {
+	return append(settingsSlots(&v.ICoreWebView2SettingsVtbl),
+		slot{"GetUserAgent", unsafe.Offsetof(v.GetUserAgent), 21},
+		slot{"PutUserAgent", unsafe.Offsetof(v.PutUserAgent), 22},
+	)
+}
+
+func settings3Slots(v *ICoreWebView2Settings3Vtbl) []slot {
+	return append(settings2Slots(&v.ICoreWebView2Settings2Vtbl),
+		slot{"GetAreBrowserAcceleratorKeysEnabled", unsafe.Offsetof(v.GetAreBrowserAcceleratorKeysEnabled), 23},
+		slot{"PutAreBrowserAcceleratorKeysEnabled", unsafe.Offsetof(v.PutAreBrowserAcceleratorKeysEnabled), 24},
+	)
+}
+
+// Settings4 carries two properties and therefore FOUR slots - the one revision
+// in the chain that breaks the one-property-per-revision rhythm, and the easiest
+// to get wrong. Collapsing it to two would drag everything after it two slots
+// early, landing IsNonClientRegionSupportEnabled on IsReputationCheckingRequired.
+func settings4Slots(v *ICoreWebView2Settings4Vtbl) []slot {
+	return append(settings3Slots(&v.ICoreWebView2Settings3Vtbl),
+		slot{"GetIsPasswordAutosaveEnabled", unsafe.Offsetof(v.GetIsPasswordAutosaveEnabled), 25},
+		slot{"PutIsPasswordAutosaveEnabled", unsafe.Offsetof(v.PutIsPasswordAutosaveEnabled), 26},
+		slot{"GetIsGeneralAutofillEnabled", unsafe.Offsetof(v.GetIsGeneralAutofillEnabled), 27},
+		slot{"PutIsGeneralAutofillEnabled", unsafe.Offsetof(v.PutIsGeneralAutofillEnabled), 28},
+	)
+}
+
+// Settings5 is pinch zoom and Settings6 is swipe navigation, in that order.
+func settings5Slots(v *ICoreWebView2Settings5Vtbl) []slot {
+	return append(settings4Slots(&v.ICoreWebView2Settings4Vtbl),
+		slot{"GetIsPinchZoomEnabled", unsafe.Offsetof(v.GetIsPinchZoomEnabled), 29},
+		slot{"PutIsPinchZoomEnabled", unsafe.Offsetof(v.PutIsPinchZoomEnabled), 30},
+	)
+}
+
+func settings6Slots(v *ICoreWebView2Settings6Vtbl) []slot {
+	return append(settings5Slots(&v.ICoreWebView2Settings5Vtbl),
+		slot{"GetIsSwipeNavigationEnabled", unsafe.Offsetof(v.GetIsSwipeNavigationEnabled), 31},
+		slot{"PutIsSwipeNavigationEnabled", unsafe.Offsetof(v.PutIsSwipeNavigationEnabled), 32},
+	)
+}
+
+func settings7Slots(v *ICoreWebView2Settings7Vtbl) []slot {
+	return append(settings6Slots(&v.ICoreWebView2Settings6Vtbl),
+		slot{"GetHiddenPdfToolbarItems", unsafe.Offsetof(v.GetHiddenPdfToolbarItems), 33},
+		slot{"PutHiddenPdfToolbarItems", unsafe.Offsetof(v.PutHiddenPdfToolbarItems), 34},
+	)
+}
+
+func settings8Slots(v *ICoreWebView2Settings8Vtbl) []slot {
+	return append(settings7Slots(&v.ICoreWebView2Settings7Vtbl),
+		slot{"GetIsReputationCheckingRequired", unsafe.Offsetof(v.GetIsReputationCheckingRequired), 35},
+		slot{"PutIsReputationCheckingRequired", unsafe.Offsetof(v.PutIsReputationCheckingRequired), 36},
+	)
+}
+
+func settings9Slots(v *ICoreWebView2Settings9Vtbl) []slot {
+	return append(settings8Slots(&v.ICoreWebView2Settings8Vtbl),
+		slot{"GetIsNonClientRegionSupportEnabled", unsafe.Offsetof(v.GetIsNonClientRegionSupportEnabled), 37},
+		slot{"PutIsNonClientRegionSupportEnabled", unsafe.Offsetof(v.PutIsNonClientRegionSupportEnabled), 38},
+	)
+}
+
+func TestSettingsVtblLayout(t *testing.T) {
+	var v ICoreWebView2SettingsVtbl
+	checkVtbl(t, "ICoreWebView2Settings", unsafe.Sizeof(v), 21, settingsSlots(&v))
 }
 
 // TestSettings9VtblLayout pins the full derived chain.
@@ -273,80 +346,43 @@ func TestSettingsVtblLayout(t *testing.T) {
 // early, on top of IsReputationCheckingRequired.
 func TestSettings9VtblLayout(t *testing.T) {
 	var v ICoreWebView2Settings9Vtbl
-	base := &v.ICoreWebView2SettingsVtbl
-	checkVtbl(t, "ICoreWebView2Settings9", unsafe.Sizeof(v), 39, []slot{
-		{"QueryInterface", unsafe.Offsetof(base.QueryInterface), 0},
-		{"AddRef", unsafe.Offsetof(base.AddRef), 1},
-		{"Release", unsafe.Offsetof(base.Release), 2},
-		{"GetIsScriptEnabled", unsafe.Offsetof(base.GetIsScriptEnabled), 3},
-		{"PutIsScriptEnabled", unsafe.Offsetof(base.PutIsScriptEnabled), 4},
-		{"GetIsWebMessageEnabled", unsafe.Offsetof(base.GetIsWebMessageEnabled), 5},
-		{"PutIsWebMessageEnabled", unsafe.Offsetof(base.PutIsWebMessageEnabled), 6},
-		{"GetAreDefaultScriptDialogsEnabled", unsafe.Offsetof(base.GetAreDefaultScriptDialogsEnabled), 7},
-		{"PutAreDefaultScriptDialogsEnabled", unsafe.Offsetof(base.PutAreDefaultScriptDialogsEnabled), 8},
-		{"GetIsStatusBarEnabled", unsafe.Offsetof(base.GetIsStatusBarEnabled), 9},
-		{"PutIsStatusBarEnabled", unsafe.Offsetof(base.PutIsStatusBarEnabled), 10},
-		{"GetAreDevToolsEnabled", unsafe.Offsetof(base.GetAreDevToolsEnabled), 11},
-		{"PutAreDevToolsEnabled", unsafe.Offsetof(base.PutAreDevToolsEnabled), 12},
-		{"GetAreDefaultContextMenusEnabled", unsafe.Offsetof(base.GetAreDefaultContextMenusEnabled), 13},
-		{"PutAreDefaultContextMenusEnabled", unsafe.Offsetof(base.PutAreDefaultContextMenusEnabled), 14},
-		{"GetAreHostObjectsAllowed", unsafe.Offsetof(base.GetAreHostObjectsAllowed), 15},
-		{"PutAreHostObjectsAllowed", unsafe.Offsetof(base.PutAreHostObjectsAllowed), 16},
-		{"GetIsZoomControlEnabled", unsafe.Offsetof(base.GetIsZoomControlEnabled), 17},
-		{"PutIsZoomControlEnabled", unsafe.Offsetof(base.PutIsZoomControlEnabled), 18},
-		{"GetIsBuiltInErrorPageEnabled", unsafe.Offsetof(base.GetIsBuiltInErrorPageEnabled), 19},
-		{"PutIsBuiltInErrorPageEnabled", unsafe.Offsetof(base.PutIsBuiltInErrorPageEnabled), 20},
-		// Settings2
-		{"GetUserAgent", unsafe.Offsetof(v.GetUserAgent), 21},
-		{"PutUserAgent", unsafe.Offsetof(v.PutUserAgent), 22},
-		// Settings3
-		{"GetAreBrowserAcceleratorKeysEnabled", unsafe.Offsetof(v.GetAreBrowserAcceleratorKeysEnabled), 23},
-		{"PutAreBrowserAcceleratorKeysEnabled", unsafe.Offsetof(v.PutAreBrowserAcceleratorKeysEnabled), 24},
-		// Settings4 - two properties, four slots
-		{"GetIsPasswordAutosaveEnabled", unsafe.Offsetof(v.GetIsPasswordAutosaveEnabled), 25},
-		{"PutIsPasswordAutosaveEnabled", unsafe.Offsetof(v.PutIsPasswordAutosaveEnabled), 26},
-		{"GetIsGeneralAutofillEnabled", unsafe.Offsetof(v.GetIsGeneralAutofillEnabled), 27},
-		{"PutIsGeneralAutofillEnabled", unsafe.Offsetof(v.PutIsGeneralAutofillEnabled), 28},
-		// Settings5 is pinch zoom, Settings6 is swipe navigation - in that order
-		{"GetIsPinchZoomEnabled", unsafe.Offsetof(v.GetIsPinchZoomEnabled), 29},
-		{"PutIsPinchZoomEnabled", unsafe.Offsetof(v.PutIsPinchZoomEnabled), 30},
-		{"GetIsSwipeNavigationEnabled", unsafe.Offsetof(v.GetIsSwipeNavigationEnabled), 31},
-		{"PutIsSwipeNavigationEnabled", unsafe.Offsetof(v.PutIsSwipeNavigationEnabled), 32},
-		// Settings7
-		{"GetHiddenPdfToolbarItems", unsafe.Offsetof(v.GetHiddenPdfToolbarItems), 33},
-		{"PutHiddenPdfToolbarItems", unsafe.Offsetof(v.PutHiddenPdfToolbarItems), 34},
-		// Settings8
-		{"GetIsReputationCheckingRequired", unsafe.Offsetof(v.GetIsReputationCheckingRequired), 35},
-		{"PutIsReputationCheckingRequired", unsafe.Offsetof(v.PutIsReputationCheckingRequired), 36},
-		// Settings9 - the anchor: 37 and 38
-		{"GetIsNonClientRegionSupportEnabled", unsafe.Offsetof(v.GetIsNonClientRegionSupportEnabled), 37},
-		{"PutIsNonClientRegionSupportEnabled", unsafe.Offsetof(v.PutIsNonClientRegionSupportEnabled), 38},
-	})
+	checkVtbl(t, "ICoreWebView2Settings9", unsafe.Sizeof(v), 39, settings9Slots(&v))
 }
 
-// The intermediate Settings vtables must agree with the flattened Settings9
-// layout, since a caller may QueryInterface to any of them. Settings3 and
-// Settings5 are the two this package actually queries.
+// TestSettingsChainSlotCounts pins the intermediate Settings vtables - the seven
+// revisions with no layout test of their own. A caller may QueryInterface to any
+// of them, so each must be exactly as wide as WebView2.h says AND have every
+// slot where the flattened Settings9 layout puts it.
+//
+// It used to assert sizes alone, which is a weaker claim than the name suggests:
+// transposing two fields inside a revision leaves its size untouched, so the
+// whole chain could pass this test with a get_ and a put_ swapped - a property
+// read that writes, on a vtable this package QueryInterfaces at runtime.
 func TestSettingsChainSlotCounts(t *testing.T) {
+	var (
+		s2 ICoreWebView2Settings2Vtbl
+		s3 ICoreWebView2Settings3Vtbl
+		s4 ICoreWebView2Settings4Vtbl
+		s5 ICoreWebView2Settings5Vtbl
+		s6 ICoreWebView2Settings6Vtbl
+		s7 ICoreWebView2Settings7Vtbl
+		s8 ICoreWebView2Settings8Vtbl
+	)
 	for _, tc := range []struct {
-		name  string
-		size  uintptr
-		slots uintptr
+		name      string
+		size      uintptr
+		wantSlots uintptr
+		slots     []slot
 	}{
-		{"ICoreWebView2Settings", unsafe.Sizeof(ICoreWebView2SettingsVtbl{}), 21},
-		{"ICoreWebView2Settings2", unsafe.Sizeof(ICoreWebView2Settings2Vtbl{}), 23},
-		{"ICoreWebView2Settings3", unsafe.Sizeof(ICoreWebView2Settings3Vtbl{}), 25},
-		{"ICoreWebView2Settings4", unsafe.Sizeof(ICoreWebView2Settings4Vtbl{}), 29},
-		{"ICoreWebView2Settings5", unsafe.Sizeof(ICoreWebView2Settings5Vtbl{}), 31},
-		{"ICoreWebView2Settings6", unsafe.Sizeof(ICoreWebView2Settings6Vtbl{}), 33},
-		{"ICoreWebView2Settings7", unsafe.Sizeof(ICoreWebView2Settings7Vtbl{}), 35},
-		{"ICoreWebView2Settings8", unsafe.Sizeof(ICoreWebView2Settings8Vtbl{}), 37},
-		{"ICoreWebView2Settings9", unsafe.Sizeof(ICoreWebView2Settings9Vtbl{}), 39},
+		{"ICoreWebView2Settings2", unsafe.Sizeof(s2), 23, settings2Slots(&s2)},
+		{"ICoreWebView2Settings3", unsafe.Sizeof(s3), 25, settings3Slots(&s3)},
+		{"ICoreWebView2Settings4", unsafe.Sizeof(s4), 29, settings4Slots(&s4)},
+		{"ICoreWebView2Settings5", unsafe.Sizeof(s5), 31, settings5Slots(&s5)},
+		{"ICoreWebView2Settings6", unsafe.Sizeof(s6), 33, settings6Slots(&s6)},
+		{"ICoreWebView2Settings7", unsafe.Sizeof(s7), 35, settings7Slots(&s7)},
+		{"ICoreWebView2Settings8", unsafe.Sizeof(s8), 37, settings8Slots(&s8)},
 	} {
-		if want := tc.slots * slotSize; tc.size != want {
-			t.Errorf("%s: vtbl = %d bytes (%d slots), want %d bytes (%d slots)",
-				tc.name, tc.size, tc.size/slotSize, want, tc.slots)
-		}
+		checkVtbl(t, tc.name, tc.size, tc.wantSlots, tc.slots)
 	}
 }
 

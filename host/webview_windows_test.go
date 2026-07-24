@@ -176,6 +176,84 @@ func TestCommitAssignsTheBrowserOnALiveWindow(t *testing.T) {
 	}
 }
 
+// Every WebView2 event handler recovers its own panics - that recover is what
+// keeps a Go panic from unwinding into Chromium's C++ stack and killing the
+// process - and reports them through internal/webview2's panic hook. With no
+// hook installed the report falls back to a line on os.Stderr, so a panic in a
+// navigation or web-message callback never reaches Config.Logger: invisible to
+// an embedder who captures logs rather than watching a console, and invisible in
+// the log they attach to a bug report. The embed path must install the hook.
+//
+// The assertion deliberately reads the hook back out of internal/webview2 rather
+// than calling the host's reporter directly: the reporter would log either way,
+// and the defect being closed here is precisely that nothing ever handed it to
+// the package that calls it.
+func TestHandlerPanicReachesTheHostLogger(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	t.Cleanup(func() { webview2.SetHandlerPanicHook(nil) })
+
+	if err := host.ensureWebViewWith("initial", func() error { return nil }); err != nil {
+		t.Fatalf("ensureWebViewWith err = %v, want nil", err)
+	}
+
+	hook := webview2.HandlerPanicHook()
+	if hook == nil {
+		t.Fatal("the embed path installed no handler panic hook: a recovered handler panic goes to stderr and never reaches Config.Logger")
+	}
+	// A panic value is whatever the callback panicked with: a message with a
+	// developer's path in it, a newline, and a terminal escape are all reachable
+	// from here, and none of them may survive into the log line.
+	hook("NavigationCompleted",
+		"boom\r\n\x1b[2Jfaked from C:\\Users\\jane\\app\\main.go",
+		[]byte("goroutine 7 [running]:\nwebview2.(*eventHandler).dispatch(0x1)\n"))
+
+	text := logger.String()
+	const wantError = "level=ERROR msg=mullion: webview2 handler recovered from panic, event=NavigationCompleted, reason=boom [2Jfaked from main.go"
+	if !strings.Contains(text, wantError) {
+		t.Fatalf("the recovered panic did not reach the logger as %q:\n%s", wantError, text)
+	}
+	if strings.Contains(text, "jane") {
+		t.Errorf("the panic message leaked a user path into the log:\n%s", text)
+	}
+	if strings.Contains(text, "\x1b") {
+		t.Errorf("the panic message smuggled a terminal escape into the log:\n%s", text)
+	}
+	if !strings.Contains(text, "level=DEBUG msg=mullion: webview2 handler panic stack, event=NavigationCompleted") ||
+		!strings.Contains(text, "dispatch") {
+		t.Errorf("the stack did not reach the logger, so the report cannot lead back to the callback:\n%s", text)
+	}
+}
+
+// The hook is process-global while the wiring is per-host, so the newest embed
+// owns the report path. That is what a second host in one process needs - it
+// embeds after the first host's Run returned and its handlers are gone - and it
+// is why the reporter reads a published target instead of closing over whichever
+// Host happened to embed first.
+func TestHandlerPanicFollowsTheMostRecentEmbed(t *testing.T) {
+	first, firstLog := newTestHost(t, Config{})
+	second, secondLog := newTestHost(t, Config{})
+	t.Cleanup(func() { webview2.SetHandlerPanicHook(nil) })
+
+	for _, host := range []*Host{first, second} {
+		if err := host.ensureWebViewWith("initial", func() error { return nil }); err != nil {
+			t.Fatalf("ensureWebViewWith err = %v, want nil", err)
+		}
+	}
+
+	hook := webview2.HandlerPanicHook()
+	if hook == nil {
+		t.Fatal("the embed path installed no handler panic hook")
+	}
+	hook("WebMessageReceived", "bridge exploded", nil)
+
+	if !strings.Contains(secondLog.String(), "mullion: webview2 handler recovered from panic, event=WebMessageReceived, reason=bridge exploded") {
+		t.Errorf("the panic did not reach the most recently embedded host's logger:\n%s", secondLog.String())
+	}
+	if strings.Contains(firstLog.String(), "recovered from panic") {
+		t.Errorf("the panic reached a host that no longer owns the report path:\n%s", firstLog.String())
+	}
+}
+
 // The watchdog is armed immediately before Navigate, so the failure path must
 // disarm it: with the webview torn down, a later "frontend render timeout"
 // ERROR would point at a window that no longer exists.

@@ -120,24 +120,15 @@ func (host *Host) destroyWindowOutsideLoop(reason string) {
 		// mid-wait, so it is pending right now.
 		drainThreadQuitMessage()
 	} else {
-		teardownOutsideLoop(
-			func() { procDestroyWindow.Call(uintptr(hwnd)) },
-			drainThreadQuitMessage,
-		)
+		// Order is the contract: the destroy's WM_DESTROY posts the WM_QUIT, so
+		// the drain must run after it - draining first would remove nothing and
+		// leave the poison behind.
+		procDestroyWindow.Call(uintptr(hwnd))
+		drainThreadQuitMessage()
 	}
 	host.mu.Lock()
 	host.hwnd = 0
 	host.mu.Unlock()
-}
-
-// teardownOutsideLoop orders the two halves of the out-of-loop teardown: the
-// destroy posts the WM_QUIT (via the window procedure's WM_DESTROY case), so
-// the drain must run after it - draining first would remove nothing and leave
-// the poison behind. Extracted so the ordering contract is unit-testable
-// without a window.
-func teardownOutsideLoop(destroy, drain func()) {
-	destroy()
-	drain()
 }
 
 // drainThreadQuitMessage removes any pending WM_QUIT from the calling thread's

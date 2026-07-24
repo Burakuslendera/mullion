@@ -179,14 +179,11 @@ func (host *Host) Run() (runErr error) {
 	lastStage = "mullion: dpi awareness applied"
 	host.log.Debug("mullion: dpi awareness applied, context=per_monitor_v2")
 
-	uninitializeCOM, err := host.initializeCOM()
-	if err != nil {
+	if err := host.initializeCOM(); err != nil {
 		host.log.Error("mullion: com init failed, reason=" + logsafe.Reason(err))
 		return err
 	}
-	if uninitializeCOM {
-		defer windows.CoUninitialize()
-	}
+	defer windows.CoUninitialize()
 	lastStage = "mullion: com init"
 	host.log.Debug("mullion: com init")
 
@@ -234,7 +231,11 @@ func (host *Host) Run() (runErr error) {
 		if err := host.ensureWebView("initial"); err != nil {
 			return err
 		}
-		lastStage = "mullion: webview2 embedded"
+		// No stage is recorded here, and none is in the StartHidden branch
+		// either: lastStage names the last stage that completed, and nothing
+		// between this point and the loop can return an error for the deferred
+		// reporter to read. An embed failure is reported against
+		// "mullion: hwnd created", which is the last stage that did complete.
 		host.startStartupShowGate()
 	}
 	if host.config.OnReady != nil {
@@ -243,22 +244,23 @@ func (host *Host) Run() (runErr error) {
 	host.log.Info("mullion: native host ready")
 	host.log.Debug("mullion: message loop entering")
 	loopStarted = true
-	runErr = host.messageLoop()
-	return runErr
+	return host.messageLoop()
 }
 
-// initializeCOM reports whether the caller owns the COM apartment. An
-// already-initialised apartment is not an error: the host may be embedded in a
-// process that set one up first.
-func (host *Host) initializeCOM() (bool, error) {
+// initializeCOM enters the apartment. An already-initialised apartment is not an
+// error: the host may be embedded in a process that set one up first. That case
+// still owes a CoUninitialize - a successful CoInitializeEx must be balanced
+// whether it entered the apartment or joined it - so the caller uninitialises
+// unconditionally on the nil-error path.
+func (host *Host) initializeCOM() error {
 	err := windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED)
 	if err == nil {
 		host.log.Debug("mullion: com initialized")
-		return true, nil
+		return nil
 	}
 	if errors.Is(err, windows.ERROR_INVALID_FUNCTION) {
 		host.log.Debug("mullion: com already initialized")
-		return true, nil
+		return nil
 	}
-	return false, err
+	return err
 }

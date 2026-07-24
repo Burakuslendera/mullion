@@ -196,10 +196,7 @@ func (config Config) normalise() Config {
 	if config.TitlebarHeight <= 0 {
 		config.TitlebarHeight = defaultTitlebarHeight
 	}
-	if config.CaptionControlsWidth < 0 {
-		config.CaptionControlsWidth = 0
-	}
-	if config.CaptionControlsWidth == 0 {
+	if config.CaptionControlsWidth <= 0 {
 		config.CaptionControlsWidth = defaultCaptionControlsWidth
 	}
 	if config.ResizeBorder <= 0 {

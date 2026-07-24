@@ -9,18 +9,47 @@ import (
 	"unsafe"
 )
 
-// Lifetime tests for the loader's completion handlers. invoked() AddRefs the
-// borrowed result before parking it in the handler's one-slot buffer for
-// waitFor to consume; every test below is about who drops that reference when
-// the normal hand-off breaks. The completions are driven directly - invoked is
-// exactly what the runtime's Invoke trampoline calls - against fake IUnknowns,
-// so no WebView2 runtime and no window are involved.
+// Lifetime tests for the loader's completion handlers. The first is about the
+// handler's own reference count; the rest are about the result it carries:
+// invoked() AddRefs the borrowed result before parking it in the handler's
+// one-slot buffer for waitFor to consume, and each test asks who drops that
+// reference when the normal hand-off breaks. The completions are driven directly
+// - invoked is exactly what the runtime's Invoke trampoline calls - against fake
+// IUnknowns, so no WebView2 runtime and no window are involved.
 
 func newTestCompletedHandler(t *testing.T) *completedHandler {
 	t.Helper()
 	handler := newCompletedHandler(uintptr(unsafe.Pointer(&completedVtable)), iidControllerCompletedHandler)
 	t.Cleanup(handler.release)
 	return handler
+}
+
+func TestCompletedHandlerIsReleasedNotLeaked(t *testing.T) {
+	before := liveServerCount()
+	handler := newCompletedHandler(
+		uintptr(unsafe.Pointer(&completedVtable)),
+		iidEnvironmentCompletedHandler,
+	)
+	if liveServerCount() != before+1 {
+		t.Fatal("the handler was not registered")
+	}
+
+	// The runtime takes its own reference while the call is outstanding.
+	unknown := (*IUnknown)(unsafe.Pointer(handler))
+	if got := unknown.AddRef(); got != 2 {
+		t.Fatalf("AddRef = %d, want 2", got)
+	}
+	if got := unknown.Release(); got != 1 {
+		t.Fatalf("Release = %d, want 1", got)
+	}
+	if liveServerCount() != before+1 {
+		t.Fatal("the handler was freed while a reference was still outstanding")
+	}
+
+	handler.release()
+	if got := liveServerCount(); got != before {
+		t.Fatalf("live COM objects = %d, want %d: handlers must not accumulate for the life of the process", got, before)
+	}
 }
 
 // TestLateCompletionAfterAbandonReleasesTheResult locks the #37 fix: once the
