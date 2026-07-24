@@ -642,3 +642,68 @@ func TestErrorSurfaceNavigateFailureUnwindsTheArming(t *testing.T) {
 		t.Fatal("the machine must arm again after an unwound Navigate failure")
 	}
 }
+
+// TestGateCancelledCompletionDoesNotArmTheSurface locks the F1 fix: a navigation
+// the PinNavigationToOrigin gate cancels completes with OperationCanceled, and
+// that completion must be consumed as a deliberate cancel rather than reaching
+// the error-surface machine, which would read a foreign failure as "navigate to
+// the fallback surface" and tear down the live frontend (issue #6, decisions/0023).
+func TestGateCancelledCompletionDoesNotArmTheSurface(t *testing.T) {
+	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+
+	// The gate cancels a foreign navigation and records its id.
+	if !host.shouldCancelNavigation("https://evil.example/", 7, true) {
+		t.Fatal("gate did not cancel a foreign navigation")
+	}
+	if host.cancelledNavID != 7 {
+		t.Fatalf("cancelledNavID = %d, want 7", host.cancelledNavID)
+	}
+
+	// Its OperationCanceled completion is consumed - the error-surface machine is
+	// never reached, so nothing arms and the live frontend stays.
+	if !host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 7) {
+		t.Fatal("the cancelled navigation's completion was not recognised")
+	}
+	if host.errorSurfaceActive || host.errorSurfacePending || host.errorSurfaceLoading {
+		t.Fatalf("the gate's own cancel armed the error surface: active=%v pending=%v loading=%v",
+			host.errorSurfaceActive, host.errorSurfacePending, host.errorSurfaceLoading)
+	}
+	if host.cancelledNavID != 0 {
+		t.Fatalf("cancelledNavID = %d after the completion, want 0 (cleared)", host.cancelledNavID)
+	}
+
+	// An unrelated completion is not consumed, and a genuinely foreign failure in
+	// steady state still arms the fallback surface - the guard is scoped to the
+	// gate's own cancel, not every OperationCanceled.
+	if host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 99) {
+		t.Fatal("noteGateCancelledOutcome consumed an unrelated completion")
+	}
+	if !host.noteNavigationOutcome(false, webview2.WebErrorStatusOperationCanceled, 99) {
+		t.Fatal("a genuinely foreign failure in steady state must still arm the surface")
+	}
+}
+
+// TestNoteAndGateNavigationNeverCancelsTheSurface locks the F2 fix: when the
+// error-surface claim matches a NavigationStarting - including the tolerated
+// empty-URI form the runtime can report for a data: start - the gate is skipped,
+// so it never cancels mullion's own fallback page (issue #6, decisions/0023).
+func TestNoteAndGateNavigationNeverCancelsTheSurface(t *testing.T) {
+	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+	host.errorSurfaceURL = "data:text/html,surface"
+	host.errorSurfacePending = true
+
+	// The surface's own start reported as an empty URI (a GetUri failure or the
+	// runtime erasing the data: URI) is claimed, and must NOT be cancelled even
+	// though "" is off-origin to the gate.
+	if host.noteAndGateNavigation("", 4, false) {
+		t.Fatal("the gate cancelled the surface's own navigation (empty URI)")
+	}
+	if host.errorSurfacePending {
+		t.Fatal("the surface start was not claimed")
+	}
+
+	// Outside the claim window, a foreign navigation is still cancelled.
+	if !host.noteAndGateNavigation("https://evil.example/", 5, true) {
+		t.Fatal("the gate did not cancel a foreign navigation outside the claim")
+	}
+}

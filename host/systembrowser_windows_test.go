@@ -59,3 +59,33 @@ func TestRouteNewWindowDropsUnsafeSchemes(t *testing.T) {
 		t.Fatalf("an unsafe scheme reached the system-browser route:\n%s", logger.String())
 	}
 }
+
+// shouldCancelNavigation is the PinNavigationToOrigin gate at NavigationStarting.
+// Off (default) it never cancels; on, an off-origin navigation is cancelled, and
+// a non-http(s) target is dropped rather than routed - only the http/https path
+// reaches ShellExecute (openInSystemBrowser), which is verified live. The trusted
+// origin is never cancelled (issue #6, decisions/0023).
+func TestShouldCancelNavigation(t *testing.T) {
+	off, _ := newTestHost(t, Config{StartHidden: true})
+	if off.shouldCancelNavigation("https://evil.example/", 0, true) {
+		t.Error("gate off: shouldCancelNavigation cancelled a navigation")
+	}
+
+	on, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+
+	// The trusted origin passes - the surface, SPA routing and in-origin links
+	// must never be cancelled.
+	if on.shouldCancelNavigation(on.config.trustedOrigin()+"/app", 1, true) {
+		t.Error("gate on: cancelled an on-origin navigation")
+	}
+	// An off-origin non-http(s) target is cancelled and dropped, never routed.
+	if !on.shouldCancelNavigation("blob:https://evil.example/uuid", 2, false) {
+		t.Error("gate on: did not cancel an off-origin blob: navigation")
+	}
+	if !strings.Contains(logger.String(), "navigation cancelled off origin, unsupported scheme") {
+		t.Fatalf("off-origin blob: was not dropped as unsupported:\n%s", logger.String())
+	}
+	if strings.Contains(logger.String(), "routed to system browser") {
+		t.Fatalf("a non-http(s) navigation reached the system-browser route:\n%s", logger.String())
+	}
+}

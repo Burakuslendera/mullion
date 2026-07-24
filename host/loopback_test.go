@@ -166,3 +166,58 @@ func TestMessageSourceTrusted(t *testing.T) {
 		}
 	}
 }
+
+// TestNavigationOffOrigin locks the PinNavigationToOrigin gate's pure decision
+// (issue #6, decisions/0023). Off by default it never reports off-origin, so the
+// gate cancels nothing. On, it passes the trusted origin - any path on it - and
+// mullion's own data: surface, and reports every foreign target off-origin,
+// including the blob:/file:/about:blank forms a bare scheme check would admit.
+func TestNavigationOffOrigin(t *testing.T) {
+	off := Config{}.normalise()                           // gate off (default)
+	on := Config{PinNavigationToOrigin: true}.normalise() // virtual host, gate on
+	onURL := Config{URL: "http://127.0.0.1:8080", PinNavigationToOrigin: true}.normalise()
+
+	// Gate off: nothing is off-origin, whatever the URI - existing behaviour.
+	for _, uri := range []string{"https://evil.example/", "https://mullion.local/x", "about:blank", "data:text/html,x"} {
+		if off.navigationOffOrigin(uri) {
+			t.Errorf("gate off: navigationOffOrigin(%q) = true, want false (never cancels)", uri)
+		}
+	}
+
+	onOrigin := []struct {
+		name   string
+		config Config
+		uri    string
+	}{
+		{"trusted virtual host root", on, "https://mullion.local/"},
+		{"trusted host any path", on, "https://mullion.local/app/route?q=1"},
+		{"trusted host explicit default port", on, "https://mullion.local:443/x"},
+		{"trusted host case-insensitive", on, "https://MULLION.LOCAL/x"},
+		{"the error surface (data:)", on, "data:text/html,%3Chtml%3E"},
+		{"trusted loopback url", onURL, "http://127.0.0.1:8080/app"},
+	}
+	for _, c := range onOrigin {
+		if c.config.navigationOffOrigin(c.uri) {
+			t.Errorf("%s: navigationOffOrigin(%q) = true, want false (on-origin/surface)", c.name, c.uri)
+		}
+	}
+
+	offOrigin := []struct {
+		name   string
+		config Config
+		uri    string
+	}{
+		{"foreign https origin", on, "https://evil.example/"},
+		{"scheme downgrade of trusted host", on, "http://mullion.local/x"},
+		{"userinfo cannot spoof the trusted host", on, "https://mullion.local@evil.example/x"},
+		{"blob laundering a foreign origin", on, "blob:https://evil.example/uuid"},
+		{"file scheme", on, "file:///c:/x"},
+		{"about blank inherits the previous origin", on, "about:blank"},
+		{"different loopback port in url mode", onURL, "http://127.0.0.1:9999/x"},
+	}
+	for _, c := range offOrigin {
+		if !c.config.navigationOffOrigin(c.uri) {
+			t.Errorf("%s: navigationOffOrigin(%q) = false, want true (off-origin)", c.name, c.uri)
+		}
+	}
+}

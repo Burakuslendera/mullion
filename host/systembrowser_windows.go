@@ -34,6 +34,34 @@ func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 	host.openInSystemBrowser(uri)
 }
 
+// shouldCancelNavigation is the PinNavigationToOrigin gate applied to a
+// NavigationStarting event. It returns whether to cancel the navigation, and for
+// a cancelled off-origin one it routes an http/https target to the system browser
+// - any other scheme is dropped - the same containment and routing as
+// NewWindowRequested (issue #6, decisions/0023). With the gate off (the default)
+// navigationOffOrigin is false for every uri, so this returns false and cancels
+// nothing.
+func (host *Host) shouldCancelNavigation(uri string, navigationID uint64, isUserInitiated bool) bool {
+	if !host.config.navigationOffOrigin(uri) {
+		return false
+	}
+	// Record the cancelled navigation's id: the runtime completes a put_Cancel'd
+	// navigation with OperationCanceled, and that completion must be read as a
+	// deliberate cancel, not a load failure that arms the error surface
+	// (noteGateCancelledOutcome, decisions/0023). A redirect shares the id, and a
+	// top-frame navigation completes before the next starts, so one slot suffices.
+	host.cancelledNavID = navigationID
+	if isExternalBrowserSafe(uri) {
+		host.log.Debug("mullion: navigation cancelled off origin, routed to system browser, user_initiated=" +
+			strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.Message(clampSourceForLog(uri)))
+		host.openInSystemBrowser(uri)
+	} else {
+		host.log.Debug("mullion: navigation cancelled off origin, unsupported scheme, uri=" +
+			logsafe.Message(clampSourceForLog(uri)))
+	}
+	return true
+}
+
 // isExternalBrowserSafe reports whether uri may be handed to the system browser.
 // Only http and https are allowed: ShellExecute launches whatever handler is
 // registered for a scheme, so a foreign document's window.open must not be able
@@ -53,10 +81,18 @@ func isExternalBrowserSafe(uri string) bool {
 	}
 }
 
-// openInSystemBrowser hands an http/https URL to the user's default browser via
-// ShellExecute. Callers gate the URL with isExternalBrowserSafe first; this does
-// not re-check. It is the one piece of the new-window path a headless test
-// cannot exercise - it would launch a browser - so it is verified live.
+// openInSystemBrowser hands an http/https URL to whatever application Windows
+// associates with the URL's scheme, via ShellExecute with the "open" verb - the
+// user's default browser in the normal case. It deliberately picks no browser
+// and forces none: the association is the user's to make. When no default is set,
+// Windows shows its own "How do you want to open this?" chooser, which is the
+// right outcome - the user selects one - and ShellExecute still returns success.
+// Only a scheme with no association at all fails (SE_ERR_NOASSOC = 31 <= 32),
+// which the warning below records; on Windows 10/11 http/https always resolves to
+// at least Edge, so that is effectively unreachable. Callers gate the URL with
+// isExternalBrowserSafe first; this does not re-check. It is the one piece of the
+// routing a headless test cannot exercise - it would launch a browser - so it is
+// verified live.
 func (host *Host) openInSystemBrowser(uri string) {
 	verb, err := windows.UTF16PtrFromString("open")
 	if err != nil {

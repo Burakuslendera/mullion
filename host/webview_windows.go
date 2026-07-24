@@ -119,7 +119,7 @@ func (host *Host) createWebView() error {
 			host.assets.webResourceRequested(request, args, browser.Environment())
 		}
 	}
-	browser.NavigationStartingCallback = func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) {
+	browser.NavigationStartingCallback = func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool {
 		// The uri is clamped and reduced like a rejected message source: a
 		// navigation target is foreign input, and a data: URI is arbitrarily
 		// long. The id is what ties this line to the completion that follows.
@@ -127,11 +127,16 @@ func (host *Host) createWebView() error {
 			", user_initiated=" + strconv.FormatBool(isUserInitiated) +
 			", redirected=" + strconv.FormatBool(isRedirected) +
 			", uri=" + logsafe.Message(clampSourceForLog(uri)))
-		if host.noteSurfaceNavigationStarting(uri, navigationID) {
-			host.log.Debug("mullion: error surface navigation identified, id=" + formatUint64(navigationID))
-		}
+		return host.noteAndGateNavigation(uri, navigationID, isUserInitiated)
 	}
 	browser.NavigationCompletedCallback = func(success bool, status webview2.WebErrorStatus, navigationID uint64) {
+		if host.noteGateCancelledOutcome(success, status, navigationID) {
+			// The PinNavigationToOrigin gate cancelled this navigation: nothing
+			// committed, the current document stays, and the target was routed to
+			// the system browser. It must not be reported as a failure, resynced,
+			// re-evaluated or fed to the error-surface machine (decisions/0023).
+			return
+		}
 		if !success {
 			host.log.Warn("mullion: navigation failed, status=" + formatInt32(int32(status)) + ", id=" + formatUint64(navigationID))
 		}
@@ -283,6 +288,43 @@ func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success boo
 	// armed on purpose: the intended frontend never rendered, so it should still
 	// fire, and a blank frontend after a Retry must still be caught.
 	host.requestStartupShow("navigation_failed")
+}
+
+// noteGateCancelledOutcome intercepts the completion of a navigation the
+// PinNavigationToOrigin gate cancelled (decisions/0023). The runtime completes a
+// put_Cancel'd navigation with OperationCanceled; that is not a load failure -
+// the cancel was deliberate, the foreign target was routed to the system browser,
+// and the current document stays - so this completion must not be reported as a
+// failure, resynced or fed to the error-surface machine, which would read a
+// foreign failure as "navigate to the fallback surface" and tear down the live
+// frontend. It reports whether it consumed the completion; the id is cleared so a
+// later navigation reusing state cannot inherit it (ids are monotonic, so it will
+// not recur, but clearing keeps the slot honest).
+func (host *Host) noteGateCancelledOutcome(success bool, status webview2.WebErrorStatus, navigationID uint64) bool {
+	if navigationID == 0 || navigationID != host.cancelledNavID {
+		return false
+	}
+	host.cancelledNavID = 0
+	if !success {
+		host.log.Debug("mullion: cancelled navigation completed, status=" + formatInt32(int32(status)))
+	}
+	return true
+}
+
+// noteAndGateNavigation runs the error-surface identity claim and then the
+// PinNavigationToOrigin gate for one NavigationStarting, and reports whether to
+// cancel. The surface's own navigation - claimed here - is never cancelled,
+// whatever URI the runtime reports for it: an empty or truncated data: URI is a
+// tolerated form of the surface's start (surfaceURIMatches), and cancelling it
+// would tear down mullion's own fallback page the moment it was recognised. Split
+// from the callback so the claim-beats-gate rule and the gate are both
+// headless-testable (issue #6, decisions/0023).
+func (host *Host) noteAndGateNavigation(uri string, navigationID uint64, isUserInitiated bool) bool {
+	if host.noteSurfaceNavigationStarting(uri, navigationID) {
+		host.log.Debug("mullion: error surface navigation identified, id=" + formatUint64(navigationID))
+		return false
+	}
+	return host.shouldCancelNavigation(uri, navigationID, isUserInitiated)
 }
 
 // noteSurfaceNavigationStarting claims a NavigationStarting event as the

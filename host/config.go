@@ -82,6 +82,21 @@ type Config struct {
 	// a remote origin could otherwise call into your Go. See docs/decisions/0012.
 	URL string
 
+	// PinNavigationToOrigin, when set, cancels any top-level navigation away from
+	// the trusted origin (the virtual host, or the Config.URL origin) and opens the
+	// foreign target in the system browser instead. It contains a frontend steered
+	// off-origin - an external link with no target, an open-redirect, a server
+	// redirect - so the injected bridge is never carried onto a foreign origin and
+	// the custom frame is never replaced by a chromeless foreign page.
+	//
+	// Off by default: the message-dispatch origin gate (docs/decisions/0014)
+	// already stops a foreign origin from acting through the bridge, so this is
+	// defense-in-depth. Turn it on only if your frontend never navigates its top
+	// frame off-origin on purpose - an app that runs an OAuth flow in the top frame
+	// would have it cancelled. window.open / target=_blank route to the system
+	// browser regardless of this setting (docs/decisions/0022 and 0023).
+	PinNavigationToOrigin bool
+
 	// Title is the window title. Default "Mullion".
 	Title string
 	// ClassName is the Win32 window class name. It must be unique per process.

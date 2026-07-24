@@ -115,6 +115,25 @@ func (config Config) messageSourceTrusted(source string) bool {
 	return sameHTTPOrigin(source, config.trustedOrigin())
 }
 
+// navigationOffOrigin reports whether a top-level navigation to uri should be
+// cancelled by the PinNavigationToOrigin gate - that is, whether it leaves the
+// trusted origin. It is always false unless the gate is enabled. Then the
+// trusted origin (any path on it, so SPA routing and in-origin links pass) and
+// mullion's own data: error surface are allowed, and everything else - a foreign
+// http/https origin, and the blob:/file:/about:blank forms a bare scheme check
+// would wave through - is off-origin. Content cannot top-navigate to a data: URL
+// (browsers block a script-driven top navigation to one), so a data: start in
+// the top frame is mullion's own error surface, never a foreign document.
+func (config Config) navigationOffOrigin(uri string) bool {
+	if !config.PinNavigationToOrigin {
+		return false
+	}
+	if strings.HasPrefix(uri, "data:") {
+		return false
+	}
+	return !sameHTTPOrigin(uri, config.trustedOrigin())
+}
+
 // sameHTTPOrigin reports whether raw and trusted are the same http/https origin -
 // scheme, host (case-insensitive) and port, with the default port normalised so that
 // https://x and https://x:443 match. A non-http/https scheme (blob:, file:, ...) is

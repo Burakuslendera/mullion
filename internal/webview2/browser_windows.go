@@ -35,8 +35,10 @@ type Browser struct {
 	// navigationID is the runtime's identity for it; the matching completion
 	// reports the same id, which is what lets the host attribute completions
 	// to the navigation that caused them (decisions/0021). A redirect fires
-	// this again with the same id and isRedirected set.
-	NavigationStartingCallback  func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool)
+	// this again with the same id and isRedirected set. Returning true cancels
+	// the navigation - the runtime abandons it and the current document stays;
+	// that is the navigation-cancel gate (decisions/0023).
+	NavigationStartingCallback  func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool
 	NavigationCompletedCallback func(success bool, status WebErrorStatus, navigationID uint64)
 	ProcessFailedCallback       func(kind ProcessFailedKind)
 	// NewWindowRequestedCallback fires when content asks for a new window
@@ -250,7 +252,11 @@ func (browser *Browser) registerEvents() error {
 		}
 		userInitiated, _ := args.GetIsUserInitiated()
 		redirected, _ := args.GetIsRedirected()
-		browser.NavigationStartingCallback(uri, id, userInitiated, redirected)
+		if browser.NavigationStartingCallback(uri, id, userInitiated, redirected) {
+			if err := args.PutCancel(true); err != nil {
+				browser.reportWarning(err)
+			}
+		}
 	}), core.AddNavigationStarting); err != nil {
 		return err
 	}

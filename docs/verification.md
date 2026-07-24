@@ -142,6 +142,14 @@ a pass/fail with an observable result — "looks fine" is not a result.
       window appears** — a detached, chrome-less WebView2 popup is the failure.
       A non-http(s) scheme (`window.open('mailto:…')`) does nothing, and the log
       says `new window dropped, unsupported scheme` (decisions/0022).
+- [ ] **`Config.PinNavigationToOrigin` cancels off-origin top navigation**
+      (opt-in — only when the field is set). With the gate on, a top-frame
+      navigation to a foreign origin — an external `https://` link with no
+      `target`, or a redirect off the trusted origin — is cancelled (the frontend
+      stays put) and an http/https target opens in the system browser; the
+      trusted origin, in-origin routing and the `data:` error surface are never
+      cancelled. Verify a redirect specifically, and that the app's own startup
+      navigation is not cancelled (decisions/0023).
 - [ ] **Second `Run` in the same process after a pre-loop failure.** With a
       driver that runs the host twice in one process, make the first `Run`
       fail before the message loop (e.g. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
@@ -358,4 +366,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: checklist item for new-window routing — `window.open`/`target=_blank` lands in the system browser, never a detached WebView window (decision 0022).
+> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: checklist items for issue #6's containment — new-window routing (0022) and the opt-in navigation-cancel gate (0023).
