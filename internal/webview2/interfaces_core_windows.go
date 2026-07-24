@@ -220,6 +220,19 @@ func (w *ICoreWebView2) AddProcessFailed(handler unsafe.Pointer) (EventRegistrat
 	return token, hres(hr)
 }
 
+// AddNewWindowRequested registers a handler for a new-window request
+// (window.open, a target=_blank link). See the ownership note on the handler
+// constructors in handlers_windows.go.
+func (w *ICoreWebView2) AddNewWindowRequested(handler unsafe.Pointer) (EventRegistrationToken, error) {
+	var token EventRegistrationToken
+	hr, _, _ := w.Vtbl.AddNewWindowRequested.Call(
+		uintptr(unsafe.Pointer(w)),
+		uintptr(handler),
+		uintptr(unsafe.Pointer(&token)),
+	)
+	return token, hres(hr)
+}
+
 // AddWebResourceRequestedFilter narrows which requests raise
 // WebResourceRequested. Without at least one filter the event never fires, so
 // this is not optional decoration: it is what turns the handler on.

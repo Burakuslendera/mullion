@@ -49,4 +49,5 @@ var (
 	procSetWindowText = user32.NewProc("SetWindowTextW")
 
 	procSHAppBarMessage = shell32.NewProc("SHAppBarMessage")
+	procShellExecute    = shell32.NewProc("ShellExecuteW")
 )

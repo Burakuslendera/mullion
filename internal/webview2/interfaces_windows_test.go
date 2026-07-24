@@ -468,6 +468,23 @@ func TestProcessFailedEventArgsVtblLayout(t *testing.T) {
 	})
 }
 
+func TestNewWindowRequestedEventArgsVtblLayout(t *testing.T) {
+	var v ICoreWebView2NewWindowRequestedEventArgsVtbl
+	checkVtbl(t, "ICoreWebView2NewWindowRequestedEventArgs", unsafe.Sizeof(v), 11, []slot{
+		{"QueryInterface", unsafe.Offsetof(v.QueryInterface), 0},
+		{"AddRef", unsafe.Offsetof(v.AddRef), 1},
+		{"Release", unsafe.Offsetof(v.Release), 2},
+		{"GetUri", unsafe.Offsetof(v.GetUri), 3},
+		{"PutNewWindow", unsafe.Offsetof(v.PutNewWindow), 4},
+		{"GetNewWindow", unsafe.Offsetof(v.GetNewWindow), 5},
+		{"PutHandled", unsafe.Offsetof(v.PutHandled), 6},
+		{"GetHandled", unsafe.Offsetof(v.GetHandled), 7},
+		{"GetIsUserInitiated", unsafe.Offsetof(v.GetIsUserInitiated), 8},
+		{"GetDeferral", unsafe.Offsetof(v.GetDeferral), 9},
+		{"GetWindowFeatures", unsafe.Offsetof(v.GetWindowFeatures), 10},
+	})
+}
+
 // TestInterfaceIDs re-parses each IID from its canonical string form and
 // compares it with the hand-transcribed windows.GUID literal. The literals are
 // written out byte by byte into a Data4 array, so a single swapped nibble
@@ -492,6 +509,7 @@ func TestInterfaceIDs(t *testing.T) {
 		{"ICoreWebView2NavigationStartingEventHandler", "{9adbe429-f36d-432b-9ddc-f8881fbd76e3}", IIDICoreWebView2NavigationStartingEventHandler},
 		{"ICoreWebView2NavigationCompletedEventHandler", "{d33a35bf-1c49-4f98-93ab-006e0533fe1c}", IIDICoreWebView2NavigationCompletedEventHandler},
 		{"ICoreWebView2ProcessFailedEventHandler", "{79e0aea4-990b-42d9-aa1d-0fcc2e5bc7f1}", IIDICoreWebView2ProcessFailedEventHandler},
+		{"ICoreWebView2NewWindowRequestedEventHandler", "{d4c185fe-c81c-4989-97af-2d3fa7ab5651}", IIDICoreWebView2NewWindowRequestedEventHandler},
 	} {
 		want, err := windows.GUIDFromString(tc.text)
 		if err != nil {

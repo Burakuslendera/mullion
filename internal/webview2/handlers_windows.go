@@ -2,7 +2,7 @@
 
 package webview2
 
-// Event handlers: the five COM objects WebView2 calls back into.
+// Event handlers: the six COM objects WebView2 calls back into.
 //
 // Everything in the interfaces_* files is outbound - Go calling the runtime.
 // This file is the other direction. add_WebMessageReceived and friends take a
@@ -18,9 +18,9 @@ package webview2
 //   - The Go pointers the runtime hands us (sender, args) are borrowed for the
 //     duration of the call only.
 //
-// # Why one vtable for five interfaces
+// # Why one vtable for six interfaces
 //
-// All five interfaces have the same COM shape: IUnknown plus a single
+// All six interfaces have the same COM shape: IUnknown plus a single
 // Invoke(this, sender, args) slot, and the two arguments are interface pointers
 // in every case. They differ only in their IID and in the Go type the caller
 // wants to see. comServer already stores the IID per instance and answers
@@ -80,9 +80,14 @@ var (
 		Data1: 0x79e0aea4, Data2: 0x990b, Data3: 0x42d9,
 		Data4: [8]byte{0xaa, 0x1d, 0x0f, 0xcc, 0x2e, 0x5b, 0xc7, 0xf1},
 	}
+	// IIDICoreWebView2NewWindowRequestedEventHandler = {d4c185fe-c81c-4989-97af-2d3fa7ab5651}
+	IIDICoreWebView2NewWindowRequestedEventHandler = windows.GUID{
+		Data1: 0xd4c185fe, Data2: 0xc81c, Data3: 0x4989,
+		Data4: [8]byte{0x97, 0xaf, 0x2d, 0x3f, 0xa7, 0xab, 0x56, 0x51},
+	}
 )
 
-// eventHandlerVtbl is the vtable shape all four event handler interfaces share.
+// eventHandlerVtbl is the vtable shape all six event handler interfaces share.
 // ABI-critical: Invoke must sit at slot 3, immediately after IUnknown.
 type eventHandlerVtbl struct {
 	IUnknownVtbl
@@ -234,7 +239,7 @@ func interfaceFromAddress[T any](addr uintptr) *T {
 
 // --- constructors -----------------------------------------------------------
 //
-// Ownership, once for all five:
+// Ownership, once for all six:
 //
 // The returned pointer carries ONE reference, which the caller owns. Pass it to
 // the matching add_* method and then hand it to ReleaseHandler:
@@ -326,6 +331,21 @@ func NewProcessFailedHandler(fn func(sender *ICoreWebView2, args *ICoreWebView2P
 			fn(
 				interfaceFromAddress[ICoreWebView2](sender),
 				interfaceFromAddress[ICoreWebView2ProcessFailedEventArgs](args),
+			)
+		},
+	)
+}
+
+// NewNewWindowRequestedHandler wraps fn as an
+// ICoreWebView2NewWindowRequestedEventHandler.
+func NewNewWindowRequestedHandler(fn func(sender *ICoreWebView2, args *ICoreWebView2NewWindowRequestedEventArgs)) unsafe.Pointer {
+	return newEventHandler(
+		IIDICoreWebView2NewWindowRequestedEventHandler,
+		"NewWindowRequested",
+		func(sender, args uintptr) {
+			fn(
+				interfaceFromAddress[ICoreWebView2](sender),
+				interfaceFromAddress[ICoreWebView2NewWindowRequestedEventArgs](args),
 			)
 		},
 	)

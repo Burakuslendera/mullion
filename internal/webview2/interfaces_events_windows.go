@@ -229,3 +229,71 @@ func (a *ICoreWebView2ProcessFailedEventArgs) GetProcessFailedKind() (ProcessFai
 	}
 	return kind, nil
 }
+
+// ---------------------------------------------------------------------------
+// ICoreWebView2NewWindowRequestedEventArgs  {34acb11c-fc37-4418-9132-f9c21d1eafb9}
+// 11 slots. Only GetUri, PutHandled and GetIsUserInitiated carry wrappers: a
+// single-window host routes window.open / target=_blank to the system browser
+// (issue #6), which needs the target URI and the ability to suppress the
+// runtime's default new window. put_NewWindow / get_NewWindow / get_Handled /
+// GetDeferral / get_WindowFeatures are declared to hold the offsets, unwrapped.
+// ---------------------------------------------------------------------------
+
+type ICoreWebView2NewWindowRequestedEventArgsVtbl struct {
+	IUnknownVtbl
+	GetUri             ComProc
+	PutNewWindow       ComProc
+	GetNewWindow       ComProc
+	PutHandled         ComProc
+	GetHandled         ComProc
+	GetIsUserInitiated ComProc
+	GetDeferral        ComProc
+	GetWindowFeatures  ComProc
+}
+
+type ICoreWebView2NewWindowRequestedEventArgs struct {
+	Vtbl *ICoreWebView2NewWindowRequestedEventArgsVtbl
+}
+
+// GetUri is the URI the content asked to open in a new window.
+func (a *ICoreWebView2NewWindowRequestedEventArgs) GetUri() (string, error) {
+	var uri *uint16
+	hr, _, _ := a.Vtbl.GetUri.Call(
+		uintptr(unsafe.Pointer(a)),
+		uintptr(unsafe.Pointer(&uri)),
+	)
+	if err := hres(hr); err != nil {
+		return "", err
+	}
+	return takeWstr(uri), nil
+}
+
+// PutHandled tells the runtime the host has taken responsibility for the new
+// window. Set true to suppress the runtime's default, which would otherwise
+// create a detached CoreWebView2 with no host chrome - meaningless for a
+// single-window frameless host.
+func (a *ICoreWebView2NewWindowRequestedEventArgs) PutHandled(handled bool) error {
+	hr, _, _ := a.Vtbl.PutHandled.Call(
+		uintptr(unsafe.Pointer(a)),
+		boolToBOOL(handled),
+	)
+	return hres(hr)
+}
+
+// GetIsUserInitiated reports whether a user gesture (a click) triggered the new
+// window, as opposed to a bare scripted window.open. The host issues no
+// window.open of its own, so - unlike the navigation-starting flag, which the
+// host's own Navigate also sets - this one is not confounded by host activity;
+// whether the runtime reports it reliably here is unverified until the live
+// probe. It is currently read for the diagnostic line only (decisions/0022).
+func (a *ICoreWebView2NewWindowRequestedEventArgs) GetIsUserInitiated() (bool, error) {
+	var initiated int32
+	hr, _, _ := a.Vtbl.GetIsUserInitiated.Call(
+		uintptr(unsafe.Pointer(a)),
+		uintptr(unsafe.Pointer(&initiated)),
+	)
+	if err := hres(hr); err != nil {
+		return false, err
+	}
+	return boolFromBOOL(initiated), nil
+}
