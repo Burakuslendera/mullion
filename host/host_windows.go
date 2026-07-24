@@ -107,6 +107,16 @@ type Host struct {
 	// UI thread only.
 	navStartID       uint64
 	navStartInOrigin bool
+
+	// openExternal, when set, replaces the ShellExecute call that hands a URL to
+	// the user's default browser. Production never sets it; the test host always
+	// does. Routing is policy with a side effect at the end of it, and a test
+	// that drives the policy would otherwise perform the effect - which is
+	// exactly what happened: a gate test aimed at an https URL opened a browser
+	// tab on every run of the headless suite, in CI too (issue #76). The seam
+	// also makes the routing decision observable, so which target gets handed
+	// over is now pinned by a test rather than only by the live checklist.
+	openExternal func(uri string)
 }
 
 // New prepares a host. It does not create a window; Run does that.

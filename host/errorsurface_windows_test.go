@@ -628,12 +628,10 @@ func TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted(t *testing.T) {
 func TestGateCancelledCompletionDoesNotArmTheSurface(t *testing.T) {
 	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
 
-	// The gate cancels a foreign navigation and records its id. The target is a
-	// blob: URL on purpose: an http(s) one is off-origin *and* routable, so the
-	// gate would hand it to ShellExecute and this headless test would open a tab
-	// in the developer's browser on every run. What is locked here is the cancel
-	// and the completion that follows it, neither of which needs the routing.
-	if !host.shouldCancelNavigation("blob:https://evil.example/uuid", 7, true) {
+	// The gate cancels a foreign navigation and records its id. Routing the
+	// target is not this test's concern and does not happen: every test host
+	// stubs the system-browser seam (newTestHost, issue #76).
+	if !host.shouldCancelNavigation("https://evil.example/", 7, true) {
 		t.Fatal("gate did not cancel a foreign navigation")
 	}
 	if host.cancelledNavID != 7 {

@@ -278,13 +278,28 @@ identity comes from a UI-thread state machine (`noteNavigationOutcome`,
 only while the surface is the current document, and only for the reserved
 window controls — `Config.Bridge` stays origin-gated (decisions/0014). The
 accepted costs of that identification, and what would retire it, are recorded
-in decisions/0017, 0020 (the failed-Retry absorb window, issue #68) and 0021
+in decisions/0017, 0020 (the failed-Retry absorb window, issue #68), 0021
 (navigation-id attribution, which retired 0020's ordering and keeps it only
-as the id-less fallback).
+as the id-less fallback) and 0024 (which failures deserve the surface at all).
+
+**The tail of it: a failure status is not a diagnosis.** The machine armed on
+any failed completion, and `ConnectionAborted` turned out to mean two unrelated
+things — a dead endpoint when the caller serves the frontend over a socket, and
+a navigation the runtime abandoned and restarted when mullion serves it in
+process. Arming on the second replaced a live frontend with the fallback page,
+whose Retry aborted the same way (issue #72). The fix is not a better reading of
+the status, which carries no more information: it is to ask where *that*
+navigation's bytes came from, which the host knows from the navigation id it
+recorded at `NavigationStarting`. The first attempt keyed on the config mode
+instead and two audit passes refuted it — the mode says where the frontend is
+served from, not where the top frame went, and with the cancel gate off those
+differ (decisions/0024).
 
 **Lesson.** When the runtime's own identity channel reports nothing, parsing
 harder is not the answer; the identity you need must come from state you
-already own.
+already own. The same holds one level up: when a status code is ambiguous, do
+not tune the reading of it — find the state you already hold that disambiguates
+it.
 
 ---
 
@@ -300,5 +315,6 @@ already own.
 8. **No listening sockets in a desktop app.** Intercept the resource request instead. (§8)
 9. **Count your escape hatches into a dependency.** When you have forked it once and bypassed it once, the abstraction is already gone; owning the binding is cheaper than pretending otherwise. (§13)
 10. **A data: document reports no source.** Identify your own surfaces from navigation state you already hold, not by parsing the source harder. (§14)
+11. **An ambiguous status code is not a diagnosis.** The same failure status meant two different things; the state that told them apart was already recorded at the navigation's start. (§14)
 
-> Last updated: 2026-07-22 | Editor: Claude (Fable 5) | Change: §14's pointer gains 0021 — navigation-id attribution retired 0020's ordering, which survives as the id-less fallback.
+> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: §14 gains the ambiguous-status tail — the same failure status meant a dead endpoint and an abandoned navigation, and the navigation's recorded target is what separates them (issue #72, decisions/0024).

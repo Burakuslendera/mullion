@@ -86,7 +86,17 @@ Rules for new tests:
   a new behaviour is hard to test without a window, that is a signal the logic
   should be extracted out of the window procedure.
 - Never call a Win32 entry point from a test; tests exercise the callers of the
-  Win32 wrappers, not the wrappers.
+  Win32 wrappers, not the wrappers. **Including indirectly.** A test that drives
+  a policy function has to be read down to the call it eventually reaches: the
+  navigation-cancel gate hands an off-origin `http(s)` target to `ShellExecute`,
+  so a gate test written with an `https://` URL opened a browser tab on every
+  run of the suite, in CI as well (issue #76). Picking an input that stops short
+  of the effect is not enough on its own — it has to be got right in every test
+  that ever touches the policy, and it was not. Put the effect behind a seam and
+  stub it in the test host, so the protection is the default: `Host.openExternal`
+  is that seam, `newTestHost` stubs it, and a test that wants to assert the
+  routing swaps in a recorder. That also turns a live-only behaviour into a
+  headless lock, which is the second reason to prefer it.
 - If a test needs a window to be meaningful, it belongs in the manual checklist
   below — and the code it would have tested belongs in a function that *can* be
   tested headlessly. A test that requires a desktop turns a green CI into a
@@ -375,4 +385,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: checklist item for the in-origin full navigation that must not fall into the error surface (issue #72, decisions/0024).
+> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: checklist item for the in-origin full navigation that must not fall into the error surface (issue #72, decisions/0024), and the headless rule now covers a Win32 call a test reaches indirectly (issue #76).

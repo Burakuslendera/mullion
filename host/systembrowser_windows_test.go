@@ -43,10 +43,8 @@ func TestIsExternalBrowserSafe(t *testing.T) {
 	}
 }
 
-// routeNewWindow must never reach ShellExecute (openInSystemBrowser) for a
-// scheme isExternalBrowserSafe rejects: it logs the drop and returns. Only the
-// drop path is exercised headless; the http/https path launches a real browser
-// and is verified live.
+// routeNewWindow must never reach the system-browser hand-off for a scheme
+// isExternalBrowserSafe rejects: it logs the drop and returns.
 func TestRouteNewWindowDropsUnsafeSchemes(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true})
 
@@ -62,9 +60,10 @@ func TestRouteNewWindowDropsUnsafeSchemes(t *testing.T) {
 
 // shouldCancelNavigation is the PinNavigationToOrigin gate at NavigationStarting.
 // Off (default) it never cancels; on, an off-origin navigation is cancelled, and
-// a non-http(s) target is dropped rather than routed - only the http/https path
-// reaches ShellExecute (openInSystemBrowser), which is verified live. The trusted
-// origin is never cancelled (issue #6, decisions/0023).
+// a non-http(s) target is dropped rather than routed. The trusted origin is
+// never cancelled (issue #6, decisions/0023). What an http/https target is
+// handed to is locked separately below, through the openExternal seam; only the
+// ShellExecute call itself is live-only now (issue #76).
 func TestShouldCancelNavigation(t *testing.T) {
 	off, _ := newTestHost(t, Config{StartHidden: true})
 	if off.shouldCancelNavigation("https://evil.example/", 0, true) {
@@ -87,5 +86,39 @@ func TestShouldCancelNavigation(t *testing.T) {
 	}
 	if strings.Contains(logger.String(), "routed to system browser") {
 		t.Fatalf("a non-http(s) navigation reached the system-browser route:\n%s", logger.String())
+	}
+}
+
+// The routing half of both paths, which used to be live-only: the seam records
+// what would have been handed to the system browser, so the exact target - and
+// the fact that only a safe scheme reaches it at all - is pinned headless
+// (issue #76). The ShellExecute call itself stays live-only; this locks
+// everything up to it.
+func TestSafeTargetsAreHandedToTheSystemBrowser(t *testing.T) {
+	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+	var opened []string
+	host.openExternal = func(uri string) { opened = append(opened, uri) }
+
+	// The gate cancels an off-origin http(s) navigation and routes it verbatim -
+	// query and all, since the user was going there.
+	if !host.shouldCancelNavigation("https://evil.example/x?q=1", 3, true) {
+		t.Fatal("gate on: an off-origin navigation must be cancelled")
+	}
+	// A new window is routed without any gate involved (decisions/0022).
+	host.routeNewWindow("http://evil.example/popup", true)
+	// Neither path may hand over a scheme ShellExecute would resolve elsewhere.
+	if !host.shouldCancelNavigation("blob:https://evil.example/uuid", 4, false) {
+		t.Fatal("gate on: an off-origin blob: navigation must be cancelled")
+	}
+	host.routeNewWindow("javascript:alert(1)", true)
+
+	want := []string{"https://evil.example/x?q=1", "http://evil.example/popup"}
+	if len(opened) != len(want) {
+		t.Fatalf("handed over %v, want exactly %v", opened, want)
+	}
+	for i := range want {
+		if opened[i] != want[i] {
+			t.Fatalf("handed over %v, want %v", opened, want)
+		}
 	}
 }
