@@ -150,6 +150,15 @@ a pass/fail with an observable result — "looks fine" is not a result.
       trusted origin, in-origin routing and the `data:` error surface are never
       cancelled. Verify a redirect specifically, and that the app's own startup
       navigation is not cancelled (decisions/0023).
+- [ ] **An in-origin full navigation does not fall into the error surface.**
+      Serving the embedded assets (no `Config.URL`), click a link that navigates
+      the top frame to another in-origin document (`<a href="index.html?x=1">`)
+      several times: every attempt must land on the frontend. A `navigation
+      failed, status=9` followed by `showing fallback error surface` is the
+      issue #72 loop; with the rule in place that status is logged as
+      `navigation aborted, not arming the error surface` and the frontend stays
+      (decisions/0024). Repeat it — the abort is a race and does not fire on
+      every attempt.
 - [ ] **Second `Run` in the same process after a pre-loop failure.** With a
       driver that runs the host twice in one process, make the first `Run`
       fail before the message loop (e.g. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
@@ -366,4 +375,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: checklist items for issue #6's containment — new-window routing (0022) and the opt-in navigation-cancel gate (0023).
+> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: checklist item for the in-origin full navigation that must not fall into the error surface (issue #72, decisions/0024).

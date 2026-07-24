@@ -204,8 +204,9 @@ func TestNavigateFailureStopsTheRenderWatchdog(t *testing.T) {
 // stay exactly decision 0020's machine. Each test walks the note* methods the
 // way the navigation callbacks would.
 
-// statusNone stands in for the status of a successful completion; the machine
-// must not read it.
+// statusNone is COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN (0): the status a
+// successful completion carries, which the machine must not read, and equally
+// the stand-in for a failure whose status is none of the ones it branches on.
 const statusNone = webview2.WebErrorStatus(0)
 
 // noteFail, noteCancel and noteOK drive noteNavigationOutcome the way the
@@ -223,6 +224,18 @@ func noteCancel(host *Host, id uint64) bool {
 
 func noteOK(host *Host, id uint64) bool {
 	return host.noteNavigationOutcome(true, statusNone, id)
+}
+
+// newSurfaceHost builds a host whose frontend is served by the caller over a
+// loopback URL. That is the setting the identity orderings below were measured
+// in: the live timelines behind 0020 and 0021 are a dead loopback endpoint,
+// where the ConnectionAborted noteFail sends is a real "could not load" and must
+// arm the surface. Serving the embedded fs.FS in process there is no socket that
+// can fail, so the same status is a benign abort instead - the split
+// TestErrorSurfaceAbort* pair below locks both sides (issue #72, decisions/0024).
+func newSurfaceHost(t *testing.T) (*Host, *captureLogger) {
+	t.Helper()
+	return newTestHost(t, Config{URL: testExternalURL})
 }
 
 // A host that never saw a navigation failure must keep rejecting the empty
@@ -458,7 +471,7 @@ func TestErrorSurfaceClaimsOnlyItsOwnNavigationStart(t *testing.T) {
 // the failed Retry's id, not the surface's, so it is absorbed as positively
 // foreign, and the surface's own completion - matched by id - admits it.
 func TestErrorSurfaceIdentityAttributesTheRetryStraggler(t *testing.T) {
-	host, logger := newTestHost(t, Config{})
+	host, logger := newSurfaceHost(t)
 	armAndClaim(t, host, 5, 6) // Retry id 5 failed; surface claimed as id 6
 
 	if noteFail(host, 5) {
@@ -486,7 +499,7 @@ func TestErrorSurfaceIdentityAttributesTheRetryStraggler(t *testing.T) {
 // success-echo tail of issue #68's class); identity resolves each completion
 // to its own navigation (decisions/0021).
 func TestErrorSurfaceSurvivesAForeignSuccessDuringItsLoad(t *testing.T) {
-	host, _ := newTestHost(t, Config{})
+	host, _ := newSurfaceHost(t)
 	armAndClaim(t, host, 5, 6)
 
 	if noteOK(host, 4) {
@@ -507,7 +520,7 @@ func TestErrorSurfaceSurvivesAForeignSuccessDuringItsLoad(t *testing.T) {
 // not the surface dying: no seal, no re-navigation, and the machine is clean
 // enough afterwards to arm again on the next failure.
 func TestErrorSurfaceSupersededNavigateCleansUpQuietly(t *testing.T) {
-	host, logger := newTestHost(t, Config{})
+	host, logger := newSurfaceHost(t)
 	armAndClaim(t, host, 5, 6)
 	noteOK(host, 7) // a newer navigation won the race and committed
 
@@ -531,7 +544,7 @@ func TestErrorSurfaceSupersededNavigateCleansUpQuietly(t *testing.T) {
 // pre-identity machines could never target (0020 absorbed every failure in
 // the window because it could not tell whose it was).
 func TestErrorSurfaceSealsWhenItsOwnLoadFails(t *testing.T) {
-	host, logger := newTestHost(t, Config{})
+	host, logger := newSurfaceHost(t)
 	armAndClaim(t, host, 5, 6)
 
 	if noteFail(host, 6) {
@@ -553,7 +566,7 @@ func TestErrorSurfaceSealsWhenItsOwnLoadFails(t *testing.T) {
 // dead-buttons symptom again, now on the identity path (found by the
 // pre-merge audit of decisions/0021).
 func TestErrorSurfaceLateCancelDoesNotDisturbANewArming(t *testing.T) {
-	host, _ := newTestHost(t, Config{})
+	host, _ := newSurfaceHost(t)
 	armAndClaim(t, host, 5, 6) // generation one claimed as id 6
 	noteOK(host, 7)            // a foreign navigation wins and commits
 
@@ -580,7 +593,7 @@ func TestErrorSurfaceLateCancelDoesNotDisturbANewArming(t *testing.T) {
 // drop the admission without closing the claim window, so the surface's own
 // late commit still re-admits it.
 func TestErrorSurfaceIdentifiedCompletionsBeforeTheClaimAreForeign(t *testing.T) {
-	host, _ := newTestHost(t, Config{})
+	host, _ := newSurfaceHost(t)
 	host.errorSurfaceURL = "data:text/html,surface"
 	if !noteFail(host, 5) {
 		t.Fatal("the arming failure must ask for the surface to be shown")
@@ -606,7 +619,7 @@ func TestErrorSurfaceIdentifiedCompletionsBeforeTheClaimAreForeign(t *testing.T)
 // must still be attributed - not read as foreign because the fallback
 // clobbered the claimed id.
 func TestErrorSurfaceIdlessCompletionDoesNotDestroyTheClaimedIdentity(t *testing.T) {
-	host, _ := newTestHost(t, Config{})
+	host, _ := newSurfaceHost(t)
 	armAndClaim(t, host, 5, 6)
 	noteOK(host, 0) // an id-less success: the fallback takes it as the surface's load
 
@@ -626,7 +639,7 @@ func TestErrorSurfaceIdlessCompletionDoesNotDestroyTheClaimedIdentity(t *testing
 // nothing left to resolve it was the completion-less residual decision 0020
 // accepted - and the machine must stay able to arm on the next failure.
 func TestErrorSurfaceNavigateFailureUnwindsTheArming(t *testing.T) {
-	host, _ := newTestHost(t, Config{})
+	host, _ := newSurfaceHost(t)
 	if !noteFail(host, 5) {
 		t.Fatal("the arming failure must ask for the surface to be shown")
 	}
@@ -640,6 +653,66 @@ func TestErrorSurfaceNavigateFailureUnwindsTheArming(t *testing.T) {
 	}
 	if !noteFail(host, 10) {
 		t.Fatal("the machine must arm again after an unwound Navigate failure")
+	}
+}
+
+// The four tests below lock what an aborted navigation means (issue #72,
+// decisions/0024). A same-origin document navigation was observed completing
+// ConnectionAborted although its asset had been served 200, with the runtime
+// starting the navigation again by itself - and arming on that abort replaced a
+// live frontend with the fallback page, whose Retry aborted the same way, so it
+// looped until an attempt happened to survive.
+
+// Serving the embedded fs.FS in process there is no socket and no endpoint that
+// can be unreachable, so an attributed abort cannot mean "could not load".
+func TestErrorSurfaceAbortDoesNotArmWhenAssetsAreServedInProcess(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+
+	if noteFail(host, 3) {
+		t.Fatal("an aborted navigation must not ask for the fallback surface when mullion serves the assets itself")
+	}
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("nothing was armed, so the empty source must stay rejected")
+	}
+	if !strings.Contains(logger.String(), "navigation aborted, not arming the error surface") {
+		t.Fatal("a suppressed abort must say so, or it is indistinguishable in a report from a failure that went missing")
+	}
+}
+
+// The other side of the same rule: with Config.URL set the caller serves the
+// frontend over a socket, and ConnectionAborted is exactly what a dead endpoint
+// produces (measured live, issue #68 and 0020's timeline) - the case the
+// fallback surface exists for.
+func TestErrorSurfaceAbortStillArmsWhenTheCallerServesTheURL(t *testing.T) {
+	host, _ := newSurfaceHost(t)
+
+	if !noteFail(host, 3) {
+		t.Fatal("an aborted navigation against a caller-served URL must still show the fallback surface")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the arming must admit the empty source the surface posts from")
+	}
+}
+
+// The exemption is for the abort status alone. Any other failure in process is
+// still a failure and still arms.
+func TestErrorSurfaceOtherFailuresStillArmInProcess(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+
+	if !host.noteNavigationOutcome(false, statusNone, 3) {
+		t.Fatal("only an abort is benign in process; another failure must still arm")
+	}
+}
+
+// Without an id nothing ties this completion to the navigation whose asset was
+// served, so the exemption does not apply and decision 0020's machine stands.
+// Suppressing the surface on that guess would fail open in the one case it is
+// for.
+func TestErrorSurfaceAbortWithoutIdentityStillArms(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+
+	if !noteFail(host, 0) {
+		t.Fatal("an id-less abort must still arm: 0020's machine is the fallback wherever identity is unavailable")
 	}
 }
 

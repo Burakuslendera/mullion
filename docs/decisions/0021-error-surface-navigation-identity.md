@@ -1,6 +1,6 @@
 # 0021. Error-surface completions are attributed by navigation id
 
-**Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`
+**Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`. Refined by [0024](./0024-benign-abort-in-process.md): which attributed failures arm the surface at all
 
 ## Context
 
