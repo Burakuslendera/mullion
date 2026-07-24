@@ -73,6 +73,9 @@ is one half of it; [`docs/`](docs/) is the other.
   lands on a fallback you control rather than the browser's error page.
 - The bridge is `window.mullion.invoke("Method", ...args)`, which returns a
   `Promise`. Window controls are reserved and never reach your code.
+- `window.open` and `target=_blank` open in the user's default browser — the
+  host never spawns a second, chrome-less WebView window. Only `http`/`https`
+  targets are handed to the system; any other scheme is dropped.
 - A render watchdog fires if the frontend never paints, and reports what it saw:
   whether the document arrived, whether the stylesheets and scripts arrived, and
   what the last bridge call was.

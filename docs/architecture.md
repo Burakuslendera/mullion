@@ -71,8 +71,8 @@ dependencies are process-wide and irreversible.
 
 6. **WebView2 embed.** The controller is created as a child of an `HWND` that already
    exists and is already DPI-aware. Every callback (web message, web resource requested,
-   navigation starting, navigation completed, process failed) and every injected startup
-   script is registered
+   navigation starting, navigation completed, process failed, new window requested) and
+   every injected startup script is registered
    **before** the first `Navigate`; a callback registered after navigation begins can
    miss the requests and messages the first document produces — a race that reproduces
    only on fast machines, or only on slow ones, depending on where the gap lands.
@@ -202,8 +202,13 @@ the frontend diagnostics (`phase`, `diagnostic`).
 Everything else is handed to `Config.Bridge` as the raw request JSON; it returns the raw
 response JSON, or `""` to stay silent. `Bridge` may be nil — window controls
 (`window.mullion.window.minimise()` and friends) work before the application has
-implemented a single bridge method. Unknown methods, malformed requests and missing
-arguments yield an `ok: false` response and a sanitised log line, never a panic.
+implemented a single bridge method. Dispatch is origin-gated first
+([decisions/0014](./decisions/0014-bridge-origin-at-dispatch.md)): only the trusted
+origin reaches `Config.Bridge`; a `data:` document reaches the reserved window
+controls alone, and its non-reserved calls — like every message from a foreign
+origin — are dropped with a log line and **no reply to correlate**. An unknown
+method with a bridge configured is the application's to answer; with none, it
+yields `ok: false`. A malformed request is logged and dropped, never a panic.
 
 ## Startup gates and watchdog
 
@@ -249,4 +254,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: the render-watchdog payload block drops `shim=` / `shim_observed=` — fields `timeoutSummary` never emitted; the bridge-never-loaded signal is `last_bridge=unknown` (docs-vs-code audit).
+> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: docs-vs-code accuracy pass — step 6 lists the sixth callback (new window requested, 0022), and the bridge section states the origin gate and the real reply behaviour (a malformed or restricted-source request gets a log line and no reply, not `ok: false`).

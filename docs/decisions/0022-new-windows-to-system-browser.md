@@ -98,9 +98,16 @@ scheme is dropped. `isExternalBrowserSafe` is the gate, and it admits only
   protocols, a UNC path and an unparseable URL refused - and fails against an
   allow-all mutant. `TestRouteNewWindowDropsUnsafeSchemes` confirms an unsafe
   scheme never reaches the system-browser route.
-- That the runtime actually raises `NewWindowRequested`, that `Handled`
-  suppresses the default window, and that `ShellExecute` opens the target are
-  `unverified` pending the live probe (a `target=_blank` link and a `window.open`
-  on a real runtime).
+- Live-verified (2026-07-24, runtime 150.0.4078.83, `devel (1108a3f)` scaffolding
+  build of `examples/basic`): the runtime raises the event, `Handled` suppresses
+  the default window, and `ShellExecute` opens the target. A `target=_blank`
+  anchor and a scripted `window.open('https://…')` each opened in the system
+  browser with no detached window (`new window routed to system browser`, three
+  opens), `window.open('mailto:…')` launched nothing (`new window dropped,
+  unsupported scheme`), and the session ended with zero warnings and zero errors.
+  `IsUserInitiated` read `true` for every clicked open — including one fired from
+  a 500 ms `setTimeout`, because Chromium's transient activation outlives the
+  click by seconds. Only a genuinely gesture-less open would read `false`; that
+  is the signal a future gate would key on.
 
-> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: new record - new windows routed to the system browser (issue #6, the NewWindowRequested half).
+> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: the live probe ran and confirmed the routing end to end; the unverified marker is resolved with what was observed.
