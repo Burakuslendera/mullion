@@ -274,7 +274,7 @@ reduced raw source at debug for exactly this reason.
 
 **Instead.** The host itself knows when it navigated to its own surface, so
 identity comes from a UI-thread state machine (`noteNavigationOutcome`,
-`errorSurfaceActive` in `host/webview_windows.go`): the empty source is admitted
+`errorSurfaceActive` in `host/errorsurface_windows.go`): the empty source is admitted
 only while the surface is the current document, and only for the reserved
 window controls — `Config.Bridge` stays origin-gated (decisions/0014). The
 accepted costs of that identification, and what would retire it, are recorded

@@ -16,7 +16,7 @@ caption buttons. The runtime provides no representation of the surface to match
 ## Decision
 
 The host identifies its own error surface from state it already owns. A
-UI-thread state machine — `noteNavigationOutcome` in `host/webview_windows.go` —
+UI-thread state machine — `noteNavigationOutcome` in `host/errorsurface_windows.go` —
 arms `errorSurfaceActive` when the surface is navigated to (before its load
 completes, because the injected diagnostics post from document creation), holds
 it through the surface's own success completion (`errorSurfaceLoading`), and
