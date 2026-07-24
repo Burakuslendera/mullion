@@ -26,11 +26,11 @@ const swShowNormal = 1
 // scheme names, and off-origin content must not be able to reach one.
 func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 	if !isExternalBrowserSafe(uri) {
-		host.log.Debug("mullion: new window dropped, unsupported scheme, uri=" + logsafe.Message(clampSourceForLog(uri)))
+		host.log.Debug("mullion: new window dropped, unsupported scheme, uri=" + logsafe.URL(clampSourceForLog(uri)))
 		return
 	}
 	host.log.Debug("mullion: new window routed to system browser, user_initiated=" +
-		strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.Message(clampSourceForLog(uri)))
+		strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.URL(clampSourceForLog(uri)))
 	host.openInSystemBrowser(uri)
 }
 
@@ -53,11 +53,11 @@ func (host *Host) shouldCancelNavigation(uri string, navigationID uint64, isUser
 	host.cancelledNavID = navigationID
 	if isExternalBrowserSafe(uri) {
 		host.log.Debug("mullion: navigation cancelled off origin, routed to system browser, user_initiated=" +
-			strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.Message(clampSourceForLog(uri)))
+			strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.URL(clampSourceForLog(uri)))
 		host.openInSystemBrowser(uri)
 	} else {
 		host.log.Debug("mullion: navigation cancelled off origin, unsupported scheme, uri=" +
-			logsafe.Message(clampSourceForLog(uri)))
+			logsafe.URL(clampSourceForLog(uri)))
 	}
 	return true
 }

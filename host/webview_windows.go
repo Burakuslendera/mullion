@@ -99,9 +99,15 @@ func (host *Host) createWebView() error {
 			// the message silently - a foreign origin gets no reply to correlate.
 			// The debug line carries the reduced raw source because the WARN's
 			// origin form collapses every schemeless value to the same ":unknown",
-			// which is what made issue #56 need a live probe to diagnose.
-			host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.Message(urlOrigin(source)))
-			host.log.Debug("mullion: web message rejected, raw source=" + logsafe.Message(clampSourceForLog(source)) + ", len=" + strconv.Itoa(len(source)))
+			// which is what made issue #56 need a live probe to diagnose. That
+			// collapse is urlOrigin's, and it stays; what changes is that an
+			// http(s) origin now survives the reduction at all - through Message
+			// this line read "httpevil.example", the host welded to a clipped
+			// scheme, which is the whole of issue #78. A value with no http(s)
+			// origin still falls through logsafe.URL to Message and reduces
+			// byte for byte as before, ":unknown" included.
+			host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.URL(urlOrigin(source)))
+			host.log.Debug("mullion: web message rejected, raw source=" + logsafe.URL(clampSourceForLog(source)) + ", len=" + strconv.Itoa(len(source)))
 			return
 		}
 		// A data: source (the error surface, or a hostile data: iframe) is allowed
@@ -127,11 +133,14 @@ func (host *Host) createWebView() error {
 	browser.NavigationStartingCallback = func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool {
 		// The uri is clamped and reduced like a rejected message source: a
 		// navigation target is foreign input, and a data: URI is arbitrarily
-		// long. The id is what ties this line to the completion that follows.
+		// long. logsafe.URL, not Message, because Message's path sanitizer
+		// deletes the host of an http(s) URL - this is the line every live
+		// navigation check is read from (issue #78). The id is what ties this
+		// line to the completion that follows.
 		host.log.Debug("mullion: navigation starting, id=" + formatUint64(navigationID) +
 			", user_initiated=" + strconv.FormatBool(isUserInitiated) +
 			", redirected=" + strconv.FormatBool(isRedirected) +
-			", uri=" + logsafe.Message(clampSourceForLog(uri)))
+			", uri=" + logsafe.URL(clampSourceForLog(uri)))
 		return host.noteAndGateNavigation(uri, navigationID, isUserInitiated)
 	}
 	browser.NavigationCompletedCallback = func(success bool, status webview2.WebErrorStatus, navigationID uint64) {

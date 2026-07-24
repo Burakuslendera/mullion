@@ -89,6 +89,42 @@ func TestShouldCancelNavigation(t *testing.T) {
 	}
 }
 
+// The log lines these two paths emit must name the host the navigation went to.
+// They did not: logsafe.Message treats "https://" as a Windows drive letter and
+// "//" as a UNC start, so the whole URL collapsed to its last path segment and
+// "https://evil.example/x?q=1" reached the log as "httpx?q=1" (issue #78). These
+// are the lines the live checks for issues #6, #68 and #72 were read from, and
+// the same reduction runs on the two callbacks a headless test cannot reach -
+// navigation starting and the rejected message source - which is why the
+// reduction itself is locked in internal/logsafe rather than only here.
+//
+// The query goes the other way: it is dropped, because a token in a query string
+// is the disclosure risk this reduction exists for. Only a bare "?" survives, so
+// two navigations differing only in their query stay distinguishable.
+func TestRoutingLogsNameTheHost(t *testing.T) {
+	host, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+	host.openExternal = func(string) {}
+
+	if !host.shouldCancelNavigation("https://evil.example/x?token=s3cr3t", 7, true) {
+		t.Fatal("gate on: an off-origin navigation must be cancelled")
+	}
+	host.routeNewWindow("http://popup.example/opened.html", true)
+
+	logged := logger.String()
+	for _, want := range []string{
+		"uri=https://evil.example/x?",
+		"uri=http://popup.example/opened.html",
+	} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("log does not carry %q:\n%s", want, logged)
+		}
+	}
+	// The host survived; the token in the query must not have.
+	if strings.Contains(logged, "s3cr3t") || strings.Contains(logged, "token") {
+		t.Errorf("log leaked the query string:\n%s", logged)
+	}
+}
+
 // The routing half of both paths, which used to be live-only: the seam records
 // what would have been handed to the system browser, so the exact target - and
 // the fact that only a safe scheme reaches it at all - is pinned headless
