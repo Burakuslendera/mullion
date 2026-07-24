@@ -39,7 +39,14 @@ func newTestHost(t *testing.T, config Config) (*Host, *captureLogger) {
 	t.Helper()
 	logger := &captureLogger{}
 	config.Logger = logger
-	return New(config), logger
+	host := New(config)
+	// No test may reach ShellExecute. The suite is headless, and a real launch
+	// opens a tab in the developer's default browser - and on the CI worker -
+	// every single run (issue #76). A test that wants to assert the routing
+	// replaces this stub with a recorder; one that does not care is protected by
+	// it whatever URL it happens to use.
+	stubExternalOpen(host)
+	return host, logger
 }
 
 // waitForLog polls until the wanted substring shows up. The host writes some

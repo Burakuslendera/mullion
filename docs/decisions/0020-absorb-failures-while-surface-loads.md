@@ -111,7 +111,7 @@ keeping it against a document the machine cannot explain.
   deep-analysis comment: the state-machine replay, the refutation of the
   cancellation-echo attribution against official documentation, and the
   bound-1 defeat.
-- `host/webview_windows_test.go`: `TestErrorSurfaceSurvivesAFailedRetry`,
+- `host/errorsurface_windows_test.go`: `TestErrorSurfaceSurvivesAFailedRetry`,
   `TestErrorSurfaceSurvivesARapidRetryDoubleClick`,
   `TestErrorSurfaceAbsorbsAFailureStorm` and
   `TestErrorSurfaceStaysAdmittedWhenAFailureRacesItsOwnLoad`, proved

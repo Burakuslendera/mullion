@@ -94,6 +94,11 @@ func isExternalBrowserSafe(uri string) bool {
 // routing a headless test cannot exercise - it would launch a browser - so it is
 // verified live.
 func (host *Host) openInSystemBrowser(uri string) {
+	if host.openExternal != nil {
+		// The test seam (issue #76). Nothing in production sets it.
+		host.openExternal(uri)
+		return
+	}
 	verb, err := windows.UTF16PtrFromString("open")
 	if err != nil {
 		host.log.Warn("mullion: external open skipped, reason=" + logsafe.Reason(err))

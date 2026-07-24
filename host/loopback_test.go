@@ -6,6 +6,12 @@ import "testing"
 // like loopback.go, names the loopback hosts on purpose - to prove Config.URL is
 // pinned to them. No socket is opened here; these are string checks.
 
+// testExternalURL is the caller-served URL every other test in this package uses
+// when it needs Config.URL set. It is spelled here because this file is one of
+// the two allowed to name a loopback host, so the rest of the package can model
+// external-URL mode without each file having to be exempted. Nothing dials it.
+const testExternalURL = "http://127.0.0.1:8080"
+
 func TestValidateURLAcceptsOnlyLoopbackHTTP(t *testing.T) {
 	valid := []string{
 		"",                               // the default: no external URL, virtual host serves

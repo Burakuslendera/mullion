@@ -97,7 +97,7 @@ own self-contained `data:` page instead - no socket, consistent with the no-port
 guarantee above - carrying a drag title bar, working caption buttons (the injected
 bridge runs on that page too), the redacted origin and a Retry. Guarded against
 recursion. Found live in PR #4; tracked as the finding on issue #3, and built by
-`host/errorpage.go` with the failure wired in `host/webview_windows.go`.
+`host/errorpage.go` with the failure wired in `host/errorsurface_windows.go`.
 
 ## What would change our mind
 

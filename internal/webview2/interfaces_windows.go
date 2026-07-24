@@ -156,8 +156,11 @@ type WebErrorStatus int32
 // on, transcribed from WebView2.h (the enum counts up from UNKNOWN = 0). The
 // rest of the enum reaches logs as its numeric value.
 const (
-	// WebErrorStatusConnectionAborted is a connection that ended mid-flight -
-	// the status a dead loopback endpoint produces (issue #68, observed).
+	// WebErrorStatusConnectionAborted is a connection that ended mid-flight. A
+	// dead loopback endpoint has been observed producing it (issue #68), and so
+	// has a navigation the runtime abandoned and restarted with its asset already
+	// served (issue #72) - it says the load stopped, not why, which is why the
+	// host decides what it means from the navigation's target (decisions/0024).
 	WebErrorStatusConnectionAborted WebErrorStatus = 9
 	// WebErrorStatusOperationCanceled is how the losing navigation completes
 	// when a newer navigation supersedes it before it commits.

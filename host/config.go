@@ -305,6 +305,20 @@ func (config Config) startURL() string {
 	return config.origin() + "/index.html"
 }
 
+// servesAssetsInProcess reports whether mullion answers the frontend's own
+// requests, from the embedded fs.FS through WebResourceRequested, rather than
+// the caller serving them over a loopback socket (Config.URL).
+//
+// It is the condition that decides what an aborted navigation means: with no
+// socket in the path there is no endpoint that can be unreachable, so a
+// ConnectionAborted completion cannot be "could not load" - it is an abort of a
+// navigation the runtime superseded or restarted (issue #72, decisions/0024).
+// With Config.URL set the same status is exactly a dead endpoint (measured live,
+// issue #68), and the fallback surface is what it exists for.
+func (config Config) servesAssetsInProcess() bool {
+	return config.URL == ""
+}
+
 // validJSNamespace enforces ^[a-z][a-z0-9]*$. The constraint is not cosmetic:
 // the namespace becomes both a DOM attribute segment (data-<ns>-resize-edge) and
 // the camelCase dataset key that reads it back (dataset.<ns>ResizeEdge). A dash

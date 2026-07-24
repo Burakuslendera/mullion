@@ -163,6 +163,16 @@ The injected scripts still run on every navigation, so `window.<ns>` (the bridge
 window controls) works on the caller's origin too, and on the fallback page a failed
 navigation shows in place of Edge's chromeless error screen (`host/errorpage.go`).
 
+That difference also decides what a *failed* navigation means. With `Config.URL`
+set there is a socket in the path, so an aborted load can be a dead endpoint — the
+case the fallback page exists for. Serving the embedded assets in process there is
+none, so an abort of a navigation that was headed for the trusted origin can only
+be one the runtime abandoned and restarted, and showing the fallback there would
+replace a live frontend over nothing. Only that combination skips the page; an
+aborted *off-origin* navigation is a real socket load and still shows it, because
+`Config.URL` being empty does not keep the top frame on the origin — see
+[decisions/0024](./decisions/0024-benign-abort-in-process.md).
+
 That last point is why `Config.URL` is pinned to **loopback** (`127.0.0.1`,
 `localhost`, `::1`) over `http`/`https`, and any other URL is rejected by `Run`:
 injecting `Config.Bridge` — the application's Go methods — into an arbitrary remote
@@ -216,4 +226,4 @@ express ownership in its type signature. Release too early and you get use-after
 behaviour that presents as a rendering bug rather than a memory bug; release too late,
 or never, and you get a leak that no test will fail on.
 
-> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: docs-vs-code accuracy pass — boundary matrix catches up with the self-sufficient filter (#66: dot-space segments, colon, `fs.ValidPath`), responses now documented as carrying `nosniff` (#13), and discovery notes the relative-`location` rejection (#69).
+> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: the Config.URL section now states what the socket/in-process difference means for a failed navigation - only an on-origin abort mullion served itself skips the fallback page (issue #72, decisions/0024).

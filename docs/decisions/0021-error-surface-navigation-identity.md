@@ -1,6 +1,6 @@
 # 0021. Error-surface completions are attributed by navigation id
 
-**Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`
+**Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`. Refined by [0024](./0024-benign-abort-in-process.md): which attributed failures arm the surface at all
 
 ## Context
 
@@ -120,7 +120,7 @@ completion-less residual 0020 recorded.
   is locked by the layout tests and the IIDs by `TestInterfaceIDs`; the enum
   values are transcription-only — no independent form exists for a test to
   compare them against.
-- `host/webview_windows_test.go`: the identity locks proved fails-before
+- `host/errorsurface_windows_test.go`: the identity locks proved fails-before
   against an identity-blind mutant of the machine —
   `TestErrorSurfaceSurvivesAForeignSuccessDuringItsLoad`,
   `TestErrorSurfaceSupersededNavigateCleansUpQuietly` and

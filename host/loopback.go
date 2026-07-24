@@ -94,7 +94,7 @@ func (config Config) trustedOrigin() string {
 // the empty string instead, at the event args and the core alike, so the error
 // surface never actually reaches this branch there. The empty-source case is
 // admitted per navigation state by Host.errorSurfaceMessageAllowed
-// (webview_windows.go, issue #56); this pure function stays source-only and
+// (errorsurface_windows.go, issue #56); this pure function stays source-only and
 // keeps rejecting "".
 func (config Config) messageSourceAllowed(source string) bool {
 	if strings.HasPrefix(source, "data:") {
