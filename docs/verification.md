@@ -136,6 +136,12 @@ a pass/fail with an observable result — "looks fine" is not a result.
       taskbar.
 - [ ] **Close** from the custom caption control; the process exits and no
       child process is left behind.
+- [ ] **`window.open` / `target=_blank` → the system browser.** From the
+      frontend, open an external `https://` link (a `target=_blank` anchor, or a
+      scripted `window.open`): it opens in the default browser and **no second
+      window appears** — a detached, chrome-less WebView2 popup is the failure.
+      A non-http(s) scheme (`window.open('mailto:…')`) does nothing, and the log
+      says `new window dropped, unsupported scheme` (decisions/0022).
 - [ ] **Second `Run` in the same process after a pre-loop failure.** With a
       driver that runs the host twice in one process, make the first `Run`
       fail before the message loop (e.g. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
@@ -352,4 +358,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-19 | Editor: Claude (Fable 5) | Change: checklist item for the first frame's position and size — centered on the primary work area, DPI-scaled (issue #59, decision 0018).
+> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: checklist item for new-window routing — `window.open`/`target=_blank` lands in the system browser, never a detached WebView window (decision 0022).

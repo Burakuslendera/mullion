@@ -1,6 +1,6 @@
 # 0014. The injected bridge acts only on messages from the trusted origin
 
-**Status:** Accepted
+**Status:** Accepted; the new-window half of the follow-up landed as [0022](./0022-new-windows-to-system-browser.md)
 
 ## Context
 

@@ -26,7 +26,10 @@ The library ships no such DLL. Instead:
    then the 64-bit view. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` overrides all of it and is
    treated as a **pin**: if the folder holds no usable runtime the host fails rather
    than silently falling back to a different browser build. Every candidate is checked
-   against the disk before it is accepted, because the registry outlives uninstalls.
+   against the disk before it is accepted, because the registry outlives uninstalls,
+   and a relative `location` value is dropped rather than resolved against the process
+   working directory, so a malformed or planted registry entry cannot steer the load
+   to a CWD-relative path (issue #69).
 2. **Load the runtime's own COM server**, `<runtime>\EBWebView\<arch>\EmbeddedBrowserWebView.dll`,
    with `LOAD_WITH_ALTERED_SEARCH_PATH` so its siblings resolve out of the install
    folder and not out of ours (the wrong folder, and possibly a writable one).
@@ -114,8 +117,9 @@ authority, it is also the only place the boundary can be enforced:
 | URI does not parse | `400` |
 | scheme is not `https` | `403` |
 | host is not the configured virtual host | `403` |
-| path contains a `.` or `..` segment | `403` |
-| path contains a backslash or a control byte (incl. `%5c`, `%00`) | `403` |
+| path contains a `.` or `..` segment — or one made only of dots and spaces (`.. `, `...`), which Windows' DOS-to-NT conversion can strip to one | `403` |
+| path contains a backslash, a colon or a control byte (incl. `%5c`, `%00`) | `403` |
+| path is not a valid `fs.FS` name (`fs.ValidPath` — raw invalid UTF-8 among others) | `403` |
 | path is `favicon.ico` | `204`, answered before any file lookup |
 | path is `/` | rewritten to `index.html` |
 | file exists | `200`, `Content-Type` from the extension |
@@ -126,14 +130,23 @@ The scheme and host checks matter because WebView2 hands the callback anything
 matching the filter, and a filter is a pattern, not a trust boundary. The traversal
 check runs on the raw path segments *before* any cleaning, so normalisation cannot
 launder a rejected path into an accepted one. The same pre-clean pass rejects a
-backslash or a control byte: `url.Parse` decodes `%5c` to a literal `\`, which the
-`/`-only segment split and `path.Clean` would both carry through as an ordinary byte,
-so on Windows it would act as a second path separator — the check stops it there. The
+backslash, a colon or a control byte: `url.Parse` decodes `%5c` to a literal `\`,
+which the `/`-only segment split and `path.Clean` would both carry through as an
+ordinary byte, so on Windows it would act as a second path separator — and a `:`
+selects a drive letter or an NTFS alternate data stream. The final gate asserts
+`fs.ValidPath`, the canonical rule for a name an `fs.FS` will accept; its UTF-8
+requirement is load-bearing, rejecting a raw invalid byte the rune-level checks
+decode to U+FFFD and would otherwise pass. The boundary rejects all of this itself
+rather than leaning on the caller's `fs.FS` or the OS to (issue #66). The
 `favicon.ico` row is a convenience, not a boundary: the browser probes for it on every
 navigation, and answering `204` keeps that probe from surfacing as a resource-load
 failure in the diagnostics of every run. Responses carry `Cache-Control:
 no-store`: the origin is identical across builds, so without it the WebView could
-replay a cached asset from an older build into a new one. Bodies are wrapped in a COM
+replay a cached asset from an older build into a new one. They also carry
+`X-Content-Type-Options: nosniff` — every response names an explicit
+`Content-Type`, so the header is inert except for the sniffable `text/plain` case,
+where it stops bytes an app serves as plain text from being content-sniffed into
+executable HTML on the bridge origin (issue #13). Bodies are wrapped in a COM
 `IStream` built with `SHCreateMemStream`.
 
 ### Serving from a caller URL instead (`Config.URL`)
@@ -203,4 +216,4 @@ express ownership in its type signature. Release too early and you get use-after
 behaviour that presents as a rendering bug rather than a memory bug; release too late,
 or never, and you get a leak that no test will fail on.
 
-> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: boundary matrix gains the backslash/control-byte (`%5c`/`%00`) and `favicon.ico` `204` rows with their rationale; the COM-stream-lifetime section now states the release is a `defer` and why that is load-bearing (issue #45).
+> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: docs-vs-code accuracy pass — boundary matrix catches up with the self-sufficient filter (#66: dot-space segments, colon, `fs.ValidPath`), responses now documented as carrying `nosniff` (#13), and discovery notes the relative-`location` rejection (#69).
