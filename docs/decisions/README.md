@@ -42,6 +42,7 @@ These files are that record.
 | [0019](./0019-maximized-hittest-stays-in-process.md) | The maximized hit-test never queries the shell | Accepted |
 | [0020](./0020-absorb-failures-while-surface-loads.md) | Failure completions are absorbed while the error surface loads | Superseded by 0021 |
 | [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted |
+| [0022](./0022-new-windows-to-system-browser.md) | New windows are routed to the system browser, never opened in the host | Accepted |
 
 ## When to write one
 

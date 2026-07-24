@@ -37,8 +37,8 @@ func captureHandlerPanics(t *testing.T) *[]string {
 }
 
 // TestEventHandlerVtblLayout pins the one offset that matters: Invoke sits
-// immediately after IUnknown, at slot 3. All five handler interfaces share this
-// vtable, so this single assertion covers all five.
+// immediately after IUnknown, at slot 3. All six handler interfaces share this
+// vtable, so this single assertion covers all six.
 func TestEventHandlerVtblLayout(t *testing.T) {
 	var v eventHandlerVtbl
 	if got, want := unsafe.Sizeof(v), 4*slotSize; got != want {
@@ -77,6 +77,7 @@ func TestEventHandlerIIDs(t *testing.T) {
 		{"ICoreWebView2NavigationStartingEventHandler", "{9adbe429-f36d-432b-9ddc-f8881fbd76e3}", IIDICoreWebView2NavigationStartingEventHandler},
 		{"ICoreWebView2NavigationCompletedEventHandler", "{d33a35bf-1c49-4f98-93ab-006e0533fe1c}", IIDICoreWebView2NavigationCompletedEventHandler},
 		{"ICoreWebView2ProcessFailedEventHandler", "{79e0aea4-990b-42d9-aa1d-0fcc2e5bc7f1}", IIDICoreWebView2ProcessFailedEventHandler},
+		{"ICoreWebView2NewWindowRequestedEventHandler", "{d4c185fe-c81c-4989-97af-2d3fa7ab5651}", IIDICoreWebView2NewWindowRequestedEventHandler},
 	} {
 		want, err := windows.GUIDFromString(tc.text)
 		if err != nil {
@@ -90,7 +91,7 @@ func TestEventHandlerIIDs(t *testing.T) {
 
 // Every constructor must produce an object whose first word is the shared
 // vtable, and must record its own interface's IID - that pairing is what makes
-// QueryInterface answer correctly for five different interfaces off one vtable.
+// QueryInterface answer correctly for six different interfaces off one vtable.
 func TestConstructorsRegisterSharedVtableAndOwnIID(t *testing.T) {
 	wantVtbl := uintptr(unsafe.Pointer(&eventHandlerVtable))
 
@@ -114,6 +115,9 @@ func TestConstructorsRegisterSharedVtableAndOwnIID(t *testing.T) {
 		{"ProcessFailed",
 			NewProcessFailedHandler(func(*ICoreWebView2, *ICoreWebView2ProcessFailedEventArgs) {}),
 			IIDICoreWebView2ProcessFailedEventHandler},
+		{"NewWindowRequested",
+			NewNewWindowRequestedHandler(func(*ICoreWebView2, *ICoreWebView2NewWindowRequestedEventArgs) {}),
+			IIDICoreWebView2NewWindowRequestedEventHandler},
 	} {
 		server := serverFor(uintptr(tc.handler))
 		if server == nil {

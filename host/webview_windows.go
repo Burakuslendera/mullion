@@ -143,6 +143,9 @@ func (host *Host) createWebView() error {
 	browser.ProcessFailedCallback = func(kind webview2.ProcessFailedKind) {
 		host.log.Error("mullion: webview2 process failed, kind=" + formatInt32(int32(kind)))
 	}
+	browser.NewWindowRequestedCallback = func(uri string, isUserInitiated bool) {
+		host.routeNewWindow(uri, isUserInitiated)
+	}
 
 	host.log.Debug("mullion: webview2 embed requested")
 	if err := browser.Embed(uintptr(host.window())); err != nil {

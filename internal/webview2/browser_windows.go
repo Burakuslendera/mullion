@@ -20,7 +20,7 @@ import (
 // Browser is one WebView2 control embedded in a host window.
 //
 // It owns the environment, the controller and the CoreWebView2 behind them, and
-// it turns the five COM events the host cares about into plain Go callbacks.
+// it turns the six COM events the host cares about into plain Go callbacks.
 //
 // A Browser is bound to the thread that called Embed: WebView2 requires a
 // single-threaded apartment and delivers every event on that thread's message
@@ -39,7 +39,13 @@ type Browser struct {
 	NavigationStartingCallback  func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool)
 	NavigationCompletedCallback func(success bool, status WebErrorStatus, navigationID uint64)
 	ProcessFailedCallback       func(kind ProcessFailedKind)
-	ErrorCallback               func(err error)
+	// NewWindowRequestedCallback fires when content asks for a new window
+	// (window.open, a target=_blank link). The runtime's default new window is
+	// always suppressed first; the host decides what to do with the URI - a
+	// single-window host routes it to the system browser (issue #6). isUserInitiated
+	// counts host-API-driven opens as true too, as with navigation starting.
+	NewWindowRequestedCallback func(uri string, isUserInitiated bool)
+	ErrorCallback              func(err error)
 	// WarningCallback receives conditions the browser tolerates by design - an
 	// older runtime answering E_NOINTERFACE for an optional interface - as
 	// opposed to ErrorCallback's real failures. Splitting the channels is what
@@ -261,6 +267,27 @@ func (browser *Browser) registerEvents() error {
 		}
 		browser.NavigationCompletedCallback(success, status, id)
 	}), core.AddNavigationCompleted); err != nil {
+		return err
+	}
+
+	if err := addEvent(NewNewWindowRequestedHandler(func(_ *ICoreWebView2, args *ICoreWebView2NewWindowRequestedEventArgs) {
+		// Suppress the runtime's default new window first - a detached
+		// CoreWebView2 with no host chrome is meaningless for a single-window
+		// frameless host (issue #6). If suppression fails (a broken args object),
+		// the runtime opens its own window, so do not also route the URI to the
+		// system browser: that would double-open. Otherwise the suppression stands
+		// even when the callback is unset or the URI read fails.
+		if err := args.PutHandled(true); err != nil {
+			browser.reportWarning(err)
+			return
+		}
+		if browser.NewWindowRequestedCallback == nil {
+			return
+		}
+		uri, _ := args.GetUri()
+		userInitiated, _ := args.GetIsUserInitiated()
+		browser.NewWindowRequestedCallback(uri, userInitiated)
+	}), core.AddNewWindowRequested); err != nil {
 		return err
 	}
 
