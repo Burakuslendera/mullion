@@ -1,6 +1,6 @@
 # 0014. The injected bridge acts only on messages from the trusted origin
 
-**Status:** Accepted; the new-window half of the follow-up landed as [0022](./0022-new-windows-to-system-browser.md)
+**Status:** Accepted; both halves of the follow-up landed - new-window routing as [0022](./0022-new-windows-to-system-browser.md), the opt-in navigation-cancel gate as [0023](./0023-navigation-cancel-gate.md)
 
 ## Context
 

@@ -87,6 +87,14 @@ type Host struct {
 	errorSurfaceNavID   uint64
 	errorSurfaceLoading bool
 	errorSurfaceURL     string
+
+	// cancelledNavID is the id of the last top-level navigation the
+	// PinNavigationToOrigin gate cancelled (0 = none). The runtime completes a
+	// put_Cancel'd navigation with OperationCanceled, and that completion must not
+	// be read as a load failure that arms the error surface - the cancel is
+	// deliberate and the current document stays - so handleNavigationOutcome
+	// treats this id's failure as benign cleanup (decisions/0023). UI thread only.
+	cancelledNavID uint64
 }
 
 // New prepares a host. It does not create a window; Run does that.

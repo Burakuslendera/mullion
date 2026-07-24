@@ -70,10 +70,12 @@ func (a *ICoreWebView2WebMessageReceivedEventArgs) TryGetWebMessageAsString() (s
 
 // ---------------------------------------------------------------------------
 // ICoreWebView2NavigationStartingEventArgs  {5b495469-e119-438a-9b18-7604f25f2e49}
-// 10 slots. RequestHeaders and the Cancel pair are declared so the slots after
-// them stay at the right offsets, but carry no wrappers: this binding reads
-// identity (issue #68 follow-up, decisions/0021), and the navigation-cancel
-// gate is issue #6's work - PutCancel gets its wrapper there.
+// 10 slots. GetRequestHeaders and GetCancel are declared so the slots after them
+// stay at the right offsets, but carry no wrappers. PutCancel is wrapped: the
+// navigation-cancel gate (issue #6, decisions/0023) sets it to pin the top frame
+// to the trusted origin. The identity reads on this interface (GetUri /
+// GetIsUserInitiated / GetIsRedirected / GetNavigationID) were issue #68's work
+// (decisions/0021).
 // ---------------------------------------------------------------------------
 
 type ICoreWebView2NavigationStartingEventArgsVtbl struct {
@@ -147,6 +149,18 @@ func (a *ICoreWebView2NavigationStartingEventArgs) GetNavigationID() (uint64, er
 		return 0, err
 	}
 	return id, nil
+}
+
+// PutCancel cancels the navigation when set to true (vtable slot 8). The
+// navigation-cancel gate (issue #6, decisions/0023) uses it to refuse a
+// top-level navigation away from the trusted origin: the runtime abandons the
+// navigation and the current document stays.
+func (a *ICoreWebView2NavigationStartingEventArgs) PutCancel(cancel bool) error {
+	hr, _, _ := a.Vtbl.PutCancel.Call(
+		uintptr(unsafe.Pointer(a)),
+		boolToBOOL(cancel),
+	)
+	return hres(hr)
 }
 
 // ---------------------------------------------------------------------------

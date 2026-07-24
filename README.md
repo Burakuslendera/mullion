@@ -122,6 +122,8 @@ type Config struct {
 	Assets fs.FS            // required unless URL is set: must contain index.html
 	URL    string          // opt-in loopback origin you serve yourself; no socket
 
+	PinNavigationToOrigin bool // opt-in: cancel top-nav off the trusted origin
+
 	Title       string      // "Mullion"
 	ClassName   string      // "MullionWindow"
 	VirtualHost string      // "mullion.local" -> https://mullion.local
