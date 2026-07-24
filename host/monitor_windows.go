@@ -93,18 +93,6 @@ func dpiChangedTargetSize(suggested rect) (width, height int32, ok bool) {
 	return width, height, width > 0 && height > 0
 }
 
-// dpiRescaleLength states the Per-Monitor-V2 model of how a length is expected to
-// scale across a DPI change - the rule Windows itself follows when it computes the
-// suggested rect. The window path deliberately does not use it: it trusts the OS
-// rect. It exists so the tests can express the contract, in particular that a
-// from->to->from round trip at clean ratios is lossless, i.e. no hysteresis.
-func dpiRescaleLength(length int32, fromDPI, toDPI uint32) int32 {
-	if fromDPI == 0 {
-		fromDPI = defaultWindowDPI
-	}
-	return int32(int64(length) * int64(toDPI) / int64(fromDPI))
-}
-
 // rasterizationScaleForDPI maps a window DPI to the WebView2 rasterization scale -
 // the frontend's devicePixelRatio - that the content must render at: 96 DPI is 1.0,
 // 120 is 1.25, 144 is 1.5, 192 is 2.0.

@@ -20,8 +20,9 @@ func TestShouldUseDWMCaptionHitOnlyAcceptsHandledCaptionButtons(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := shouldUseDWMCaptionHit(test.hit, test.handled); got != test.want {
-				t.Fatalf("shouldUseDWMCaptionHit() = %t, want %t", got, test.want)
+			got := shouldUseDWMCaptionHitForPolicy(test.hit, test.handled, nativeDWMCaptionPolicyAllButtons)
+			if got != test.want {
+				t.Fatalf("shouldUseDWMCaptionHitForPolicy(allButtons) = %t, want %t", got, test.want)
 			}
 		})
 	}
@@ -51,17 +52,6 @@ func TestNativeFrameProfileUsesDWMMaximizeCaptionButtonForSnapProfiles(t *testin
 	}
 	if nativeFrameProfileUsesDWMMaximizeCaptionButton(nativeFrameProfileCaptionButtonsDiag) {
 		t.Fatal("caption_buttons_diag must keep explicit project caption-button hit-test routing")
-	}
-}
-
-func TestNativeFrameProfilesDoNotUseDynamicSnapCaptionByDefault(t *testing.T) {
-	for _, profile := range []nativeFrameProfile{
-		nativeFrameProfileCaptionNCCalc,
-		nativeFrameProfileCaptionSnapDiag,
-	} {
-		if nativeFrameProfileUsesDynamicSnapCaption(profile) {
-			t.Fatalf("%s must keep static caption style", profile)
-		}
 	}
 }
 

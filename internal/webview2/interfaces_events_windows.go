@@ -41,21 +41,10 @@ func (a *ICoreWebView2WebMessageReceivedEventArgs) GetSource() (string, error) {
 	return takeWstr(source), nil
 }
 
-func (a *ICoreWebView2WebMessageReceivedEventArgs) GetWebMessageAsJson() (string, error) {
-	var message *uint16
-	hr, _, _ := a.Vtbl.GetWebMessageAsJson.Call(
-		uintptr(unsafe.Pointer(a)),
-		uintptr(unsafe.Pointer(&message)),
-	)
-	if err := hres(hr); err != nil {
-		return "", err
-	}
-	return takeWstr(message), nil
-}
-
 // TryGetWebMessageAsString fails with E_INVALIDARG when the page posted a
 // non-string (postMessage of an object). That is a normal outcome, not a bug -
-// callers that accept both shapes should fall back to GetWebMessageAsJson.
+// callers that accept both shapes need the JSON form, which this binding does
+// not wrap - only its vtable slot is declared, to hold the offset.
 func (a *ICoreWebView2WebMessageReceivedEventArgs) TryGetWebMessageAsString() (string, error) {
 	var message *uint16
 	hr, _, _ := a.Vtbl.TryGetWebMessageAsString.Call(

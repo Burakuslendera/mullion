@@ -39,59 +39,27 @@ func captureHandlerPanics(t *testing.T) *[]string {
 // TestEventHandlerVtblLayout pins the one offset that matters: Invoke sits
 // immediately after IUnknown, at slot 3. All six handler interfaces share this
 // vtable, so this single assertion covers all six.
+//
+// checkVtbl (interfaces_windows_test.go) also asserts that the vtable is exactly
+// four slots wide and that all four are pinned here, so a fifth slot appended to
+// eventHandlerVtbl cannot slip in untested.
 func TestEventHandlerVtblLayout(t *testing.T) {
 	var v eventHandlerVtbl
-	if got, want := unsafe.Sizeof(v), 4*slotSize; got != want {
-		t.Fatalf("eventHandlerVtbl = %d bytes (%d slots), want %d (4 slots: IUnknown + Invoke)",
-			got, got/slotSize, want)
-	}
-	for _, tc := range []struct {
-		name  string
-		off   uintptr
-		index uintptr
-	}{
+	checkVtbl(t, "eventHandlerVtbl", unsafe.Sizeof(v), 4, []slot{
 		{"QueryInterface", unsafe.Offsetof(v.QueryInterface), 0},
 		{"AddRef", unsafe.Offsetof(v.AddRef), 1},
 		{"Release", unsafe.Offsetof(v.Release), 2},
 		{"Invoke", unsafe.Offsetof(v.Invoke), 3},
-	} {
-		if want := tc.index * slotSize; tc.off != want {
-			t.Errorf("eventHandlerVtbl.%s: offset %d (slot %d), want %d (slot %d)",
-				tc.name, tc.off, tc.off/slotSize, want, tc.index)
-		}
-	}
-}
-
-// TestEventHandlerIIDs re-parses each handler IID from its canonical string and
-// compares it against the hand-transcribed literal. A single swapped nibble
-// would compile fine and only show up as the runtime refusing to register the
-// handler.
-func TestEventHandlerIIDs(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		text string
-		got  windows.GUID
-	}{
-		{"ICoreWebView2WebMessageReceivedEventHandler", "{57213f19-00e6-49fa-8e07-898ea01ecbd2}", IIDICoreWebView2WebMessageReceivedEventHandler},
-		{"ICoreWebView2WebResourceRequestedEventHandler", "{ab00b74c-15f1-4646-80e8-e76341d25d71}", IIDICoreWebView2WebResourceRequestedEventHandler},
-		{"ICoreWebView2NavigationStartingEventHandler", "{9adbe429-f36d-432b-9ddc-f8881fbd76e3}", IIDICoreWebView2NavigationStartingEventHandler},
-		{"ICoreWebView2NavigationCompletedEventHandler", "{d33a35bf-1c49-4f98-93ab-006e0533fe1c}", IIDICoreWebView2NavigationCompletedEventHandler},
-		{"ICoreWebView2ProcessFailedEventHandler", "{79e0aea4-990b-42d9-aa1d-0fcc2e5bc7f1}", IIDICoreWebView2ProcessFailedEventHandler},
-		{"ICoreWebView2NewWindowRequestedEventHandler", "{d4c185fe-c81c-4989-97af-2d3fa7ab5651}", IIDICoreWebView2NewWindowRequestedEventHandler},
-	} {
-		want, err := windows.GUIDFromString(tc.text)
-		if err != nil {
-			t.Fatalf("%s: cannot parse reference IID %s: %v", tc.name, tc.text, err)
-		}
-		if tc.got != want {
-			t.Errorf("%s: IID = %+v, want %+v (%s)", tc.name, tc.got, want, tc.text)
-		}
-	}
+	})
 }
 
 // Every constructor must produce an object whose first word is the shared
 // vtable, and must record its own interface's IID - that pairing is what makes
 // QueryInterface answer correctly for six different interfaces off one vtable.
+//
+// The IID literals themselves are pinned against their canonical string form by
+// TestInterfaceIDs (interfaces_windows_test.go), which covers all six handler
+// interfaces; this test only pins which one each constructor picks.
 func TestConstructorsRegisterSharedVtableAndOwnIID(t *testing.T) {
 	wantVtbl := uintptr(unsafe.Pointer(&eventHandlerVtable))
 
@@ -119,20 +87,31 @@ func TestConstructorsRegisterSharedVtableAndOwnIID(t *testing.T) {
 			NewNewWindowRequestedHandler(func(*ICoreWebView2, *ICoreWebView2NewWindowRequestedEventArgs) {}),
 			IIDICoreWebView2NewWindowRequestedEventHandler},
 	} {
-		server := serverFor(uintptr(tc.handler))
-		if server == nil {
-			t.Fatalf("%s: handler was not registered", tc.name)
-		}
-		if server.vtbl != wantVtbl {
-			t.Errorf("%s: vtbl = %#x, want the shared eventHandlerVtable at %#x", tc.name, server.vtbl, wantVtbl)
-		}
-		if server.iid != tc.iid {
-			t.Errorf("%s: iid = %+v, want %+v", tc.name, server.iid, tc.iid)
-		}
-		if got := atomic.LoadInt32(&server.refs); got != 1 {
-			t.Errorf("%s: refcount after construction = %d, want 1 (the caller's reference)", tc.name, got)
-		}
-		ReleaseHandler(tc.handler)
+		// A subtest per row, with the release deferred first: every handler in
+		// the table is already constructed and registered by the time the loop
+		// starts, so a Fatalf in the middle of a bare loop would both skip the
+		// remaining rows and strand their registered COM servers in the global
+		// map for the rest of the binary - where liveServerCount() is what
+		// TestHandlerRefcountLifecycle and TestReleaseHandlerIsDefensive
+		// measure. t.Fatalf unwinds through defers and stops only its own
+		// subtest, so this releases everything and still runs every row.
+		t.Run(tc.name, func(t *testing.T) {
+			defer ReleaseHandler(tc.handler)
+
+			server := serverFor(uintptr(tc.handler))
+			if server == nil {
+				t.Fatalf("%s: handler was not registered", tc.name)
+			}
+			if server.vtbl != wantVtbl {
+				t.Errorf("%s: vtbl = %#x, want the shared eventHandlerVtable at %#x", tc.name, server.vtbl, wantVtbl)
+			}
+			if server.iid != tc.iid {
+				t.Errorf("%s: iid = %+v, want %+v", tc.name, server.iid, tc.iid)
+			}
+			if got := atomic.LoadInt32(&server.refs); got != 1 {
+				t.Errorf("%s: refcount after construction = %d, want 1 (the caller's reference)", tc.name, got)
+			}
+		})
 	}
 }
 

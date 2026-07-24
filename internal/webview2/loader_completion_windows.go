@@ -55,16 +55,15 @@ type completedHandler struct {
 	abandoned bool
 }
 
-var (
-	environmentCompletedVtable = completionVtbl{
-		IUnknownVtbl: iunknownVtbl,
-		Invoke:       ComProc(windows.NewCallback(environmentCompletedInvoke)),
-	}
-	controllerCompletedVtable = completionVtbl{
-		IUnknownVtbl: iunknownVtbl,
-		Invoke:       ComProc(windows.NewCallback(controllerCompletedInvoke)),
-	}
-)
+// completedVtable is shared by both completion handlers. They differ only in the
+// IID they are registered under (loader_windows.go), not in behaviour, and
+// windows.NewCallback allocates from a small table it never frees - so one
+// callback for both is the difference between spending one permanent slot and
+// two.
+var completedVtable = completionVtbl{
+	IUnknownVtbl: iunknownVtbl,
+	Invoke:       ComProc(windows.NewCallback(invoked)),
+}
 
 func newCompletedHandler(vtable uintptr, iid windows.GUID) *completedHandler {
 	// Buffered, so Invoke never blocks. Invoke runs on the UI thread inside our
@@ -111,7 +110,7 @@ func invoked(this, errorCode, result uintptr) uintptr {
 	if !ok {
 		return eFail
 	}
-	object := unknownFromAddress(result)
+	object := interfaceFromAddress[IUnknown](result)
 	if object != nil {
 		// The reference handed to a completion handler is borrowed: the runtime
 		// releases it as soon as Invoke returns. Keeping it without an AddRef
@@ -138,14 +137,6 @@ func invoked(this, errorCode, result uintptr) uintptr {
 		object.Release()
 	}
 	return sOK
-}
-
-func environmentCompletedInvoke(this, errorCode, result uintptr) uintptr {
-	return invoked(this, errorCode, result)
-}
-
-func controllerCompletedInvoke(this, errorCode, result uintptr) uintptr {
-	return invoked(this, errorCode, result)
 }
 
 // completionResult unwraps what a completion handler delivered, deciding the

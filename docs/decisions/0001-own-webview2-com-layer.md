@@ -82,7 +82,7 @@ documents as subject to change.
 ## Evidence
 
 - `go.mod`: a single `require`. `NOTICE`: no binding is bundled or derived from.
-- `internal/webview2/loader_windows_test.go`:
+- `internal/webview2/loader_machine_windows_test.go`:
   `TestRuntimeExportsTheEntryPointWeCallDirectly` loads the runtime's client DLL
   on a real machine and asserts the export exists.
 - `internal/webview2/interfaces_windows_test.go`: every slot of every vtable

@@ -164,9 +164,9 @@ func TestNativeHitTestForRectSkipsResizeBorderWhenMaximized(t *testing.T) {
 func TestMaximizedHitTestRectClampsToWorkAreaWithoutEatingTopBand(t *testing.T) {
 	workArea := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1020}
 	windowRect := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1020}
-	got, ok := maximizedHitTestRectForWorkArea(windowRect, workArea)
+	got, ok := clampRectToArea(windowRect, workArea)
 	if !ok {
-		t.Fatal("maximizedHitTestRectForWorkArea() ok = false")
+		t.Fatal("clampRectToArea() ok = false")
 	}
 	if got.Top != workArea.Top {
 		t.Fatalf("maximized top = %d, want %d", got.Top, workArea.Top)
@@ -176,9 +176,9 @@ func TestMaximizedHitTestRectClampsToWorkAreaWithoutEatingTopBand(t *testing.T) 
 	}
 
 	extendedRect := rect{Left: -10, Top: -10, Right: 1930, Bottom: 1030}
-	got, ok = maximizedHitTestRectForWorkArea(extendedRect, workArea)
+	got, ok = clampRectToArea(extendedRect, workArea)
 	if !ok {
-		t.Fatal("maximizedHitTestRectForWorkArea(extended) ok = false")
+		t.Fatal("clampRectToArea(extended) ok = false")
 	}
 	if got != workArea {
 		t.Fatalf("maximized extended rect = %#v, want %#v", got, workArea)

@@ -76,10 +76,6 @@ func (host *Host) nativeDWMCaptionMessageDecision(hwnd windowHandle, message uin
 	return decision
 }
 
-func shouldUseDWMCaptionHit(dwmHit uintptr, handled bool) bool {
-	return shouldUseDWMCaptionHitForPolicy(dwmHit, handled, nativeDWMCaptionPolicyAllButtons)
-}
-
 type nativeDWMCaptionPolicy int
 
 const (
@@ -121,10 +117,6 @@ func nativeFrameProfileUsesDWMMaximizeCaptionButton(profile nativeFrameProfile) 
 
 func nativeFrameProfileUsesZoomedDWMMaximizeCaptionButton(profile nativeFrameProfile) bool {
 	return profile == nativeFrameProfileCaptionSysMenuZoomMaxHit
-}
-
-func nativeFrameProfileUsesDynamicSnapCaption(profile nativeFrameProfile) bool {
-	return profile == nativeFrameProfileDynamicCaptionHoverSnap
 }
 
 func shouldUseDWMCaptionHitForPolicy(dwmHit uintptr, handled bool, policy nativeDWMCaptionPolicy) bool {

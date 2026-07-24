@@ -12,22 +12,6 @@ import (
 	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
-// teardownOutsideLoop's ordering is the contract: the destroy's WM_DESTROY
-// posts the WM_QUIT, so draining before the destroy would remove nothing and
-// leave the thread queue poisoned for the next Run on this thread (issues #48
-// and #54 - the loop is not running to consume it, having never started or
-// having just died).
-func TestTeardownOutsideLoopDrainsAfterTheDestroy(t *testing.T) {
-	var order []string
-	teardownOutsideLoop(
-		func() { order = append(order, "destroy") },
-		func() { order = append(order, "drain") },
-	)
-	if len(order) != 2 || order[0] != "destroy" || order[1] != "drain" {
-		t.Fatalf("teardown order = %v, want [destroy drain]", order)
-	}
-}
-
 // DPI awareness latches once per process, so a second enable used to come back
 // as ERROR_ACCESS_DENIED even though the process was already in exactly the
 // requested state - which made any second Host in one process fail at Run
@@ -45,9 +29,10 @@ func TestDPIAwarenessEnableIsRepeatable(t *testing.T) {
 	}
 }
 
-// The drain must actually remove a pending WM_QUIT from the thread queue - the
-// ordering test above proves when it runs, this proves what it does. WM_QUIT
-// is a thread message, so the check needs a locked thread and no window.
+// The drain must actually remove a pending WM_QUIT from the thread queue: left
+// there, it would poison the next Run on this thread (issues #48 and #54 - the
+// loop is not running to consume it, having never started or having just died).
+// WM_QUIT is a thread message, so the check needs a locked thread and no window.
 func TestDrainThreadQuitMessageRemovesAPendingQuit(t *testing.T) {
 	done := make(chan struct{})
 	go func() {

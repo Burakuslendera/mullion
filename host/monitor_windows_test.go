@@ -133,3 +133,16 @@ func TestRasterizationScaleDependsOnlyOnCurrentDPI(t *testing.T) {
 		}
 	}
 }
+
+// dpiRescaleLength states the Per-Monitor-V2 model of how a length is expected
+// to scale across a DPI change - the rule Windows itself follows when it
+// computes the suggested rect. Production deliberately does not use it: the
+// window path trusts the OS rect. It lives here because expressing that
+// contract - in particular that a from->to->from round trip at clean ratios is
+// lossless, i.e. no hysteresis - is the only thing it was ever for.
+func dpiRescaleLength(length int32, fromDPI, toDPI uint32) int32 {
+	if fromDPI == 0 {
+		fromDPI = defaultWindowDPI
+	}
+	return int32(int64(length) * int64(toDPI) / int64(fromDPI))
+}

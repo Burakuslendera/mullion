@@ -274,10 +274,7 @@ func (host *Host) noteForeignOutcome(success bool, status webview2.WebErrorStatu
 	// navigation that no longer matters here, and carrying it forward would
 	// let a superseded generation's late cancel be mis-attributed to this one
 	// and unwind its claim window before its start ever fires.
-	host.errorSurfaceActive = true
-	host.errorSurfaceLoading = true
-	host.errorSurfacePending = true
-	host.errorSurfaceNavID = 0
+	host.armErrorSurface()
 	return true
 }
 
@@ -321,6 +318,23 @@ func (host *Host) benignAbort(status webview2.WebErrorStatus, navigationID uint6
 	return navigationID != 0 && navigationID == host.navStartID && host.navStartInOrigin
 }
 
+// armErrorSurface starts a new surface generation. It is one function because
+// both entry points - the identified path and 0020's id-less fallback - have to
+// arm identically, and the four fields are the machine's whole state: a drift
+// between the two call sites is a state the decisions 0020, 0021 and 0024 never
+// describe.
+//
+// Resetting the id is the load-bearing part: a lingering one belongs to a
+// navigation that no longer matters here, and carrying it forward would let a
+// superseded generation's late cancel be mis-attributed to this one and unwind
+// its claim window before its start ever fires.
+func (host *Host) armErrorSurface() {
+	host.errorSurfaceActive = true
+	host.errorSurfaceLoading = true
+	host.errorSurfacePending = true
+	host.errorSurfaceNavID = 0
+}
+
 // noteOrderedOutcome is the order-based fallback for completions the machine
 // cannot attribute - this completion's id is unavailable, or the surface is in
 // flight without a claimed id. It is decision 0020's machine verbatim: the
@@ -352,10 +366,7 @@ func (host *Host) noteOrderedOutcome(success bool) bool {
 	}
 	// Arming resets the generation id for the same reason as the identity
 	// arm above.
-	host.errorSurfaceActive = true
-	host.errorSurfaceLoading = true
-	host.errorSurfacePending = true
-	host.errorSurfaceNavID = 0
+	host.armErrorSurface()
 	return true
 }
 

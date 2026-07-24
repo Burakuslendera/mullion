@@ -39,9 +39,13 @@ func TestResolveAssetPath(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, gotErr := resolveAssetPath(testVirtualHost, test.uri)
+			request, gotErr := resolveAssetRequest(testVirtualHost, test.uri)
+			got := ""
+			if gotErr == 0 {
+				got = request.path
+			}
 			if got != test.want || gotErr != test.wantErr {
-				t.Fatalf("resolveAssetPath() = %q, %d, want %q, %d", got, gotErr, test.want, test.wantErr)
+				t.Fatalf("resolveAssetRequest() = %q, %d, want %q, %d", got, gotErr, test.want, test.wantErr)
 			}
 		})
 	}

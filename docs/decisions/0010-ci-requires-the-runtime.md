@@ -87,7 +87,7 @@ regression surfaces within a week even if nobody pushes.
 
 - `.github/workflows/ci.yml`: the `MULLION_REQUIRE_WEBVIEW2: "1"` env on the
   windows job.
-- The mechanism and its lock: `internal/webview2/loader_windows_test.go`,
+- The mechanism and its lock: `internal/webview2/loader_machine_windows_test.go`,
   `TestRequireWebView2TurnsSkipIntoFailure` — unset skips, set fails, proved with
   a fake `*testing.T` so neither branch has to actually skip or fail the binary.
 - The measurement: the `mullion doctor` probe on `windows-latest` reported

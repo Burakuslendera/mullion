@@ -133,60 +133,15 @@ func (r *ICoreWebView2WebResourceResponse) PutContent(content *IStream) error {
 	return hres(hr)
 }
 
-func (r *ICoreWebView2WebResourceResponse) GetStatusCode() (int32, error) {
-	var status int32
-	hr, _, _ := r.Vtbl.GetStatusCode.Call(
-		uintptr(unsafe.Pointer(r)),
-		uintptr(unsafe.Pointer(&status)),
-	)
-	if err := hres(hr); err != nil {
-		return 0, err
-	}
-	return status, nil
-}
-
-func (r *ICoreWebView2WebResourceResponse) PutStatusCode(status int32) error {
-	hr, _, _ := r.Vtbl.PutStatusCode.Call(
-		uintptr(unsafe.Pointer(r)),
-		uintptr(status),
-	)
-	return hres(hr)
-}
-
-func (r *ICoreWebView2WebResourceResponse) GetReasonPhrase() (string, error) {
-	var reason *uint16
-	hr, _, _ := r.Vtbl.GetReasonPhrase.Call(
-		uintptr(unsafe.Pointer(r)),
-		uintptr(unsafe.Pointer(&reason)),
-	)
-	if err := hres(hr); err != nil {
-		return "", err
-	}
-	return takeWstr(reason), nil
-}
-
-func (r *ICoreWebView2WebResourceResponse) PutReasonPhrase(reason string) error {
-	phrase, err := wstr(reason)
-	if err != nil {
-		return err
-	}
-	hr, _, _ := r.Vtbl.PutReasonPhrase.Call(
-		uintptr(unsafe.Pointer(r)),
-		uintptr(unsafe.Pointer(phrase)),
-	)
-	return hres(hr)
-}
-
 // GetHeaders is intentionally left unwrapped: it yields an
 // ICoreWebView2HttpResponseHeaders, and this package sets headers as a raw
 // string through CreateWebResourceResponse instead, so binding that interface
 // would add ABI surface with no caller. The SLOT still has to exist - removing
 // it would shift StatusCode and everything after it.
 
-func (r *ICoreWebView2WebResourceResponse) Release() error {
+func (r *ICoreWebView2WebResourceResponse) Release() {
 	if r == nil {
-		return nil
+		return
 	}
 	_, _, _ = r.Vtbl.Release.Call(uintptr(unsafe.Pointer(r)))
-	return nil
 }

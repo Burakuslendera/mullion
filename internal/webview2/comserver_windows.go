@@ -134,12 +134,3 @@ func serverRelease(this uintptr) uintptr {
 	}
 	return uintptr(remaining)
 }
-
-// liveServerCount reports how many Go-implemented COM objects the runtime still
-// holds. Only used by tests, to prove that handlers are released rather than
-// leaked once creation completes.
-func liveServerCount() int {
-	serversMu.Lock()
-	defer serversMu.Unlock()
-	return len(servers)
-}

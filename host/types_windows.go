@@ -45,23 +45,21 @@ const (
 	swHide = 0
 	swShow = 5
 
-	swpNoZOrder        = 0x0004
-	swpNoMove          = 0x0002
-	swpNoSize          = 0x0001
-	swpNoActivate      = 0x0010
-	swpFrameChanged    = 0x0020
-	gwlStyle           = -16
-	gwlExStyle         = -20
-	wsOverlapped       = 0x00000000
-	wsVisible          = 0x10000000
-	wsCaption          = 0x00C00000
-	wsSysMenu          = 0x00080000
-	wsThickFrame       = 0x00040000
-	wsMinimizeBox      = 0x00020000
-	wsMaximizeBox      = 0x00010000
-	wsOverlappedWindow = wsOverlapped | wsCaption | wsSysMenu |
-		wsThickFrame | wsMinimizeBox | wsMaximizeBox
-	wsNativeWindow = wsOverlapped | wsThickFrame | wsMinimizeBox | wsMaximizeBox
+	swpNoZOrder     = 0x0004
+	swpNoMove       = 0x0002
+	swpNoSize       = 0x0001
+	swpNoActivate   = 0x0010
+	swpFrameChanged = 0x0020
+	gwlStyle        = -16
+	gwlExStyle      = -20
+	wsOverlapped    = 0x00000000
+	wsVisible       = 0x10000000
+	wsCaption       = 0x00C00000
+	wsSysMenu       = 0x00080000
+	wsThickFrame    = 0x00040000
+	wsMinimizeBox   = 0x00020000
+	wsMaximizeBox   = 0x00010000
+	wsNativeWindow  = wsOverlapped | wsThickFrame | wsMinimizeBox | wsMaximizeBox
 
 	wmDestroy           = 0x0002
 	wmMove              = 0x0003

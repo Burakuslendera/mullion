@@ -44,12 +44,11 @@ type IStream struct {
 	Vtbl *IStreamVtbl
 }
 
-func (s *IStream) Release() error {
+func (s *IStream) Release() {
 	if s == nil {
-		return nil
+		return
 	}
 	_, _, _ = s.Vtbl.Release.Call(uintptr(unsafe.Pointer(s)))
-	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -68,22 +67,6 @@ type ICoreWebView2EnvironmentVtbl struct {
 
 type ICoreWebView2Environment struct {
 	Vtbl *ICoreWebView2EnvironmentVtbl
-}
-
-// CreateCoreWebView2Controller starts asynchronous controller creation. The
-// result arrives on handler, which must be an
-// ICoreWebView2CreateCoreWebView2ControllerCompletedHandler COM object; this
-// method returning nil only means the request was accepted.
-//
-// parentWindow is an HWND, kept as uintptr so this file does not have to own a
-// window-handle type.
-func (e *ICoreWebView2Environment) CreateCoreWebView2Controller(parentWindow uintptr, handler unsafe.Pointer) error {
-	hr, _, _ := e.Vtbl.CreateCoreWebView2Controller.Call(
-		uintptr(unsafe.Pointer(e)),
-		parentWindow,
-		uintptr(handler),
-	)
-	return hres(hr)
 }
 
 // CreateWebResourceResponse builds the response handed back to a

@@ -105,15 +105,11 @@ func windowRectForMaximizedHitTest(hwnd windowHandle, windowRect rect) rect {
 	if !ok {
 		return windowRect
 	}
-	next, ok := maximizedHitTestRectForWorkArea(windowRect, info.Work)
+	next, ok := clampRectToArea(windowRect, info.Work)
 	if !ok {
 		return windowRect
 	}
 	return next
-}
-
-func maximizedHitTestRectForWorkArea(windowRect, workArea rect) (rect, bool) {
-	return clampRectToArea(windowRect, workArea)
 }
 
 func nativeHitTestForRect(metrics hitTestMetrics, windowRect rect, cursor point, dpi uint32, maximized bool) int32 {
@@ -127,10 +123,10 @@ func nativeHitTestForRect(metrics hitTestMetrics, windowRect rect, cursor point,
 	controlsWidth := scaleLogicalPixels(metrics.ControlsWidth, dpi)
 	inTitlebar := cursor.Y >= windowRect.Top && cursor.Y < windowRect.Top+titlebarHeight
 	inControls := cursor.X >= windowRect.Right-controlsWidth && cursor.X < windowRect.Right
-	if inTitlebar && inControls && nativeFrameProfileUsesCaptionButtonHitTest(activeNativeFrameProfile()) {
+	profile := activeNativeFrameProfile()
+	if inTitlebar && inControls && nativeFrameProfileUsesCaptionButtonHitTest(profile) {
 		return hitTestCaptionButtons(windowRect, cursor, controlsWidth)
 	}
-	profile := activeNativeFrameProfile()
 	if inTitlebar && inControls &&
 		(nativeFrameProfileUsesMaximizeCaptionButtonHitTest(profile) ||
 			(maximized && nativeFrameProfileUsesZoomedMaximizeCaptionButtonHitTest(profile))) {

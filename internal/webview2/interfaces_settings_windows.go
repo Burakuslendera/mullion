@@ -196,15 +196,3 @@ func (s *ICoreWebView2Settings9) PutIsNonClientRegionSupportEnabled(enabled bool
 	hr, _, _ := s.Vtbl.PutIsNonClientRegionSupportEnabled.Call(uintptr(unsafe.Pointer(s)), boolToBOOL(enabled))
 	return hres(hr)
 }
-
-func (s *ICoreWebView2Settings9) GetIsNonClientRegionSupportEnabled() (bool, error) {
-	var enabled int32
-	hr, _, _ := s.Vtbl.GetIsNonClientRegionSupportEnabled.Call(
-		uintptr(unsafe.Pointer(s)),
-		uintptr(unsafe.Pointer(&enabled)),
-	)
-	if err := hres(hr); err != nil {
-		return false, err
-	}
-	return boolFromBOOL(enabled), nil
-}
