@@ -47,20 +47,17 @@ func newAssetProvider(assets fs.FS, log *logSink, virtualHost string, diagnostic
 }
 
 // webResourceRequested answers one intercepted request out of the fs.FS. Serving
-// the document is not where a slow startup goes, which is worth recording where a
-// reader looks first: on WebView2 runtime 150.0.4078.83, across five startup
-// navigations on 2026-07-25, about 2.03 s (2.041, 2.026, 2.035, 2.027, 2.039)
-// passed between the "asset response served" line for index.html and the renderer
-// asking for its first subresource, and in one run the document was created in the
-// same millisecond as that request - so the wait sits before document creation,
-// not in parsing and not in the injected scripts. Declaring Content-Length,
-// holding the response and its IStream past PutResponse, injecting no
-// document-created scripts, and renaming the virtual host each moved it by
-// nothing. What causes it is not established here; the current unconfirmed
-// reading is recorded on Config.VirtualHost, from WebView2Feedback 2381
-// (https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381). Issue #85
-// tracks this, and issue #77 lives inside the same window: every abort measured
-// so far fired before the two seconds were up.
+// the document is not where a slow startup goes, which is worth saying where a
+// reader looks first: on WebView2 150.0.4078.83, about 2.03 s passed between the
+// "asset response served" line for index.html and the renderer asking for its
+// first subresource, across seven runs. A NetLog capture named the span - a
+// HOST_RESOLVER_MANAGER_JOB for the virtual host, 2.007 s, covering exactly that
+// window - so the cost is resolving the synthetic host name, not answering the
+// request. Pointing Config.VirtualHost at a name Chromium never sends to the
+// network measured 11-79 ms instead, and took issue #77's aborts with it. The
+// reasoning, the exact name, the six negatives it took to get there, and why the
+// default cannot simply be renamed are on Config.VirtualHost and in
+// docs/webview2-and-assets.md.
 func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs, environment *webview2.ICoreWebView2Environment) {
 	if request == nil {
 		provider.log.Warn("mullion: asset request unavailable")

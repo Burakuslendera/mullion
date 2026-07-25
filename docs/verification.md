@@ -254,9 +254,13 @@ a pass/fail with an observable result — "looks fine" is not a result.
       only: a clicked in-origin navigation lands inside a retry chain the
       runtime drives itself (one click started 45 navigations at 6-25 ms
       intervals, most of them aborted), so timings taken from those are not
-      comparable. Suspected but not confirmed to be the runtime behaviour
-      reported at https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381
-      (tagged bug / priority-low / tracked, not fixed).
+      comparable. **Cause found:** a NetLog capture names the span as a
+      `HOST_RESOLVER_MANAGER_JOB` for the virtual host, 2.007 s - the runtime
+      resolves a name nothing needs resolved. Setting `Config.VirtualHost` to a
+      `.localhost` name (never sent to the network, RFC 6761) measured 11-79 ms
+      and stopped issue #77's aborts as well: 16 of 16 in-origin navigations
+      committed where 45 consecutive ones had aborted. Upstream, unfixed:
+      https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:
       restored → `Restore` disabled, `Maximize` enabled, `Move`/`Size` enabled;

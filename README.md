@@ -265,16 +265,27 @@ above was taken that way, on the same flat ground.
 
 ## Known limitations
 
-- **A window takes about two and a half seconds to appear, and about two of those
-  seconds are spent inside the WebView2 runtime.** Measured on one machine
-  (WebView2 runtime 150.0.4078.83, five runs): 2.03s of the 2.5s is a single wait
-  between mullion serving the main document and the renderer asking for the first
-  subresource, and all the rest of startup - window, environment, frontend - is
-  20-40 ms. Neither the frontend nor mullion's asset serving accounts for that
-  wait, and its shape resembles an open, unfixed runtime bug
-  ([WebView2Feedback #2381](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381))
-  closely enough to name but not closely enough to call it a diagnosis. The
-  measurements, and what has been ruled out, are tracked as issue #85.
+- **A window takes about two and a half seconds to appear, and two of those
+  seconds are the WebView2 runtime resolving the virtual host name.** The default
+  `mullion.local` does not exist anywhere - nothing needs it to, because
+  `WebResourceRequested` answers every request in process - but the runtime looks
+  it up regardless and waits out the timeout. Measured on WebView2 150.0.4078.83:
+  a NetLog capture shows the lookup running 2.007 s and covering exactly the wait,
+  and the rest of startup is 20-40 ms. Upstream since 2022 and unfixed
+  ([WebView2Feedback #2381](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381)).
+
+  **The workaround is one field:** set `VirtualHost` to a name under `.localhost`,
+  which RFC 6761 reserves as always-loopback and Chromium answers without asking
+  the network at all.
+
+  ```go
+  host.Config{Assets: assets, VirtualHost: "yourapp.localhost"}
+  ```
+
+  Measured on the same machine and frontend: window visible in **~500 ms** instead
+  of ~2500. Note that a name that merely *fails* to resolve is not enough -
+  `.test` and `.example` were measured and cost the same two seconds. This is not
+  yet the default, for the reason recorded in issue #85.
 - **WebView2 does not render while the window is hidden.** With `StartHidden`, the
   frontend cannot signal readiness until the first `Show`. "Load it invisibly and
   reveal it when ready" is not achievable this way.

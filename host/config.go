@@ -64,25 +64,23 @@ type Config struct {
 	//
 	// Nothing mullion does resolves this name - WebResourceRequested intercepts
 	// the request and Assets answers it in process - so it need not exist
-	// anywhere. The runtime nonetheless appears to spend time on it. Measured on
-	// WebView2 runtime 150.0.4078.83, five startup navigations on 2026-07-25 each
-	// took about 2.03 s (2.026 to 2.041) between the document being served and the
-	// renderer requesting its first subresource, all of it before document
-	// creation, and renaming the host to mullion.test changed nothing.
-	// WebView2Feedback 2381
-	// (https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381) reports the
-	// same shape for a virtual host name that does not resolve and attributes it
-	// to the runtime waiting out a name lookup - an attribution borrowed from a
-	// different API (SetVirtualHostNameToFolderMapping) and not confirmed here.
-	// That reading is now the weaker one, and this field is why: Chromium forces
-	// a .local lookup onto the system resolver and lets .test use its own async
-	// one, so renaming the host swapped resolver code paths entirely and cost the
-	// same 2.03 s. A --host-resolver-rules probe was staged against it and
-	// withdrawn unrun - the switch is unverified on WebView2, which silently
-	// ignores switches it blocks or cannot parse, so a null result would have
-	// been unreadable. Proxy auto-config leads instead (Chromium carries a
-	// literal 2000 ms stall before it), and it does not depend on this name at
-	// all. Issue #85 carries the outcome; issue #77 lives inside the same window.
+	// anywhere. The runtime resolves it anyway, and the current default makes
+	// that expensive: a NetLog capture on WebView2 150.0.4078.83 shows a
+	// HOST_RESOLVER_MANAGER_JOB for "mullion.local:443" running 2.007 s and
+	// covering exactly the gap between the document being served and the first
+	// subresource being requested. Seven runs measured 2.012 to 2.041 s.
+	//
+	// The name is what decides it, and the rule is not "pick something that will
+	// not resolve" - that is the version that fails. mullion.test was measured
+	// and cost the same 2.027 s, because .test only means nobody may register it
+	// and the resolver still asks the network. The TLD RFC 6761 pins to the
+	// loopback address is answered by Chromium without any lookup at all, and a
+	// VirtualHost under it measured 11-79 ms with LaunchToWindowVisibleMs falling
+	// from ~2500 to ~500. That is the workaround available today; it is spelled
+	// out in docs/webview2-and-assets.md rather than here, because this package's
+	// no-port guard (decisions/0002, TestNoNetworkListener) refuses to let any
+	// file but loopback.go name a loopback host - which is also why the default
+	// cannot simply be renamed. Issues #85 and #77 carry the measurements.
 	VirtualHost string
 	// JSNamespace names the JavaScript global the host injects (window.<ns>) and
 	// prefixes the DOM attributes it relies on (data-<ns>-resize-edge). It must

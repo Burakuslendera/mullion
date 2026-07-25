@@ -237,133 +237,81 @@ express ownership in its type signature. Release too early and you get use-after
 behaviour that presents as a rendering bug rather than a memory bug; release too late,
 or never, and you get a leak that no test will fail on.
 
-### The two-second gap before the first subresource (issue #85)
+### The two-second gap before the first subresource (issues #85, #77)
 
-This section is open work. It is written so the next person starts where the
-measurements stopped rather than where the guessing did.
+**Root cause found and measured: the virtual host name is resolved, and the
+lookup times out.** Every navigation waited about 2.03 seconds between mullion
+serving the main document out of the callback above and the renderer requesting
+its first subresource. A NetLog capture named the span: a
+`HOST_RESOLVER_MANAGER_JOB` for `mullion.local:443`, running **2.007 s** and
+covering exactly that window. Changing the virtual host to a name Chromium never
+sends to the network collapses it.
 
-**Measured.** On one machine, WebView2 runtime 150.0.4078.83, on 2026-07-25:
-five startup navigations across five runs each waited about **2.03 seconds**
-between mullion serving the main document out of the callback above and the
-renderer requesting its first subresource. The five figures are 2.041, 2.026,
-2.035, 2.027 and 2.039 seconds, a spread of roughly 15 ms on a two-second
-interval. Startup navigations are the clean population to measure: they are
-host-initiated, not inside a retry chain, and not racing anything else.
-Everything downstream is fast, first subresource to frontend-ready being 20-40
-ms, so the interval from serving the document to frontend-ready is almost
-entirely this one gap.
+| virtual host | document to first subresource | in-origin navigations |
+| --- | --- | --- |
+| `mullion.local` | 2.012 - 2.041 s, seven runs | 45 consecutive aborts, none committed |
+| `mullion.localhost` | **11 - 79 ms** | **16 of 16 committed, none aborted** |
 
-**Measured negatives.** Each of the following was tried and moved nothing.
-They are the valuable half of the section, because each one closes a road:
+`LaunchToWindowVisibleMs` went from 2419-2543 to **495-508** on the same machine
+and frontend. Issue #77 - an in-origin navigation that aborts and often never
+commits - disappeared with it: the two-second window was where that race lived,
+and at 15 ms there is nothing left to lose it in.
+
+**Why that name and not another.** The rule is not "pick a name that will not
+resolve" - that is the version that fails. `.example`, `.test` and `.invalid` are
+reserved by RFC 2606 so that nobody registers them, but a resolver still asks the
+network and still waits out the answer. `.localhost` is reserved by RFC 6761 as
+*always loopback*, and Chromium answers it without a lookup at all. Renaming
+`mullion.local` to `mullion.test` was measured first and changed nothing (2.027
+s), which is the same result three other people have reported for `.example` on
+the upstream issue.
+
+**What was ruled out on the way, each by its own measurement.** Recorded so the
+next person does not re-run them:
 
 | Changed | Result |
 | --- | --- |
 | `Content-Length` set on every `200` response | no change |
-| response and `IStream` held past `PutResponse` rather than released on the `defer` | no change (2.026 -> 2.031) |
+| response and `IStream` held past `PutResponse` rather than released on the `defer` | no change (2.026 to 2.031) |
 | no `AddScriptToExecuteOnDocumentCreated` registrations at all | no change (2.035) |
-| virtual host `mullion.test` in place of `mullion.local` | no change (2.027) |
+| virtual host `mullion.test` | no change (2.027) |
+| `--no-proxy-server` | no change (2.017) |
+| `--host-resolver-rules=MAP mullion.local 127.0.0.1` | no change - **and the switch was never applied**, see below |
 
-The gap also sits entirely **before document creation**. In one run the
-`document created` diagnostic and the request for `style.css` landed in the same
-millisecond, 2.015 s after the document itself was served. That observation
-carries the only inference this section draws, and it is a narrow one: the wait
-falls inside the runtime, between our response being handed over and the
-document being created. It does not say what the runtime is doing during it.
+The response-lifetime negative is worth keeping on its own: it confirms
+behaviourally what `asset_responses_windows.go`'s comment previously only
+assumed, that the runtime takes its own references at `PutResponse`.
 
-**Suspected, on someone else's authority, and not confirmed here.**
+**Two things the NetLog settled that no behavioural probe could.** First, proxy
+auto-config was the leading suspect before the capture - Chromium carries a
+literal `kDelayAfterNetworkChangesMs = 2000` and WPAD auto-detect is on for this
+machine - and the capture killed it outright: the `wpad:80` lookup failed in
+about 10 ms and the proxy resolved to `DIRECT` well before the document was
+served. Second, `--host-resolver-rules` was passed and **silently ignored**:
+`127.0.0.1` appears nowhere in the capture. That matters beyond this bug.
+[`get_AdditionalBrowserArguments`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2environmentoptions)
+documents that WebView2 ignores switches it blocks or cannot parse, without
+saying which - so a behavioural probe built on a Chromium flag cannot distinguish
+"not the cause" from "never applied", and two runs were spent learning only that.
+
+Upstream:
 [WebView2Feedback #2381](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381)
-reports the same two-second shape for a virtual host whose name does not
-resolve, and *attributes* it to a network timeout. That attribution is their
-reading of their own repro, not a mechanism anything above establishes: they use
-`SetVirtualHostNameToFolderMapping` where mullion answers `WebResourceRequested`
-itself, and no measurement listed here tells a name-resolution wait apart from
-any other two-second wait. The issue is tagged bug / priority-low / tracked, and
-is not fixed. Weaker, and recorded only so it is not rediscovered as news:
-[WebView2Feedback #3398](https://github.com/MicrosoftEdge/WebView2Feedback/issues/3398)
-reports a 1-2 second slowdown after 8-10 loads through `WebResourceRequested`,
-tracked and unexplained. It resembles the retry chains in issue #77, but nothing
-connects the two.
+reports the same shape for `SetVirtualHostNameToFolderMapping` and attributes it
+to a name lookup - which the capture here confirms for the
+`WebResourceRequested` path as well. It is tagged bug / priority-low / tracked
+and has been open since 2022. The workaround offered there is a hosts-file entry,
+which an application cannot ask of its users; `.localhost` needs nothing from the
+machine. Note that the Microsoft engineer's advice on that issue - use
+`*.example` - does not work, and has now been contradicted four times including
+by the `.test` measurement above.
 
-**A probe that was staged and then withdrawn, because it could not have
-answered.** The obvious next step looked like passing
-`--host-resolver-rules=MAP mullion.local ~NOTFOUND` through
-`Config.BrowserArguments`, to make the resolver answer at once instead of
-waiting. It was written and then removed unrun, for three reasons that are worth
-keeping so nobody re-stages it:
+**The fix is not applied yet, and the obstacle is worth stating.** Changing
+`defaultVirtualHost` to `mullion.localhost` fails `TestNoNetworkListener`: that
+test is the no-port promise's guard (decisions/0002), it greps the tree for
+loopback literals, and it reads the "localhost" inside the new default as one.
+Six tests fail in total; the other five pin the current default and are ordinary
+updates. So the change is not a one-line default swap - it needs the guard taught
+to tell a virtual host name from a loopback URL, without weakening what it
+catches. That is a decision record's worth of work, not a rename.
 
-- **The instrument is unverified.** There is no report anywhere - docs,
-  WebView2Feedback, or otherwise - of `--host-resolver-rules` being passed to
-  WebView2, working or ignored. And
-  [`get_AdditionalBrowserArguments`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2environmentoptions)
-  states that switches important to WebView functionality are ignored, that some
-  features are blocked internally, and that a switch which fails to parse is
-  ignored - all of it **silently**. A blocked switch and a switch that worked and
-  changed nothing produce the same observation, so a null result would have meant
-  nothing at all.
-- **The form was wrong.** The only workaround anyone has confirmed for #2381's
-  shape is a hosts-file entry, which is a *successful* resolution to a reachable
-  address. `~NOTFOUND` is a *fast failure*. Those separate two different
-  mechanisms, and the staged form could not reproduce the one thing known to
-  work. `MAP mullion.local 127.0.0.1` would have been the first form to try.
-- **The hypothesis it tested is already weak, on our own data.** Chromium forces
-  `.local` lookups onto the system resolver (`ResemblesMulticastDNSName` in
-  `net/dns/host_resolver_manager.cc`) while `.test` is eligible for the built-in
-  async resolver. Those are two materially different code paths, and the
-  measurements above say they cost the same to within ~10 ms. That is the
-  strongest evidence against name resolution being the wait, and it is ours, not
-  a third party's.
-
-**What replaced it as the leading candidate: proxy auto-config.** Chromium's
-`configured_proxy_resolution_service.cc` carries a literal
-`kDelayAfterNetworkChangesMs = 2000` - a deliberate stall before running proxy
-auto-config, surfacing in NetLog as `PAC_FILE_DECIDER_WAIT` - and
-`pac_file_decider.cc` caps a failing `wpad` lookup at `kQuickCheckDelayMs = 1000`.
-It is the only candidate found with a documented two-second constant, which is
-what a 15 ms spread over five runs asks for, and it is host-name independent, so
-the `.local` / `.test` equivalence falls out of it rather than needing a
-coincidence. Third parties have tied it to WebView2 specifically with traces
-([#3707](https://github.com/MicrosoftEdge/WebView2Feedback/issues/3707), where a
-Microsoft engineer answered by recommending `--use-system-proxy-resolver`, and
-[#1432](https://github.com/MicrosoftEdge/WebView2Feedback/issues/1432), closed,
-with two independent confirmations that disabling auto-detect fixed it). On the
-machine these measurements were taken, WPAD auto-detect is **on**: the
-`DefaultConnectionSettings` flags byte under
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings\Connections`
-reads 9, i.e. bit 3 set, with no manual proxy and no PAC URL.
-
-Its unexplained part, stated so it is not glossed: the 2000 ms is a
-*post-network-change* stall, so it should cost once per browser process rather
-than once per navigation. Every measurement above is a startup navigation in a
-fresh process, which is exactly the population that cannot tell those apart.
-
-**A second candidate, which explains the position the first does not.** A
-request made at commit time, before document creation, would sit exactly where
-the gap sits. SmartScreen is the named suspect: on
-[#3398](https://github.com/MicrosoftEdge/WebView2Feedback/issues/3398) a
-Microsoft engineer read a submitted ETW trace and answered *"the trace suggest
-that it was SmartScreen that could not keep up with the repeated navigations"*,
-recommending `IsReputationCheckingRequired=false` or
-`--disable-features=msSmartScreenProtection`. No published figure of two seconds,
-and reputation results should cache. The two candidates compose: a reputation
-lookup is the kind of request that would queue behind a proxy decision.
-
-**The experiment that should be run instead.** Change the instrument, not the
-flag. `--log-net-log` and `--net-log-capture-mode` are both on the
-[documented WebView2 flags list](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/webview-features-flags)
-and can be passed through the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
-environment variable, so no rebuild is needed. One startup navigation, then read
-the timeline between `put_Response` and the `style.css` request in
-[the NetLog viewer](https://netlog-viewer.appspot.com/): a
-`PAC_FILE_DECIDER_WAIT` span of ~2000 ms names the first candidate, a
-`HOST_RESOLVER_MANAGER_JOB` for the virtual host of ~2000 ms revives the third,
-and nothing at all in the window kills both in one run and moves the search to
-the second. That last outcome is why this beats flipping a flag: a behavioural
-probe that changes nothing tells you only that one thing was not it, whereas the
-NetLog either names the span or proves the wait is not in the network stack at
-all.
-
-The gap is issue #85. It also bounds issue #77, an in-origin navigation that
-aborts and often never commits, in that every abort measured so far fired inside
-this two-second window. Whether that makes them one bug or two is open.
-
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new asset-serving subsection records the measured two-second gap between serving the main document and the first subresource request, the four negatives that rule out Content-Length, COM lifetime, injected scripts and the host name, and why the host-resolver probe was staged and then withdrawn unrun - the switch is unverified on WebView2 and silently ignorable, the form was wrong, and our own .local/.test equivalence already weakens the hypothesis it tested. Proxy auto-config (PAC_FILE_DECIDER_WAIT, a literal 2000 ms in Chromium) leads instead, with a commit-time request such as SmartScreen second, and the experiment that should be run is a NetLog capture rather than another flag (issue #85, and its overlap with issue #77).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the two-second gap is resolved - a NetLog capture named it as a HOST_RESOLVER_MANAGER_JOB for the virtual host running 2.007 s, and moving the host to a .localhost name (RFC 6761, never sent to the network) collapses it to 11-79 ms and takes issue #77's aborts with it (16 of 16 in-origin navigations commit where 45 consecutive ones had aborted). Records the six negatives, the fact that --host-resolver-rules is silently ignored by WebView2, and why the default cannot simply be renamed: TestNoNetworkListener reads the "localhost" in it as a loopback literal.
