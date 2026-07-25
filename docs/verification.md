@@ -153,14 +153,17 @@ a pass/fail with an observable result — "looks fine" is not a result.
       A non-http(s) scheme (`window.open('mailto:…')`) does nothing, and the log
       says `new window dropped, unsupported scheme` (decisions/0022).
 - [ ] **The window still answers while the browser starts** (issue #74,
-      decisions/0029). The one check that would establish the symptom that change
-      was made against, which has never been observed. Close every window of the
-      default browser so the next launch is a cold start, then click an external
-      link and — without waiting for the browser — drag the title bar and press a
-      caption button. Both must respond at once: the launch runs on a worker, so
-      the message loop is never blocked on it. The browser still opens.
-      `external open dropped` must not appear; that line means all eight in-flight
-      slots were taken, which one click cannot do.
+      decisions/0029). The user-visible half of that change; the timing half was
+      measured with a probe and is in 0029's Evidence (230 ms on a launch that
+      starts the browser, and the handler itself below the clock's resolution).
+      Kill every process of the default browser so the next launch is a cold
+      start, then click an external link and — without waiting for the browser —
+      drag the title bar and press a caption button. Both must respond at once.
+      Note that 230 ms is a narrow window to aim at by hand: catching it takes
+      deliberate effort, and failing to catch it proves nothing either way, which
+      is why the probe exists. The browser still opens, and `external open
+      dropped` must not appear — that line means all eight in-flight slots were
+      taken, which one click cannot do.
 - [ ] **`Config.PinNavigationToOrigin` cancels off-origin top navigation**
       (opt-in — only when the field is set). With the gate on, a top-frame
       navigation to a foreign origin — an external `https://` link with no

@@ -221,8 +221,16 @@ time that has happened in as many records. Thirteen mutants are now recorded
 killed, each by the case that owns it, including seven for the rules above that
 did not exist when the first version was written.
 
-Not verified live. The change alters the text of diagnostic lines that only
-appear when a frontend throws, and no run has produced one; the next live report
-that carries a JS error exercises it.
+**Verified live**, `examples/basic`, runtime 150.0.4078.83, 2026-07-25. A frontend
+throw whose message carries a URL with a query reached the log intact:
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - Message protects the http(s) URLs inside a message by delegating each run to URL (issue #80), which fires and answers the trip-wire decisions/0025 set. Rewritten after an eight-agent audit found the split re-opened 0025's host forgery three ways - a run cut by TAB/LF/CR, a value bounded before it is scanned, and two URLs welded at a folded seam - and four claims in the first version that the code did not support.
+```
+level=ERROR msg="mullion: frontend diagnostic error, message=Uncaught Error: Failed to fetch dynamically imported module: https://mullion.local/app/main.js?"
+```
+
+The host is whole, the path is whole, the `?` records that a query was there, and
+the query's value - `token=s3cr3t` in the thrown string - is gone. That is the
+line issue #80 was opened about, which before this change read `httpmain.js`;
+both halves of the trade this record makes are visible in one line.
+
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - Message protects the http(s) URLs inside a message by delegating each run to URL (issue #80), which fires and answers the trip-wire decisions/0025 set. Rewritten after an eight-agent audit found the split re-opened 0025's host forgery three ways - a run cut by TAB/LF/CR, a value bounded before it is scanned, and two URLs welded at a folded seam - and four claims in the first version that the code did not support. Verified live the same day: a thrown JS error naming a URL with a token in its query reached the log with the host whole and the query dropped.

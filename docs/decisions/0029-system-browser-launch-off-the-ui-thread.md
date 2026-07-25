@@ -24,14 +24,14 @@ application has started. While it does, the message loop is not pumping, so the
 frameless window stops answering — no drag, no caption buttons, no resize — and
 the runtime is still waiting on the handler to return.
 
-**How long it blocks has not been measured here** (issue #74 says so in its own
-body, and this record does not improve on it). What is established is the call
-path above and `ShellExecuteW`'s documented synchronous contract; the duration on
-a cold default browser is an inference from that, not an observation. The fix is
-worth making on the structure alone — a UI thread that can be parked by an
-external process for an unknown interval is the defect, whatever the interval
-turns out to be — but the size of the symptom is unverified and the live check
-below is what would establish it.
+**How long it blocks had not been measured when this record was first written**
+(issue #74 says so in its own body, and the first version of this record did not
+improve on it). It has been measured since, and the number is in the Evidence:
+**230 ms** on the first launch after the browser process was killed, 18 ms on the
+next one. The fix is worth making on the structure alone — a UI thread that can
+be parked by an external process for an unknown interval is the defect, whatever
+the interval turns out to be — but it is worth knowing that the interval is a
+seventh of a second rather than a frame.
 
 ## Decision
 
@@ -154,12 +154,34 @@ lock removed; the apartment entered but never balanced; the bound removed; the
 slot never released; the dropped launch silenced; `New` leaving the slots nil;
 and the test seam made asynchronous.
 
-**Not verified live.** The symptom this record is about — a window that stops
-dragging while a cold browser starts — has never been observed, and neither has
-its absence after the change. `docs/verification.md` carries the check.
-`go test -race` does not build on the development machine (no cgo toolchain), so
-the goroutine's interaction with the UI thread has not been run under the race
-detector either; what it touches is `host.log` (already atomic and documented for
-concurrent use) and a buffered channel.
+**Verified live**, `examples/basic`, runtime 150.0.4078.83, 2026-07-25. A
+temporary probe timed the two halves separately — the time the WebView2 event
+handler spends inside `openInSystemBrowser`, and the time `ShellExecuteW` takes
+on the worker:
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - the system-browser launch moves to a bounded set of per-launch goroutines with their own STA apartment, so a WebView2 event handler no longer parks the UI thread on ShellExecuteW (issue #74); Config.Logger's concurrency promise is written down rather than changed.
+```
+new window routed to system browser, user_initiated=true, uri=https://example.com/
+PROBE ui thread held for 0s
+PROBE shellexecute worker took 230.5514ms      <- browser process killed beforehand
+...
+PROBE ui thread held for 0s
+PROBE shellexecute worker took 18.3118ms       <- browser already running
+```
+
+The handler's own time is below the clock's resolution on both launches. The
+230 ms is what the UI thread used to wait for, and it is the number the Context
+above could previously only infer.
+
+What the run did **not** establish is the symptom in the form a user would report
+it. The window was dragged during a launch, but only by aiming a snap gesture
+into the interval on purpose — which is an observation about the observer rather
+than about the message loop, and is precisely why the probe was written instead.
+The checklist item in `docs/verification.md` stands for anyone who wants the
+user-visible version.
+
+`go test -race` does not build on the development machine (no cgo toolchain). CI
+ran it on this branch and it passed (run 30171063722) — the first race-detector
+run over the new goroutine. What it touches is `host.log` (already atomic, and
+now documented for concurrent use) and a buffered channel.
+
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - the system-browser launch moves to a bounded set of per-launch goroutines with their own STA apartment, so a WebView2 event handler no longer parks the UI thread on ShellExecuteW (issue #74); Config.Logger's concurrency promise is written down rather than changed. Measured live the same day: the handler's own time is below the clock's resolution, and ShellExecuteW takes 230 ms on a launch that has to start the browser - the number the Context could previously only infer.
