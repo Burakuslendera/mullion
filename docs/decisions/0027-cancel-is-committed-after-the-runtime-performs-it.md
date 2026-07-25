@@ -228,10 +228,29 @@ and four separate ways past the layer's source guard. Every one of those is now
 killed, and the guards read a comment-stripped body, scope the `return` to the
 error branch it belongs to, and count the call sites they cannot see into.
 
-Not verified live. The failure this record is mostly about — `put_Cancel`
-returning an error — has never been observed and cannot be provoked from
-outside; what a live run can confirm is that the ordinary cancel path still
-cancels, still routes and still leaves the frontend alone, which is the existing
-`PinNavigationToOrigin` item in [verification.md](../verification.md).
+Verified live, `examples/basic` with `PinNavigationToOrigin` on, runtime
+150.0.4078.83, two runs on 2026-07-25. Nine off-origin navigations were
+cancelled across the two: each logged `navigation cancelled off origin, routed
+to system browser`, opened in the system browser, and completed with
+`cancelled navigation completed, status=14` — consumed, never fed to the
+error-surface machine. The frontend stayed where it was every time, the fallback
+surface never appeared, and both runs ended `SessionWarnCount=0,
+SessionErrorCount=0`.
+
+**That is also the first evidence for 0023's `unverified` premise.** 0023 could
+not say whether `put_Cancel` actually abandons the navigation. This record adds
+the observer that would say otherwise — a cancelled navigation completing with
+`success` warns `cancelled navigation committed anyway` — and across nine
+cancels it never fired: all nine reported `OperationCanceled`. Not a proof, but
+it is the difference between an assumption and an assumption with something
+watching it.
+
+`cancelled navigation forgotten` never fired either, on either half, so nothing
+in those runs had four cancels outstanding at once — consistent with the
+ordering the ledger was widened against being rare rather than absent.
+
+What could not be exercised live is the failure this record is mostly about:
+`put_Cancel` returning an error has never been observed and cannot be provoked
+from outside.
 
 > Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a cancel is committed only after put_Cancel succeeds, outstanding cancels are a bounded ledger rather than one slot, and an unreadable target is cancelled loudly (issue #73, closing the fail-open half of 0023). Rewritten the same day after an eight-agent audit: the ledger evicts on occupancy and logs after it writes, both halves report what they drop, and four claims the first draft inherited or invented - the startup-show-gate chain, 0021's probe as evidence for concurrent cancels, the id-less branch's safety, and the double-open being gone - are withdrawn or corrected.
