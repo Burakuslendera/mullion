@@ -189,10 +189,20 @@ unattributed absorb dropped to debug fails
 attributed absorb raised to warn fails `an attributed straggler is absorbed
 quietly`.
 
-Not verified live. The change alters log levels and line text only; the
-`examples/basic` in-origin-navigation item in
-[verification.md](../verification.md) reads the affected lines and was extended
-with the warn count, `observed` for the headless behaviour and `unverified`
-for the live log.
+Verified live, `examples/basic`, runtime 150.0.4078.83, 2026-07-25. One click on
+an in-origin link put the runtime into a navigate/abort loop that ran until the
+window was closed: **23 aborts, ids 3 to 25**, each reported exactly once, at
+debug, as `navigation aborted, not arming the error surface, status=9, id=<n>`.
+No `navigation failed` line, no line at warn level anywhere in the run, and
+`SessionWarnCount=0, SessionErrorCount=0` in the startup summary. The frontend
+stayed on screen and the fallback surface never appeared. The same run under the
+pre-fix code would have produced 23 warnings, each contradicted by the line
+below it - issue #79's report, at scale.
+
+A first run with slow clicks (several seconds apart) produced 17 in-origin
+navigations that all committed and never aborted, which is the race 0024
+describes; the abort reproduces when the click lands while the previous
+navigation is still in flight. That run is the negative control: it warned zero
+times too, so the rule does not merely silence the suppressed path.
 
 > Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a failed completion is reported once by the branch that classified it, at the level that classification deserves (issue #79); the warning moves into armErrorSurface and 0020's unattributed absorb keeps its warning.
