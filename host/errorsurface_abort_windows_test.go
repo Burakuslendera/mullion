@@ -32,7 +32,7 @@ func TestErrorSurfaceAbortDoesNotArmWhenAssetsAreServedInProcess(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 	// The start the completion below belongs to - issue #72's sequence. The gate
 	// is off in this config, so this only records the target.
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3, true)
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3)
 
 	if noteFail(host, 3) {
 		t.Fatal("an aborted navigation must not ask for the fallback surface when mullion serves the assets itself")
@@ -53,7 +53,7 @@ func TestErrorSurfaceAbortStillArmsWhenTheCallerServesTheURL(t *testing.T) {
 	host, _ := newSurfaceHost(t)
 	// The start has to be recorded, or the exemption is refused on the id and
 	// this test would pass with the mode condition deleted.
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3, true)
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3)
 
 	if !noteFail(host, 3) {
 		t.Fatal("an aborted navigation against a caller-served URL must still show the fallback surface")
@@ -69,7 +69,7 @@ func TestErrorSurfaceOtherFailuresStillArmInProcess(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	// Recorded so this reaches the status check: without a start the exemption
 	// is refused on the id and the assertion below would hold either way.
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3, true)
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3)
 
 	if !host.noteNavigationOutcome(false, statusNone, 3) {
 		t.Fatal("only an abort is benign in process; another failure must still arm")
@@ -97,7 +97,7 @@ func TestErrorSurfaceAbortWithoutIdentityStillArms(t *testing.T) {
 func TestErrorSurfaceAbortOffOriginStillArms(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	// Gate off: this start is recorded, never cancelled and never routed.
-	host.noteAndGateNavigation("https://evil.example/", 3, true)
+	host.noteAndGateNavigation("https://evil.example/", 3)
 
 	if !noteFail(host, 3) {
 		t.Fatal("an aborted off-origin navigation must still show the fallback surface")
@@ -112,8 +112,8 @@ func TestErrorSurfaceAbortOffOriginStillArms(t *testing.T) {
 // *it* was going - so it falls through and arms, the safe direction.
 func TestErrorSurfaceAbortWithAStaleIdStillArms(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/a.html", 3, true)
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/b.html", 4, true)
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/a.html", 3)
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/b.html", 4)
 
 	if !noteFail(host, 3) {
 		t.Fatal("an abort whose id is not the last start's must arm")
@@ -173,7 +173,7 @@ func TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted(t *testing.T) {
 	}
 
 	// The surface is the document on screen. Its Retry aborts in process.
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3, true)
+	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3)
 	if noteFail(host, 3) {
 		t.Fatal("the aborted Retry must not re-navigate")
 	}
@@ -190,14 +190,12 @@ func TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted(t *testing.T) {
 func TestGateCancelledCompletionDoesNotArmTheSurface(t *testing.T) {
 	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
 
-	// The gate cancels a foreign navigation and records its id. Routing the
-	// target is not this test's concern and does not happen: every test host
-	// stubs the system-browser seam (newTestHost, issue #76).
-	if !host.shouldCancelNavigation("https://evil.example/", 7, true) {
+	// The gate cancels a foreign navigation and, once the runtime confirms it,
+	// enters it in the ledger. Routing the target is not this test's concern and
+	// does not happen: every test host stubs the system-browser seam
+	// (newTestHost, issue #76).
+	if !cancelNavigation(host, "https://evil.example/", 7, true) {
 		t.Fatal("gate did not cancel a foreign navigation")
-	}
-	if host.cancelledNavID != 7 {
-		t.Fatalf("cancelledNavID = %d, want 7", host.cancelledNavID)
 	}
 
 	// Its OperationCanceled completion is consumed - the error-surface machine is
@@ -209,8 +207,10 @@ func TestGateCancelledCompletionDoesNotArmTheSurface(t *testing.T) {
 		t.Fatalf("the gate's own cancel armed the error surface: active=%v pending=%v loading=%v",
 			host.errorSurfaceActive, host.errorSurfacePending, host.errorSurfaceLoading)
 	}
-	if host.cancelledNavID != 0 {
-		t.Fatalf("cancelledNavID = %d after the completion, want 0 (cleared)", host.cancelledNavID)
+	// The entry is gone: a second completion for the same id has nothing to
+	// match, so a stale id cannot swallow a later navigation's outcome.
+	if host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 7) {
+		t.Fatal("the ledger entry survived its own completion")
 	}
 
 	// An unrelated completion is not consumed, and a genuinely foreign failure in
@@ -236,7 +236,7 @@ func TestNoteAndGateNavigationNeverCancelsTheSurface(t *testing.T) {
 	// The surface's own start reported as an empty URI (a GetUri failure or the
 	// runtime erasing the data: URI) is claimed, and must NOT be cancelled even
 	// though "" is off-origin to the gate.
-	if host.noteAndGateNavigation("", 4, false) {
+	if host.noteAndGateNavigation("", 4) {
 		t.Fatal("the gate cancelled the surface's own navigation (empty URI)")
 	}
 	if host.errorSurfacePending {
@@ -244,7 +244,7 @@ func TestNoteAndGateNavigationNeverCancelsTheSurface(t *testing.T) {
 	}
 
 	// Outside the claim window, a foreign navigation is still cancelled.
-	if !host.noteAndGateNavigation("https://evil.example/", 5, true) {
+	if !host.noteAndGateNavigation("https://evil.example/", 5) {
 		t.Fatal("the gate did not cancel a foreign navigation outside the claim")
 	}
 }

@@ -11,7 +11,8 @@ import "github.com/Burakuslendera/mullion/internal/webview2"
 // errorsurface_claim_windows.go. The seam the PinNavigationToOrigin gate meets
 // this machine through (decisions/0023) lives here, because its whole reason for
 // existing is the interaction: a cancelled navigation's completion never reaches
-// the machine below.
+// the machine below. The ledger that decides which completions those are is
+// navigationcancel_windows.go.
 //
 // The rules themselves are decisions 0017, 0020, 0021, 0024 and 0026.
 // Everything here runs on the UI thread, from the navigation callbacks, so none
@@ -77,27 +78,10 @@ func navigationFailureFields(status webview2.WebErrorStatus, navigationID uint64
 	return "status=" + formatInt32(int32(status)) + ", id=" + formatUint64(navigationID)
 }
 
-// noteGateCancelledOutcome intercepts the completion of a navigation the
-// PinNavigationToOrigin gate cancelled (decisions/0023). The runtime completes a
-// put_Cancel'd navigation with OperationCanceled; that is not a load failure -
-// the cancel was deliberate, the foreign target was routed to the system browser,
-// and the current document stays - so this completion must not be reported as a
-// failure, resynced or fed to the error-surface machine, which would read a
-// foreign failure as "navigate to the fallback surface" and tear down the live
-// frontend. It reports whether it consumed the completion; the id is cleared so a
-// later navigation reusing state cannot inherit it (ids are monotonic, so it will
-// not recur, but clearing keeps the slot honest).
-func (host *Host) noteGateCancelledOutcome(success bool, status webview2.WebErrorStatus, navigationID uint64) bool {
-	if navigationID == 0 || navigationID != host.cancelledNavID {
-		return false
-	}
-	host.cancelledNavID = 0
-	if !success {
-		host.log.Debug("mullion: cancelled navigation completed, " + navigationFailureFields(status, navigationID))
-	}
-	return true
-}
-
+// The completion of a navigation the PinNavigationToOrigin gate cancelled never
+// reaches the machine below: noteGateCancelledOutcome, in
+// navigationcancel_windows.go, consumes it first (decisions/0023, 0027).
+//
 // The NavigationStarting half - the surface's claim on a start, the navigation
 // target the abort exemption reads back, and the gate seam that lets a claimed
 // start through uncancelled - is in errorsurface_claim_windows.go. It was here.

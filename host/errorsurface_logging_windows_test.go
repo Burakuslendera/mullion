@@ -105,7 +105,7 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 			name:    "an abort mullion served itself is expected and handled",
 			newHost: func(t *testing.T) (*Host, *captureLogger) { return newTestHost(t, Config{}) },
 			preamble: func(t *testing.T, host *Host) {
-				host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3, true)
+				host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3)
 			},
 			complete: func(host *Host) bool { return noteFail(host, 3) },
 			want:     "level=DEBUG msg=mullion: navigation aborted, not arming the error surface, status=9, id=3",
@@ -222,7 +222,7 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 // succeeded, because then there is no failure to report.
 func TestGateCancelledCompletionIsReportedWithItsNavigation(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
-	if !host.shouldCancelNavigation("https://evil.example/", 7, true) {
+	if !cancelNavigation(host, "https://evil.example/", 7, true) {
 		t.Fatal("the gate did not cancel a foreign navigation")
 	}
 
@@ -241,17 +241,22 @@ func TestGateCancelledCompletionIsReportedWithItsNavigation(t *testing.T) {
 		t.Fatalf("SessionWarnCount = %d, want 0: the host asked for this cancel", got)
 	}
 
-	if !host.shouldCancelNavigation("https://evil.example/other", 8, true) {
+	// A cancelled navigation that completes *successfully* did not abandon
+	// anything: a document loaded. It is not consumed - the normal path still
+	// owes it a bounds sync, the diagnostic eval and the machine - and the host
+	// says so, because decisions/0023 records "that put_Cancel actually abandons
+	// it" as unverified and this is the line that would disprove it (issue #73).
+	if !cancelNavigation(host, "https://evil.example/other", 8, true) {
 		t.Fatal("the gate did not cancel the second foreign navigation")
 	}
-	quiet := linesWrittenBy(t, logger, func() {
+	committed := linesWrittenBy(t, logger, func() {
 		consumed = host.noteGateCancelledOutcome(true, statusNone, 8)
 	})
-	if !consumed {
-		t.Fatal("a successful completion for a cancelled navigation must still be consumed")
+	if consumed {
+		t.Fatal("a completion that reported success was swallowed as a cancel")
 	}
-	if len(quiet) != 0 {
-		t.Fatalf("a completion that did not fail wrote a failure report:\n%s", strings.Join(quiet, "\n"))
+	if len(committed) != 1 || committed[0] != "level=WARN msg=mullion: cancelled navigation committed anyway, the cancel did not take, id=8" {
+		t.Fatalf("cancel-did-not-take report:\n%s", strings.Join(committed, "\n"))
 	}
 }
 
@@ -271,7 +276,7 @@ func TestSuppressedAbortsDoNotInflateSessionWarnCount(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 
 	for id := uint64(1); id <= 6; id++ {
-		host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", id, true)
+		host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", id)
 		if noteFail(host, id) {
 			t.Fatalf("suppressed abort %d asked for the fallback surface", id)
 		}

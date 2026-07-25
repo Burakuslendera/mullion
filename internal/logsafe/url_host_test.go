@@ -95,12 +95,13 @@ func TestIsHostnameShaped(t *testing.T) {
 // mechanisms: the URL branch refuses a host that is not printable ASCII and
 // percent-encodes the path, the fallback goes through Message, which strips.
 //
-// The stronger no-whitespace guarantee holds on the URL branch only. Message
-// folds a control byte to a space and joins on spaces - long-standing behaviour
-// this change deliberately does not touch, because the non-http(s) reduction has
-// to stay byte-identical (issue #56's ":unknown", decisions/0021's data: form).
-// So a value that reaches the fallback may contain a space; a reassembled URL
-// may not, which is what keeps a host from forging a second log field.
+// The stronger no-whitespace guarantee holds on the URL branch only. The plain
+// reduction folds a control byte to a space and joins on spaces - long-standing
+// behaviour neither issue #78 nor #80 touches, because the values issue #56's
+// ":unknown" and decisions/0021's data: form were verified against have to stay
+// where they are. So a value that reaches the fallback may contain a space; a
+// reassembled URL may not, which is what keeps a host from forging a second log
+// field.
 func TestURLOutputCarriesNoControlBytes(t *testing.T) {
 	for _, in := range []string{
 		"https://example.com/a\x1b[2Jb",

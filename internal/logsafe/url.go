@@ -15,17 +15,22 @@ const URLLimit = 160
 const truncationMarker = "..."
 
 // URL reduces an http/https URL to the part that identifies a navigation -
-// scheme, host and path - and hands everything else to Message.
+// scheme, host and path - and hands everything else to the plain reduction.
 //
-// A URL is not a filesystem path, and Message's path sanitizer mangles one.
-// isPathStart reads a Windows drive letter as <alpha> ':' <separator>, which is
-// what "http://" and "https://" both contain - at the 'p' and at the 's' - and
-// reads "//" as a UNC start, which every scheme://host URL contains. Either
-// match makes the rest of the URL a path span, and FileName reduces a span to
-// its last segment, so the host - the one field that says *where* a navigation
-// went - is deleted (issue #78):
+// A URL is not a filesystem path, and the path sanitizer mangles one. isPathStart
+// reads a Windows drive letter as <alpha> ':' <separator>, which is what
+// "http://" and "https://" both contain - at the 'p' and at the 's' - and reads
+// "//" as a UNC start, which every scheme://host URL contains. Either match
+// makes the rest of the URL a path span, and FileName reduces a span to its last
+// segment, so the host - the one field that says *where* a navigation went - is
+// deleted (issue #78):
 //
-//	Message("https://mullion.local/index.html") == "httpindex.html"
+//	messagePlain("https://mullion.local/index.html") == "httpindex.html"
+//
+// Message no longer does that: it finds the http(s) runs inside a value and
+// sends each one here (issue #80, decisions/0028). This function is still the
+// right call for a field whose value *is* a URL, because it bounds the whole
+// value and refuses to print a host it cannot print in full.
 //
 // The contract this owes its reader is narrow, and worth stating, because a
 // diagnostic that is confidently wrong is worse than one that is obviously
@@ -46,15 +51,21 @@ const truncationMarker = "..."
 //     distinguishable - which is what issue #77 needs from these lines.
 //   - a value cut to fit ends in "..." so a reader can tell that it was.
 //
-// Everything else falls back to Message: a value that is not http(s) to begin
-// with, one that does not parse, an authority-less form ("http:evil.example",
-// "http:/C:/Users/alice/x"), and any host failing the rules above. That
-// fallback is load-bearing in both directions. A file: URL's path really is a
-// local filesystem path and must still collapse to its file name, and the
-// non-http(s) reduction must not move at all: the empty source still has to
-// reduce to ":unknown" through urlOrigin - the value issue #56's live probe was
-// read against - and decisions/0021's data: observation rests on the reduction
-// it was verified with.
+// Everything else falls back to the plain reduction: a value that is not
+// http(s) to begin with, one that does not parse, an authority-less form
+// ("http:evil.example", "http:/C:/Users/alice/x"), and any host failing the
+// rules above. That fallback is load-bearing. A file: URL's path really is a
+// local filesystem path and must still collapse to its file name; the empty
+// source still has to reduce to ":unknown" through urlOrigin - the value issue
+// #56's live probe was read against - and decisions/0021's data: observation
+// rests on the reduction it was verified with. All three still hold.
+//
+// What did move, and is recorded in decisions/0028: a non-http(s) value that
+// *wraps* an http(s) one - "blob:https://x/y", a data: URI whose payload quotes
+// a URL - now shows the origin it wraps, because the first fallback below goes
+// through Message rather than past it. The three fallbacks after it do not, and
+// must not: they keep the scheme on the value they hand back, so Message would
+// send it here again for ever.
 func URL(raw string) string {
 	// Gate on the literal scheme, not the parsed one. url.Parse accepts forms
 	// carrying no authority at all - "http:evil.example" (opaque) and
@@ -63,8 +74,18 @@ func URL(raw string) string {
 	// directory. Neither is a target a browser would hand back, so the old
 	// reduction is the right answer for both. The prefix test also skips
 	// url.Parse for the common non-URL case, which is every fallback caller.
+	// Message, not messagePlain: a value that does not begin with the scheme is
+	// not a URL this can reduce, but it may still carry one - "blob:https://x/y"
+	// wraps an origin, and so does a sentence a caller passed here by mistake.
+	// Message is where those are found. It cannot loop back: whatever it hands
+	// on does begin with the scheme, and the fallbacks below that one all take
+	// messagePlain.
+	//
+	// boundForScan, not boundInput: this is the one path where a bounded value
+	// then has its URLs read, and a bound that cut one in half would hand
+	// Message a shortened host to print as a whole one.
 	if !hasHTTPPrefix(raw) {
-		return Message(boundInput(raw))
+		return Message(boundForScan(raw))
 	}
 
 	// From here the fallback reduces head, never raw. An http(s) value that fails
@@ -76,14 +97,14 @@ func URL(raw string) string {
 	head, hasQuery, hasFragment := splitURLMarks(raw)
 	parsed, err := url.Parse(head)
 	if err != nil || !isHostnameShaped(parsed.Host) {
-		return Message(boundInput(head))
+		return messagePlain(boundInput(head))
 	}
 
 	origin := parsed.Scheme + "://" + parsed.Host
 	// A host that cannot fit the budget is not printed at all rather than cut,
 	// because cutting it is exactly the failure this bound exists to prevent.
 	if len(origin) > URLLimit {
-		return Message(boundInput(head))
+		return messagePlain(boundInput(head))
 	}
 
 	reduced := origin + parsed.EscapedPath()
@@ -106,21 +127,53 @@ func URL(raw string) string {
 	// hunting for a test that covers it - the property is locked at
 	// isHostnameShaped, which is where it can actually be exercised.
 	if !isPrintableASCII(reduced) {
-		return Message(boundInput(head))
+		return messagePlain(boundInput(head))
 	}
 	return reduced
 }
 
-// boundInput bounds the fallback only, where the value goes to Message as-is: a
-// foreign data: or blob: URI is arbitrarily long and Message would otherwise
-// reduce, and log, all of it. Cutting the input is safe here in the way it is
-// not on the URL branch, because Message deletes the identifying part of the
-// value anyway - there is no host left for a reader to misread.
+// boundInput bounds a fallback whose value goes to messagePlain: a foreign
+// data: or blob: URI is arbitrarily long and the reduction would otherwise
+// reduce, and log, all of it. Cutting the input is safe on those paths in the
+// way it is not on the URL branch, because messagePlain deletes the identifying
+// part of the value anyway - there is no host left for a reader to misread.
+//
+// That justification is exactly what stops holding when the bounded value is
+// handed to something that keeps hosts. See boundForScan.
 func boundInput(raw string) string {
 	if len(raw) <= URLLimit {
 		return raw
 	}
 	return raw[:URLLimit]
+}
+
+// boundForScan bounds a value whose reduction will be scanned for URLs, which
+// boundInput alone cannot do safely.
+//
+// Cut a value at a fixed byte and the cut can land inside a host; Message then
+// reads what is left as a whole URL and prints a prefix of that host as an
+// origin. Padding chosen by whoever wrote the value puts the cut on a label
+// boundary, so "blob:https://cdn.<pad>.mullion.local.evil.example/x" logs as
+// "blob:https://cdn.<pad>.mullion.local" - a well-formed lie naming the trusted
+// origin, which is issue #78's rejected first attempt arriving through a
+// different door (decisions/0025, 0028).
+//
+// So a cut that interrupts a run takes the whole run with it. What remains is
+// shorter and says less, which is the direction this package fails in.
+func boundForScan(raw string) string {
+	bounded := boundInput(raw)
+	if len(bounded) == len(raw) {
+		return bounded
+	}
+	for index := len(bounded) - 1; index >= 0; index-- {
+		if isASCIISpace(bounded[index]) {
+			break
+		}
+		if hasHTTPPrefix(bounded[index:]) {
+			return bounded[:index]
+		}
+	}
+	return bounded
 }
 
 // hasHTTPPrefix reports whether raw literally begins with the http:// or https://

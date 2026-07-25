@@ -1,6 +1,6 @@
 # 0025. A URL reaching a log line is reduced as a URL, not as a filesystem path
 
-**Status:** Accepted
+**Status:** Accepted. Its trip-wire fired: [0028](./0028-message-keeps-the-urls-inside-it.md) teaches `Message` about the http(s) schemes, which this record rejected on the cost of auditing ~90 callers — the widening there leaves a message with no such URL reduced as it was, bar one narrow case it records, so the audit is a smaller question. `URL` keeps its job. Two statements below no longer hold: "the non-http(s) reduction is now frozen" — a value *wrapping* an http(s) URL, `blob:` and `filesystem:` among them, now shows the origin it wraps (the three specific re-checks that sentence names, `file:`, `:unknown` and 0021's `data:` form, were verified and do still hold) — and this record's implication that `URL` is the only way a host survives a log line (issue #80).
 
 ## Context
 
@@ -146,4 +146,4 @@ Not verified live. This change alters only the text of log lines, and the
 reads one of them was not run for it - `observed` for the headless behaviour,
 `unverified` for the live log. The next live run against issue #77 exercises it.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a URL reaching a log line is reduced as a URL and bounded after reduction, never before (issue #78); the clamp-then-parse first cut is recorded as rejected.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: status line extended by 0028 — the "teach Message about schemes" alternative this record rejected has landed, on terms that avoid the cost it was rejected for (issue #80); the body is unchanged, per the supersede rules.

@@ -103,6 +103,17 @@ window and routes an http/https target to the system browser (decisions/0022).
   turn into a dead window. `S_OK` means "the event was delivered", which is true whatever
   the callback did with it.
 
+One handler carries a fifth constraint of its own, and it is an ordering.
+`NavigationStarting` is the other half of the containment above: it asks the host
+whether to cancel, calls `put_Cancel` itself, and only when *that* call succeeds
+invokes a second host callback — `NavigationCancelledCallback` — which is where
+everything following from a cancel happens. A `put_Cancel` that fails warns, naming
+the navigation, and tells the host nothing: the navigation is going ahead, so it has
+to reach the host as an ordinary one rather than as a cancel that never took
+(decisions/0027). Both getters on this event report their own failure for the same
+reason — an unreadable URI arrives at a host gate as the empty string, which is no
+origin's, and a failed id read arrives as `0`, which no real navigation uses.
+
 ## Asset serving without a port
 
 Assets come from an `fs.FS` — typically a `go:embed` FS — served on a synthetic origin
@@ -226,4 +237,4 @@ express ownership in its type signature. Release too early and you get use-after
 behaviour that presents as a rendering bug rather than a memory bug; release too late,
 or never, and you get a leak that no test will fail on.
 
-> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: the Config.URL section now states what the socket/in-process difference means for a failed navigation - only an on-origin abort mullion served itself skips the fallback page (issue #72, decisions/0024).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the event-handler section now states the NavigationStarting ordering - the layer cancels first and notifies the host only when put_Cancel succeeds, and both getters report their own failure (issue #73, decisions/0027).

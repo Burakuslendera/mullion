@@ -10,6 +10,7 @@ package webview2
 
 import (
 	"errors"
+	"strconv"
 	"unsafe"
 )
 
@@ -65,17 +66,38 @@ func (browser *Browser) registerEvents() error {
 		// load-bearing value, and a URI read failing must not cost the id. A
 		// failed id read reports 0, which no real navigation uses - callers
 		// treat it as "identity unavailable" (decisions/0021).
-		uri, _ := args.GetUri()
+		//
+		// Both failures are reported. An unreadable URI is not cosmetic here:
+		// a host gate that decides on the target sees the empty string, which
+		// is no origin's, so it decides against a navigation it could not read
+		// (issue #73). That has to be diagnosable, and it was silent.
+		uri, err := args.GetUri()
+		if err != nil {
+			browser.reportWarning(err)
+		}
 		id, err := args.GetNavigationID()
 		if err != nil {
 			browser.reportWarning(err)
 		}
 		userInitiated, _ := args.GetIsUserInitiated()
 		redirected, _ := args.GetIsRedirected()
-		if browser.NavigationStartingCallback(uri, id, userInitiated, redirected) {
-			if err := args.PutCancel(true); err != nil {
-				browser.reportWarning(err)
-			}
+		if !browser.NavigationStartingCallback(uri, id, userInitiated, redirected) {
+			return
+		}
+		// Cancel first, tell the host second. A failed put_Cancel means the
+		// navigation is still going ahead, so the host must not act on a
+		// cancel that did not happen - no id to swallow the completion with,
+		// and no second copy of the target opened somewhere else (issue #73).
+		if err := args.PutCancel(true); err != nil {
+			// Named, because the bare HRESULT this used to report says neither
+			// that a cancel failed nor which navigation it was - and a failed
+			// cancel is the one event the whole split exists to handle
+			// correctly, so it has to be recognisable in a log.
+			browser.reportWarning(errors.Join(errors.New("cancel navigation "+strconv.FormatUint(id, 10)), err))
+			return
+		}
+		if browser.NavigationCancelledCallback != nil {
+			browser.NavigationCancelledCallback(uri, id, userInitiated)
 		}
 	}), core.AddNavigationStarting); err != nil {
 		return err
@@ -110,7 +132,14 @@ func (browser *Browser) registerEvents() error {
 		if browser.NewWindowRequestedCallback == nil {
 			return
 		}
-		uri, _ := args.GetUri()
+		// Reported for the same reason as the navigation getter's: an unreadable
+		// URI reaches the host as the empty string, where it is dropped as an
+		// unsupported scheme - a request that silently did nothing, with nothing
+		// to say why (issue #73).
+		uri, err := args.GetUri()
+		if err != nil {
+			browser.reportWarning(err)
+		}
 		userInitiated, _ := args.GetIsUserInitiated()
 		browser.NewWindowRequestedCallback(uri, userInitiated)
 	}), core.AddNewWindowRequested); err != nil {

@@ -112,6 +112,7 @@ and a bridge round-trip printed into the page.
 | [snap-sources.md](docs/snap-sources.md)                               | The 40 primary and secondary sources those findings rest on                       |
 | [lessons-and-dead-ends.md](docs/lessons-and-dead-ends.md)             | Approaches that were tried and abandoned, and why                                 |
 | [verification.md](docs/verification.md)                               | How to check a change actually works — "it compiles" is not acceptance            |
+| [bug-reports.md](docs/bug-reports.md)                                 | What a bug report has to contain, and how to gather it                            |
 
 ## Configuration
 
@@ -166,11 +167,27 @@ remote origin could otherwise call into your Go. If that load fails, mullion sho
 own controllable fallback surface rather than the browser's error page. Full
 reasoning: [decisions/0012](docs/decisions/0012-config-url-loopback.md).
 
+`PinNavigationToOrigin` is the other field worth a paragraph. Off by default; set it
+and a top-level navigation that leaves the trusted origin is cancelled instead of
+loading in the WebView, and an `http`/`https` target is handed to the system browser
+instead.
+mullion acts on that cancel only once the runtime confirms it took: if the runtime
+refuses it, the navigation goes ahead as an ordinary one and says so at warn, rather
+than loading the foreign document *and* opening a second copy in your browser
+([decisions/0027](docs/decisions/0027-cancel-is-committed-after-the-runtime-performs-it.md)).
+
 `Logger` takes pre-sanitised single strings — file system paths are reduced to
 their base name, and URLs to scheme, host and path, with the query and fragment
-dropped and only a bare `?` or `#` left to record that they were there. Messages
-can be forwarded verbatim without leaking a user path or a token someone put in a
-query string. `SlogLogger(*slog.Logger)` is provided.
+dropped and only a bare `?` or `#` left to record that they were there. A message
+that *contains* a URL — a JS error from `window.onerror`, a recovered panic naming
+the navigation it was handling — keeps it: every `http`/`https` run inside the
+message is reduced by that same URL rule rather than by the path rule, which used
+to delete the host
+([decisions/0028](docs/decisions/0028-message-keeps-the-urls-inside-it.md)).
+Messages can be forwarded verbatim without leaking a token someone put in a query
+string; the one thing they now print whole is a local path sitting inside an
+http(s) URL's own path — a dev server's `/@fs/` form does that — because a URL
+path is not reduced as a filesystem path. `SlogLogger(*slog.Logger)` is provided.
 
 ## Frontend API
 

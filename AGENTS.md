@@ -23,6 +23,7 @@ pull-request mechanics. The rules below are additional, not alternative.
 | **Why is it done this way, and what would change that?** | [docs/decisions/](./docs/decisions/) |
 | What was already tried, and why was it abandoned? | [docs/lessons-and-dead-ends.md](./docs/lessons-and-dead-ends.md) |
 | How do I prove a change actually works? | [docs/verification.md](./docs/verification.md) |
+| What does a bug report have to contain? | [docs/bug-reports.md](./docs/bug-reports.md) |
 | Build, test, style, pull-request expectations | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Frame and visual acceptance rules | [agents/window.md](./agents/window.md) |
 | Note and documentation lifecycle; external code intake | [agents/notes.md](./agents/notes.md) |

@@ -1,6 +1,6 @@
 # 0023. A top-level navigation off the trusted origin is cancelled, opt-in
 
-**Status:** Accepted
+**Status:** Accepted. Corrected by [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md): this record's gate commits to the cancel — remembering the id, routing the target — *before* `put_Cancel` is attempted and never learns whether it took, which fails open in three ways (issue #73). The gate's policy is unchanged; when it acts on it is.
 
 ## Context
 
@@ -94,7 +94,7 @@ COM args.
 - `host/systembrowser_windows_test.go` `TestShouldCancelNavigation`: an
   off-origin non-http(s) target is cancelled and dropped, never routed; the
   trusted origin is never cancelled.
-- `host/errorsurface_windows_test.go`: `TestGateCancelledCompletionDoesNotArmTheSurface`
+- `host/errorsurface_abort_windows_test.go`: `TestGateCancelledCompletionDoesNotArmTheSurface`
   - a cancelled navigation's `OperationCanceled` completion is consumed and never
   arms the surface, while an unrelated foreign failure still does;
   `TestNoteAndGateNavigationNeverCancelsTheSurface` - a surface start reported
@@ -104,4 +104,4 @@ COM args.
   (including a redirect), that `put_Cancel` actually abandons it, and that
   `ShellExecute` opens the routed target are `unverified` pending the live probe.
 
-> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: new record - the opt-in navigation-cancel gate that pins the top frame to the trusted origin (issue #6, the second half of 0014's follow-up).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: status line corrected by 0027 — the commit-before-confirmation ordering this record describes fails open (issue #73); the body and the gate's policy are unchanged, per the supersede rules.

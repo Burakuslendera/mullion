@@ -24,8 +24,10 @@ import (
 
 // logNavigationStarting records a navigation the runtime is about to begin. The
 // id is what ties this line to the completion that follows it, and the uri is
-// reduced with logsafe.URL rather than logsafe.Message because Message's path
-// sanitizer deletes the host of an http(s) URL (issue #78).
+// reduced with logsafe.URL because this field's value *is* a URL: URL bounds the
+// whole of it and refuses to print a host it cannot print in full
+// (decisions/0025). logsafe.Message would keep the host too since issue #80, but
+// it bounds nothing, and a runtime-supplied URI has no length this host chose.
 func (host *Host) logNavigationStarting(uri string, navigationID uint64, isUserInitiated, isRedirected bool) {
 	host.log.Debug("mullion: navigation starting, id=" + formatUint64(navigationID) +
 		", user_initiated=" + strconv.FormatBool(isUserInitiated) +
