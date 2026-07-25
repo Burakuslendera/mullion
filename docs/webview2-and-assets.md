@@ -284,18 +284,86 @@ reports a 1-2 second slowdown after 8-10 loads through `WebResourceRequested`,
 tracked and unexplained. It resembles the retry chains in issue #77, but nothing
 connects the two.
 
-**The next experiment, which has not been run.** Start the runtime with
+**A probe that was staged and then withdrawn, because it could not have
+answered.** The obvious next step looked like passing
 `--host-resolver-rules=MAP mullion.local ~NOTFOUND` through
-`Config.BrowserArguments` and re-measure the same five startup navigations. The
-rule makes the resolver answer immediately instead of waiting, and maps the name
-to nothing reachable, so the no-port guarantee is untouched. If the gap
-collapses, the wait was resolution and #2381's reading carries over to this code
-path; if it survives, #2381 is a different bug that happens to cost two seconds
-and the search reopens. Nothing already measured separates those two outcomes,
-which is why this probe and not another.
+`Config.BrowserArguments`, to make the resolver answer at once instead of
+waiting. It was written and then removed unrun, for three reasons that are worth
+keeping so nobody re-stages it:
+
+- **The instrument is unverified.** There is no report anywhere - docs,
+  WebView2Feedback, or otherwise - of `--host-resolver-rules` being passed to
+  WebView2, working or ignored. And
+  [`get_AdditionalBrowserArguments`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2environmentoptions)
+  states that switches important to WebView functionality are ignored, that some
+  features are blocked internally, and that a switch which fails to parse is
+  ignored - all of it **silently**. A blocked switch and a switch that worked and
+  changed nothing produce the same observation, so a null result would have meant
+  nothing at all.
+- **The form was wrong.** The only workaround anyone has confirmed for #2381's
+  shape is a hosts-file entry, which is a *successful* resolution to a reachable
+  address. `~NOTFOUND` is a *fast failure*. Those separate two different
+  mechanisms, and the staged form could not reproduce the one thing known to
+  work. `MAP mullion.local 127.0.0.1` would have been the first form to try.
+- **The hypothesis it tested is already weak, on our own data.** Chromium forces
+  `.local` lookups onto the system resolver (`ResemblesMulticastDNSName` in
+  `net/dns/host_resolver_manager.cc`) while `.test` is eligible for the built-in
+  async resolver. Those are two materially different code paths, and the
+  measurements above say they cost the same to within ~10 ms. That is the
+  strongest evidence against name resolution being the wait, and it is ours, not
+  a third party's.
+
+**What replaced it as the leading candidate: proxy auto-config.** Chromium's
+`configured_proxy_resolution_service.cc` carries a literal
+`kDelayAfterNetworkChangesMs = 2000` - a deliberate stall before running proxy
+auto-config, surfacing in NetLog as `PAC_FILE_DECIDER_WAIT` - and
+`pac_file_decider.cc` caps a failing `wpad` lookup at `kQuickCheckDelayMs = 1000`.
+It is the only candidate found with a documented two-second constant, which is
+what a 15 ms spread over five runs asks for, and it is host-name independent, so
+the `.local` / `.test` equivalence falls out of it rather than needing a
+coincidence. Third parties have tied it to WebView2 specifically with traces
+([#3707](https://github.com/MicrosoftEdge/WebView2Feedback/issues/3707), where a
+Microsoft engineer answered by recommending `--use-system-proxy-resolver`, and
+[#1432](https://github.com/MicrosoftEdge/WebView2Feedback/issues/1432), closed,
+with two independent confirmations that disabling auto-detect fixed it). On the
+machine these measurements were taken, WPAD auto-detect is **on**: the
+`DefaultConnectionSettings` flags byte under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings\Connections`
+reads 9, i.e. bit 3 set, with no manual proxy and no PAC URL.
+
+Its unexplained part, stated so it is not glossed: the 2000 ms is a
+*post-network-change* stall, so it should cost once per browser process rather
+than once per navigation. Every measurement above is a startup navigation in a
+fresh process, which is exactly the population that cannot tell those apart.
+
+**A second candidate, which explains the position the first does not.** A
+request made at commit time, before document creation, would sit exactly where
+the gap sits. SmartScreen is the named suspect: on
+[#3398](https://github.com/MicrosoftEdge/WebView2Feedback/issues/3398) a
+Microsoft engineer read a submitted ETW trace and answered *"the trace suggest
+that it was SmartScreen that could not keep up with the repeated navigations"*,
+recommending `IsReputationCheckingRequired=false` or
+`--disable-features=msSmartScreenProtection`. No published figure of two seconds,
+and reputation results should cache. The two candidates compose: a reputation
+lookup is the kind of request that would queue behind a proxy decision.
+
+**The experiment that should be run instead.** Change the instrument, not the
+flag. `--log-net-log` and `--net-log-capture-mode` are both on the
+[documented WebView2 flags list](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/webview-features-flags)
+and can be passed through the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
+environment variable, so no rebuild is needed. One startup navigation, then read
+the timeline between `put_Response` and the `style.css` request in
+[the NetLog viewer](https://netlog-viewer.appspot.com/): a
+`PAC_FILE_DECIDER_WAIT` span of ~2000 ms names the first candidate, a
+`HOST_RESOLVER_MANAGER_JOB` for the virtual host of ~2000 ms revives the third,
+and nothing at all in the window kills both in one run and moves the search to
+the second. That last outcome is why this beats flipping a flag: a behavioural
+probe that changes nothing tells you only that one thing was not it, whereas the
+NetLog either names the span or proves the wait is not in the network stack at
+all.
 
 The gap is issue #85. It also bounds issue #77, an in-origin navigation that
 aborts and often never commits, in that every abort measured so far fired inside
 this two-second window. Whether that makes them one bug or two is open.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new asset-serving subsection records the measured two-second gap between serving the main document and the first subresource request, the four negatives that rule out Content-Length, COM lifetime, injected scripts and the host name, and the host-resolver probe that has not yet been run (issue #85, and its overlap with issue #77).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new asset-serving subsection records the measured two-second gap between serving the main document and the first subresource request, the four negatives that rule out Content-Length, COM lifetime, injected scripts and the host name, and why the host-resolver probe was staged and then withdrawn unrun - the switch is unverified on WebView2 and silently ignorable, the form was wrong, and our own .local/.test equivalence already weakens the hypothesis it tested. Proxy auto-config (PAC_FILE_DECIDER_WAIT, a literal 2000 ms in Chromium) leads instead, with a commit-time request such as SmartScreen second, and the experiment that should be run is a NetLog capture rather than another flag (issue #85, and its overlap with issue #77).

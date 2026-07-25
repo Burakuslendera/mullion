@@ -74,9 +74,15 @@ type Config struct {
 	// same shape for a virtual host name that does not resolve and attributes it
 	// to the runtime waiting out a name lookup - an attribution borrowed from a
 	// different API (SetVirtualHostNameToFolderMapping) and not confirmed here.
-	// The probe that would settle it, --host-resolver-rules=MAP <host> ~NOTFOUND
-	// through BrowserArguments, had not been run when this was written. Issue #85
-	// carries the outcome; issue #77 lives inside the same window.
+	// That reading is now the weaker one, and this field is why: Chromium forces
+	// a .local lookup onto the system resolver and lets .test use its own async
+	// one, so renaming the host swapped resolver code paths entirely and cost the
+	// same 2.03 s. A --host-resolver-rules probe was staged against it and
+	// withdrawn unrun - the switch is unverified on WebView2, which silently
+	// ignores switches it blocks or cannot parse, so a null result would have
+	// been unreadable. Proxy auto-config leads instead (Chromium carries a
+	// literal 2000 ms stall before it), and it does not depend on this name at
+	// all. Issue #85 carries the outcome; issue #77 lives inside the same window.
 	VirtualHost string
 	// JSNamespace names the JavaScript global the host injects (window.<ns>) and
 	// prefixes the DOM attributes it relies on (data-<ns>-resize-edge). It must
