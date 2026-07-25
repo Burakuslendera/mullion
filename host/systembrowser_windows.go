@@ -41,25 +41,42 @@ func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 // NewWindowRequested (issue #6, decisions/0023). With the gate off (the default)
 // navigationOffOrigin is false for every uri, so this returns false and cancels
 // nothing.
-func (host *Host) shouldCancelNavigation(uri string, navigationID uint64, isUserInitiated bool) bool {
-	if !host.config.navigationOffOrigin(uri) {
-		return false
-	}
-	// Record the cancelled navigation's id: the runtime completes a put_Cancel'd
-	// navigation with OperationCanceled, and that completion must be read as a
-	// deliberate cancel, not a load failure that arms the error surface
-	// (noteGateCancelledOutcome, decisions/0023). A redirect shares the id, and a
-	// top-frame navigation completes before the next starts, so one slot suffices.
-	host.cancelledNavID = navigationID
-	if isExternalBrowserSafe(uri) {
+func (host *Host) shouldCancelNavigation(uri string) bool {
+	return host.config.navigationOffOrigin(uri)
+}
+
+// noteNavigationCancelled commits to a cancel the runtime has confirmed: it
+// enters the navigation in the cancelled ledger, so its completion is read as
+// cleanup rather than as a load failure, and hands an http/https target to the
+// system browser - any other scheme is dropped, the same containment and routing
+// as NewWindowRequested.
+//
+// Nothing here may run for a navigation that was not actually abandoned, which
+// is why it is a separate callback rather than the tail of the decision above
+// (issue #73, decisions/0027). Committing early meant a failed put_Cancel loaded
+// the foreign document *and* opened it in the browser *and* swallowed its
+// completion.
+//
+// An unreadable URI arrives as the empty string, which is no origin's, so the
+// gate has just cancelled a navigation it could not read. That is the
+// fail-closed direction and it is deliberate - a gate that lets through what it
+// cannot identify is not a gate - but it may have killed a legitimate in-origin
+// navigation, and nothing downstream can tell. It is the one drop worth a
+// warning; the webview2 layer reports the underlying getter failure alongside it.
+func (host *Host) noteNavigationCancelled(uri string, navigationID uint64, isUserInitiated bool) {
+	host.rememberCancelledNavigation(navigationID)
+	switch {
+	case uri == "":
+		host.log.Warn("mullion: navigation cancelled off origin, target unreadable, id=" +
+			formatUint64(navigationID))
+	case isExternalBrowserSafe(uri):
 		host.log.Debug("mullion: navigation cancelled off origin, routed to system browser, user_initiated=" +
 			strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.URL(uri))
 		host.openInSystemBrowser(uri)
-	} else {
+	default:
 		host.log.Debug("mullion: navigation cancelled off origin, unsupported scheme, uri=" +
 			logsafe.URL(uri))
 	}
-	return true
 }
 
 // isExternalBrowserSafe reports whether uri may be handed to the system browser.

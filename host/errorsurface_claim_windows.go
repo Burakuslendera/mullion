@@ -23,13 +23,17 @@ import "strings"
 // would tear down mullion's own fallback page the moment it was recognised. Split
 // from the callback so the claim-beats-gate rule and the gate are both
 // headless-testable (issue #6, decisions/0023).
+//
+// Deciding is all it does. What follows a cancel - remembering the id, routing
+// the target - happens in noteNavigationCancelled, which the runtime calls only
+// once the cancel has actually taken (decisions/0027).
 func (host *Host) noteAndGateNavigation(uri string, navigationID uint64, isUserInitiated bool) bool {
 	host.noteNavigationTarget(uri, navigationID)
 	if host.noteSurfaceNavigationStarting(uri, navigationID) {
 		host.log.Debug("mullion: error surface navigation identified, id=" + formatUint64(navigationID))
 		return false
 	}
-	return host.shouldCancelNavigation(uri, navigationID, isUserInitiated)
+	return host.shouldCancelNavigation(uri)
 }
 
 // noteNavigationTarget records where the navigation that is starting was going,

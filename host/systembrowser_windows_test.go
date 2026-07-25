@@ -58,6 +58,20 @@ func TestRouteNewWindowDropsUnsafeSchemes(t *testing.T) {
 	}
 }
 
+// cancelNavigation drives the pair of callbacks the runtime drives for one
+// NavigationStarting the gate wants cancelled: the decision, and - only if the
+// runtime's put_Cancel succeeded - the commit. Between them sits the call this
+// suite cannot make, which is the point of the split (issue #73,
+// decisions/0027): a test that wants the failed-cancel path simply does not call
+// the second half.
+func cancelNavigation(host *Host, uri string, navigationID uint64, isUserInitiated bool) bool {
+	if !host.shouldCancelNavigation(uri) {
+		return false
+	}
+	host.noteNavigationCancelled(uri, navigationID, isUserInitiated)
+	return true
+}
+
 // shouldCancelNavigation is the PinNavigationToOrigin gate at NavigationStarting.
 // Off (default) it never cancels; on, an off-origin navigation is cancelled, and
 // a non-http(s) target is dropped rather than routed. The trusted origin is
@@ -66,7 +80,7 @@ func TestRouteNewWindowDropsUnsafeSchemes(t *testing.T) {
 // ShellExecute call itself is live-only now (issue #76).
 func TestShouldCancelNavigation(t *testing.T) {
 	off, _ := newTestHost(t, Config{StartHidden: true})
-	if off.shouldCancelNavigation("https://evil.example/", 0, true) {
+	if cancelNavigation(off, "https://evil.example/", 0, true) {
 		t.Error("gate off: shouldCancelNavigation cancelled a navigation")
 	}
 
@@ -74,11 +88,11 @@ func TestShouldCancelNavigation(t *testing.T) {
 
 	// The trusted origin passes - the surface, SPA routing and in-origin links
 	// must never be cancelled.
-	if on.shouldCancelNavigation(on.config.trustedOrigin()+"/app", 1, true) {
+	if cancelNavigation(on, on.config.trustedOrigin()+"/app", 1, true) {
 		t.Error("gate on: cancelled an on-origin navigation")
 	}
 	// An off-origin non-http(s) target is cancelled and dropped, never routed.
-	if !on.shouldCancelNavigation("blob:https://evil.example/uuid", 2, false) {
+	if !cancelNavigation(on, "blob:https://evil.example/uuid", 2, false) {
 		t.Error("gate on: did not cancel an off-origin blob: navigation")
 	}
 	if !strings.Contains(logger.String(), "navigation cancelled off origin, unsupported scheme") {
@@ -105,7 +119,7 @@ func TestShouldCancelNavigation(t *testing.T) {
 func TestRoutingLogsNameTheHost(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
 
-	if !host.shouldCancelNavigation("https://evil.example/x?token=s3cr3t", 7, true) {
+	if !cancelNavigation(host, "https://evil.example/x?token=s3cr3t", 7, true) {
 		t.Fatal("gate on: an off-origin navigation must be cancelled")
 	}
 	host.routeNewWindow("http://popup.example/opened.html", true)
@@ -136,13 +150,13 @@ func TestSafeTargetsAreHandedToTheSystemBrowser(t *testing.T) {
 
 	// The gate cancels an off-origin http(s) navigation and routes it verbatim -
 	// query and all, since the user was going there.
-	if !host.shouldCancelNavigation("https://evil.example/x?q=1", 3, true) {
+	if !cancelNavigation(host, "https://evil.example/x?q=1", 3, true) {
 		t.Fatal("gate on: an off-origin navigation must be cancelled")
 	}
 	// A new window is routed without any gate involved (decisions/0022).
 	host.routeNewWindow("http://evil.example/popup", true)
 	// Neither path may hand over a scheme ShellExecute would resolve elsewhere.
-	if !host.shouldCancelNavigation("blob:https://evil.example/uuid", 4, false) {
+	if !cancelNavigation(host, "blob:https://evil.example/uuid", 4, false) {
 		t.Fatal("gate on: an off-origin blob: navigation must be cancelled")
 	}
 	host.routeNewWindow("javascript:alert(1)", true)

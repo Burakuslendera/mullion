@@ -39,7 +39,18 @@ type Browser struct {
 	// this again with the same id and isRedirected set. Returning true cancels
 	// the navigation - the runtime abandons it and the current document stays;
 	// that is the navigation-cancel gate (decisions/0023).
-	NavigationStartingCallback  func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool
+	NavigationStartingCallback func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool
+	// NavigationCancelledCallback fires after a navigation the callback above
+	// asked to cancel has actually been cancelled - put_Cancel returned success.
+	// It is where a host commits to the cancel: remembering the id so the
+	// resulting completion is not read as a load failure, and handing the target
+	// somewhere else. Doing that work from the callback above instead would
+	// commit to a cancel that may not have taken, which is issue #73: the
+	// document loads anyway, the target opens twice, and the completion of a
+	// navigation that succeeded is consumed as though it had been abandoned.
+	// The split mirrors the PutHandled guard on NewWindowRequested
+	// (decisions/0022), which has always worked this way.
+	NavigationCancelledCallback func(uri string, navigationID uint64, isUserInitiated bool)
 	NavigationCompletedCallback func(success bool, status WebErrorStatus, navigationID uint64)
 	ProcessFailedCallback       func(kind ProcessFailedKind)
 	// NewWindowRequestedCallback fires when content asks for a new window

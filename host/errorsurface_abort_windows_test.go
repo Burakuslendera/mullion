@@ -190,14 +190,12 @@ func TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted(t *testing.T) {
 func TestGateCancelledCompletionDoesNotArmTheSurface(t *testing.T) {
 	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
 
-	// The gate cancels a foreign navigation and records its id. Routing the
-	// target is not this test's concern and does not happen: every test host
-	// stubs the system-browser seam (newTestHost, issue #76).
-	if !host.shouldCancelNavigation("https://evil.example/", 7, true) {
+	// The gate cancels a foreign navigation and, once the runtime confirms it,
+	// enters it in the ledger. Routing the target is not this test's concern and
+	// does not happen: every test host stubs the system-browser seam
+	// (newTestHost, issue #76).
+	if !cancelNavigation(host, "https://evil.example/", 7, true) {
 		t.Fatal("gate did not cancel a foreign navigation")
-	}
-	if host.cancelledNavID != 7 {
-		t.Fatalf("cancelledNavID = %d, want 7", host.cancelledNavID)
 	}
 
 	// Its OperationCanceled completion is consumed - the error-surface machine is
@@ -209,8 +207,10 @@ func TestGateCancelledCompletionDoesNotArmTheSurface(t *testing.T) {
 		t.Fatalf("the gate's own cancel armed the error surface: active=%v pending=%v loading=%v",
 			host.errorSurfaceActive, host.errorSurfacePending, host.errorSurfaceLoading)
 	}
-	if host.cancelledNavID != 0 {
-		t.Fatalf("cancelledNavID = %d after the completion, want 0 (cleared)", host.cancelledNavID)
+	// The entry is gone: a second completion for the same id has nothing to
+	// match, so a stale id cannot swallow a later navigation's outcome.
+	if host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 7) {
+		t.Fatal("the ledger entry survived its own completion")
 	}
 
 	// An unrelated completion is not consumed, and a genuinely foreign failure in

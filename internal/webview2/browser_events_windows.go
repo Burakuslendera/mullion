@@ -65,17 +65,34 @@ func (browser *Browser) registerEvents() error {
 		// load-bearing value, and a URI read failing must not cost the id. A
 		// failed id read reports 0, which no real navigation uses - callers
 		// treat it as "identity unavailable" (decisions/0021).
-		uri, _ := args.GetUri()
+		//
+		// Both failures are reported. An unreadable URI is not cosmetic here:
+		// a host gate that decides on the target sees the empty string, which
+		// is no origin's, so it decides against a navigation it could not read
+		// (issue #73). That has to be diagnosable, and it was silent.
+		uri, err := args.GetUri()
+		if err != nil {
+			browser.reportWarning(err)
+		}
 		id, err := args.GetNavigationID()
 		if err != nil {
 			browser.reportWarning(err)
 		}
 		userInitiated, _ := args.GetIsUserInitiated()
 		redirected, _ := args.GetIsRedirected()
-		if browser.NavigationStartingCallback(uri, id, userInitiated, redirected) {
-			if err := args.PutCancel(true); err != nil {
-				browser.reportWarning(err)
-			}
+		if !browser.NavigationStartingCallback(uri, id, userInitiated, redirected) {
+			return
+		}
+		// Cancel first, tell the host second. A failed put_Cancel means the
+		// navigation is still going ahead, so the host must not act on a
+		// cancel that did not happen - no id to swallow the completion with,
+		// and no second copy of the target opened somewhere else (issue #73).
+		if err := args.PutCancel(true); err != nil {
+			browser.reportWarning(err)
+			return
+		}
+		if browser.NavigationCancelledCallback != nil {
+			browser.NavigationCancelledCallback(uri, id, userInitiated)
 		}
 	}), core.AddNavigationStarting); err != nil {
 		return err

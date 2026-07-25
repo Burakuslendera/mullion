@@ -111,6 +111,9 @@ func (host *Host) createWebView() error {
 		host.logNavigationStarting(uri, navigationID, isUserInitiated, isRedirected)
 		return host.noteAndGateNavigation(uri, navigationID, isUserInitiated)
 	}
+	browser.NavigationCancelledCallback = func(uri string, navigationID uint64, isUserInitiated bool) {
+		host.noteNavigationCancelled(uri, navigationID, isUserInitiated)
+	}
 	browser.NavigationCompletedCallback = func(success bool, status webview2.WebErrorStatus, navigationID uint64) {
 		if host.noteGateCancelledOutcome(success, status, navigationID) {
 			// The PinNavigationToOrigin gate cancelled this navigation: nothing
