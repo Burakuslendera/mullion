@@ -165,10 +165,15 @@ a pass/fail with an observable result — "looks fine" is not a result.
       the top frame to another in-origin document (`<a href="index.html?x=1">`)
       several times: every attempt must land on the frontend. A `navigation
       failed, status=9` followed by `showing fallback error surface` is the
-      issue #72 loop; with the rule in place that status is logged as
-      `navigation aborted, not arming the error surface` and the frontend stays
-      (decisions/0024). Repeat it — the abort is a race and does not fire on
-      every attempt.
+      issue #72 loop; with the rule in place the completion is reported once, at
+      debug, as `navigation aborted, not arming the error surface, status=9,
+      id=<n>`, the frontend stays (decisions/0024), and there is **no
+      `navigation failed` line and no WARN of any kind** for it — a suppressed
+      navigation that still warns is issue #79 (decisions/0026). Repeat it — the
+      abort is a race and does not fire on every attempt. The run's
+      `SessionWarnCount` is a snapshot taken when the frontend first reports
+      ready, so it answers for the startup navigation, not for these clicks;
+      read the clicks off the absence of WARN lines.
       The clicked navigation is told apart from the app's own startup navigation
       by the trailing `?` on its `navigation starting` line
       (`uri=https://mullion.local/index.html?` against

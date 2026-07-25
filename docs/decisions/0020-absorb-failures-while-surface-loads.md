@@ -1,6 +1,6 @@
 # 0020. Failure completions are absorbed while the error surface loads
 
-**Status:** Superseded by [0021](./0021-error-surface-navigation-identity.md): completions are attributed by navigation id, and this record's order-based machine survives only as the fallback for completions whose id is unavailable.
+**Status:** Superseded by [0021](./0021-error-surface-navigation-identity.md): completions are attributed by navigation id, and this record's order-based machine survives only as the fallback for completions whose id is unavailable. In that surviving fallback the absorb is logged at **warn**, not the debug this record's Decision names — [0026](./0026-navigation-failure-level-follows-classification.md), because absent identity this branch is also where the surface's own load dying lands.
 
 ## Context
 
@@ -128,4 +128,4 @@ keeping it against a document the machine cannot explain.
   frontend with a clean success completion and the bridge flowed. The rapid
   double-click burst remains covered headlessly only.
 
-> Last updated: 2026-07-22 | Editor: Claude (Fable 5) | Change: status line superseded by 0021 (navigation-id attribution); the body is unchanged, per the supersede rules.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: status line extended by 0026 — the surviving order-based absorb is logged at warn, not the debug named in the Decision (issue #79); the body is unchanged, per the supersede rules.

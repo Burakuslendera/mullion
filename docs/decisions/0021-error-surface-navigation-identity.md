@@ -1,6 +1,6 @@
 # 0021. Error-surface completions are attributed by navigation id
 
-**Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`. Refined by [0024](./0024-benign-abort-in-process.md): which attributed failures arm the surface at all
+**Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`. Refined by [0024](./0024-benign-abort-in-process.md): which attributed failures arm the surface at all. The completion callback's generic `navigation failed` WARN that this record's Decision describes as preceding the classification is removed by [0026](./0026-navigation-failure-level-follows-classification.md): a failed completion is reported once, by the branch that classifies it, at that classification's level (issue #79). The attribution rules themselves are unchanged
 
 ## Context
 
@@ -151,4 +151,4 @@ completion-less residual 0020 recorded.
   (the origin's success dropped the admission; the frontend's bridge flowed)
   with zero rejects and zero seal lines across the session.
 
-> Last updated: 2026-07-22 | Editor: Claude (Fable 5) | Change: new record — error-surface completions attributed by navigation id (issue #68 follow-up, the identity trip-wire of 0017/0020, under issue #6's event-binding work).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: status line extended by 0026 — the generic `navigation failed` WARN the Decision describes as preceding the classification is gone; each ending now reports itself at its own level (issue #79). The body and the attribution rules are unchanged, per the supersede rules.

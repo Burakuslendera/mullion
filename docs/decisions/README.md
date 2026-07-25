@@ -40,12 +40,13 @@ These files are that record.
 | [0017](./0017-error-surface-by-navigation-state.md) | The error surface is identified by navigation state, not by its source | Accepted, extended by 0020, orderings replaced by 0021 |
 | [0018](./0018-initial-placement-centered-on-primary.md) | The first window is centered on the primary monitor's work area, DPI-scaled | Accepted |
 | [0019](./0019-maximized-hittest-stays-in-process.md) | The maximized hit-test never queries the shell | Accepted |
-| [0020](./0020-absorb-failures-while-surface-loads.md) | Failure completions are absorbed while the error surface loads | Superseded by 0021 |
-| [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted; anticipated cancel gate landed as 0023, refined by 0024 |
+| [0020](./0020-absorb-failures-while-surface-loads.md) | Failure completions are absorbed while the error surface loads | Superseded by 0021, log level set by 0026 |
+| [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted; anticipated cancel gate landed as 0023, refined by 0024, log levels by 0026 |
 | [0022](./0022-new-windows-to-system-browser.md) | New windows are routed to the system browser, never opened in the host | Accepted |
 | [0023](./0023-navigation-cancel-gate.md) | A top-level navigation off the trusted origin is cancelled, opt-in | Accepted |
 | [0024](./0024-benign-abort-in-process.md) | An aborted navigation is not a load failure when mullion serves the assets | Accepted |
 | [0025](./0025-urls-are-logged-as-urls.md) | A URL reaching a log line is reduced as a URL, not as a filesystem path | Accepted |
+| [0026](./0026-navigation-failure-level-follows-classification.md) | A failed navigation is logged at the level the host's own classification gives it | Accepted |
 
 ## When to write one
 

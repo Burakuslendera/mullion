@@ -119,9 +119,14 @@ func (host *Host) createWebView() error {
 			// re-evaluated or fed to the error-surface machine (decisions/0023).
 			return
 		}
-		if !success {
-			host.log.Warn("mullion: navigation failed, status=" + formatInt32(int32(status)) + ", id=" + formatUint64(navigationID))
-		}
+		// A failure is handed down unlogged: which line it deserves, and at what
+		// level, is what handleNavigationOutcome's machine decides, and it
+		// reports the failure itself once it knows (issue #79, decisions/0026).
+		// A generic warning here could only guess, and it guessed wrong for
+		// every suppression the machine owns - a benign abort, a superseded
+		// surface Navigate, an absorbed straggler - which is what put
+		// deliberately suppressed events into the warn count. The gate's cancel
+		// above escaped it only by being resolved before this line.
 		host.log.Debug("mullion: navigation completed, id=" + formatUint64(navigationID))
 		host.syncWebViewBounds("navigation_completed")
 		host.warnIf("navigation diagnostic eval", browser.Eval(host.js.navigationEval))

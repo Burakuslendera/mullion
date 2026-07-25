@@ -16,9 +16,17 @@ import (
 // existing is the interaction: a claimed surface start is never cancelled, and
 // a cancelled navigation's completion never reaches the machine below.
 //
-// The rules themselves are decisions 0017, 0020, 0021 and 0024. Everything here
-// runs on the UI thread, from the navigation callbacks, so none of the
-// errorSurface* fields need a lock.
+// The rules themselves are decisions 0017, 0020, 0021, 0024 and 0026.
+// Everything here runs on the UI thread, from the navigation callbacks, so none
+// of the errorSurface* fields need a lock.
+//
+// One rule spans every branch below: a failed completion is reported exactly
+// once, by whichever branch classified it, at the level that classification
+// deserves - warn where the host is reporting a failure, debug where the host is
+// saying it expected this one and has handled it (issue #79, decisions/0026).
+// The completion callback hands failures down unlogged for that reason: it runs
+// before the classification exists, so anything it logged would be a guess at
+// the level.
 
 // handleNavigationOutcome shows mullion's own controllable surface when a
 // navigation fails, so an end user is never stranded on Edge's chromeless
@@ -58,6 +66,15 @@ func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success boo
 	host.requestStartupShow("navigation_failed")
 }
 
+// navigationFailureFields is the tail every report of a failed completion
+// carries: the status the runtime gave it and the navigation it belongs to. One
+// function so the reports stay one family - a reader comparing two of them is
+// comparing the same fields in the same order - and so the id cannot be dropped
+// from a line by being forgotten at one site.
+func navigationFailureFields(status webview2.WebErrorStatus, navigationID uint64) string {
+	return "status=" + formatInt32(int32(status)) + ", id=" + formatUint64(navigationID)
+}
+
 // noteGateCancelledOutcome intercepts the completion of a navigation the
 // PinNavigationToOrigin gate cancelled (decisions/0023). The runtime completes a
 // put_Cancel'd navigation with OperationCanceled; that is not a load failure -
@@ -74,7 +91,7 @@ func (host *Host) noteGateCancelledOutcome(success bool, status webview2.WebErro
 	}
 	host.cancelledNavID = 0
 	if !success {
-		host.log.Debug("mullion: cancelled navigation completed, status=" + formatInt32(int32(status)))
+		host.log.Debug("mullion: cancelled navigation completed, " + navigationFailureFields(status, navigationID))
 	}
 	return true
 }
@@ -194,7 +211,7 @@ func (host *Host) noteSurfaceNavigateFailed() {
 func (host *Host) noteNavigationOutcome(success bool, status webview2.WebErrorStatus, navigationID uint64) bool {
 	if navigationID != 0 && host.errorSurfaceNavID != 0 {
 		if navigationID == host.errorSurfaceNavID {
-			return host.noteSurfaceOwnOutcome(success, status)
+			return host.noteSurfaceOwnOutcome(success, status, navigationID)
 		}
 		return host.noteForeignOutcome(success, status, navigationID)
 	}
@@ -211,12 +228,12 @@ func (host *Host) noteNavigationOutcome(success bool, status webview2.WebErrorSt
 		// so the fallback below stays exactly 0020's machine.
 		return host.noteForeignOutcome(success, status, navigationID)
 	}
-	return host.noteOrderedOutcome(success)
+	return host.noteOrderedOutcome(success, status, navigationID)
 }
 
 // noteSurfaceOwnOutcome handles a completion positively attributed to the
 // surface's own navigation.
-func (host *Host) noteSurfaceOwnOutcome(success bool, status webview2.WebErrorStatus) bool {
+func (host *Host) noteSurfaceOwnOutcome(success bool, status webview2.WebErrorStatus, navigationID uint64) bool {
 	host.errorSurfacePending = false
 	host.errorSurfaceLoading = false
 	host.errorSurfaceNavID = 0
@@ -232,14 +249,18 @@ func (host *Host) noteSurfaceOwnOutcome(success bool, status webview2.WebErrorSt
 		// The surface's Navigate was superseded by a newer navigation before
 		// it committed (the runtime completes the loser with OperationCanceled).
 		// Not the surface dying: the winner's completion decides the document,
-		// so leave the admission for it to resolve.
-		host.log.Debug("mullion: error surface navigation superseded")
+		// so leave the admission for it to resolve. Expected and handled, so
+		// debug - the host asked for this navigation and then replaced it.
+		host.log.Debug("mullion: error surface navigation superseded, " + navigationFailureFields(status, navigationID))
 		return false
 	}
 	// The surface's own load genuinely failed - the one claim the pre-identity
 	// machines could never make (issues #56/#68). Nothing on screen is
 	// mullion's page, so the admission drops, and re-navigating would loop.
-	host.log.Warn("mullion: fallback error surface load failed, not retrying")
+	// This is the whole report of that failure: the callback no longer logs a
+	// generic one in front of it, which used to make one dead surface two
+	// warnings.
+	host.log.Warn("mullion: fallback error surface load failed, not retrying, " + navigationFailureFields(status, navigationID))
 	host.errorSurfaceActive = false
 	return false
 }
@@ -263,18 +284,23 @@ func (host *Host) noteForeignOutcome(success bool, status webview2.WebErrorStatu
 		// a race - changes nothing: the surface's own completion is still
 		// coming, and re-navigating here is the recursion the guard exists
 		// for.
-		host.log.Debug("mullion: navigation failure absorbed while the error surface loads")
+		//
+		// Debug, unlike the same absorb in noteOrderedOutcome: this completion
+		// is positively someone else's, so it is not the surface's own load
+		// dying in disguise, and the failure that put the surface in flight
+		// warned when it armed.
+		host.log.Debug("mullion: navigation failure absorbed while the error surface loads, " + navigationFailureFields(status, navigationID))
 		return false
 	}
 	if host.benignAbort(status, navigationID) {
-		host.log.Debug("mullion: navigation aborted, not arming the error surface, status=" + formatInt32(int32(status)))
+		host.log.Debug("mullion: navigation aborted, not arming the error surface, " + navigationFailureFields(status, navigationID))
 		return false
 	}
 	// Arming starts a new surface generation: any lingering id belongs to a
 	// navigation that no longer matters here, and carrying it forward would
 	// let a superseded generation's late cancel be mis-attributed to this one
 	// and unwind its claim window before its start ever fires.
-	host.armErrorSurface()
+	host.armErrorSurface(status, navigationID)
 	return true
 }
 
@@ -328,7 +354,16 @@ func (host *Host) benignAbort(status webview2.WebErrorStatus, navigationID uint6
 // navigation that no longer matters here, and carrying it forward would let a
 // superseded generation's late cancel be mis-attributed to this one and unwind
 // its claim window before its start ever fires.
-func (host *Host) armErrorSurface() {
+//
+// The warning belongs here for the same reason the arming does. Arming is the
+// host deciding this failure is real and worth replacing the document over, so
+// it is exactly the set of failures a warning should count (issue #79,
+// decisions/0026); putting the line at the two call sites instead would let the
+// two drift, and putting it in the callback is what made the count wrong in the
+// first place. Only failures reach this - both callers arm behind !success - so
+// the line never describes a completion that worked.
+func (host *Host) armErrorSurface(status webview2.WebErrorStatus, navigationID uint64) {
+	host.log.Warn("mullion: navigation failed, " + navigationFailureFields(status, navigationID))
 	host.errorSurfaceActive = true
 	host.errorSurfaceLoading = true
 	host.errorSurfacePending = true
@@ -342,7 +377,7 @@ func (host *Host) armErrorSurface() {
 // failures inside the window are absorbed, and a failure outside it arms. Its
 // accepted costs - the mis-admission orderings 0017 and 0020 record - apply
 // only while identity is unavailable.
-func (host *Host) noteOrderedOutcome(success bool) bool {
+func (host *Host) noteOrderedOutcome(success bool, status webview2.WebErrorStatus, navigationID uint64) bool {
 	if success {
 		if host.errorSurfaceLoading || host.errorSurfacePending {
 			// Taken as the surface's own load completing; it is now the
@@ -361,12 +396,18 @@ func (host *Host) noteOrderedOutcome(success bool) bool {
 		return false
 	}
 	if host.errorSurfaceLoading || host.errorSurfacePending {
-		host.log.Debug("mullion: navigation failure absorbed while the error surface loads")
+		// Warn, where the identified absorb above is debug. Absent identity
+		// this branch is also where the surface's own load dying lands - 0020
+		// absorbs every failure in the window because it cannot tell whose it
+		// is - so silencing it would take the only trace of a dead surface out
+		// of the log at exactly the point the seal is unreachable
+		// (decisions/0026).
+		host.log.Warn("mullion: navigation failure absorbed while the error surface loads, " + navigationFailureFields(status, navigationID))
 		return false
 	}
 	// Arming resets the generation id for the same reason as the identity
 	// arm above.
-	host.armErrorSurface()
+	host.armErrorSurface(status, navigationID)
 	return true
 }
 
