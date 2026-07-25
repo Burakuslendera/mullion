@@ -9,12 +9,13 @@ import (
 	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
-// What a failed completion puts in the log, and at what level (issue #79,
+// What a completion puts in the log, and at what level (issue #79,
 // decisions/0026). The admission transitions themselves are locked by the three
 // errorsurface_*_test.go files next to this one; these tests lock the reporting
 // contract that runs alongside them: every failed completion is reported exactly
 // once, by the branch that classified it, at the level that classification
-// deserves, carrying the status and the navigation id.
+// deserves, carrying the status and the navigation id - and a completion that
+// succeeded is reported not at all.
 //
 // The level is not cosmetic. SessionWarnCount in the startup timing summary is
 // the "did this run come up clean" signal, and it is the first thing a bug
@@ -41,12 +42,16 @@ func linesWrittenBy(t *testing.T, logger *captureLogger, act func()) []string {
 	return strings.Split(strings.TrimSuffix(written, "\n"), "\n")
 }
 
-// The seven ways a failure completion can end, each with the one line it owes.
+// Every way a completion can end, and the one line - or the silence - it owes.
 // Read as a table this is the whole rule: the two levels split exactly where the
-// host's own classification does, and the reports the machine already made
+// host's own classification does, the reports the machine already made
 // ("absorbed", "aborted", "superseded", "surface load failed") are now the whole
-// report, not a second line behind a generic warning that had already counted
-// the event.
+// report rather than a second line behind a generic warning that had already
+// counted the event, and a success adds nothing at all.
+//
+// An empty want means "this completion must write nothing". Those rows are not
+// filler: without them a warning added to any success branch inflates
+// SessionWarnCount on every navigation with the whole suite still green.
 func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 	for _, testCase := range []struct {
 		name string
@@ -69,6 +74,29 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 		{
 			name:     "a real failure with no identity warns the same way",
 			newHost:  newSurfaceHost,
+			complete: func(host *Host) bool { return noteFail(host, 0) },
+			wantShow: true,
+			want:     "level=WARN msg=mullion: navigation failed, status=9, id=0",
+		},
+		{
+			// A Retry failing while the surface is the document on screen is a
+			// real failure and must warn like any other. Without this row the
+			// warning can be made conditional on the surface not being active
+			// and nothing goes red, which would silence exactly the failure a
+			// user is looking at the fallback page because of.
+			name:    "a failure while the surface is on screen re-arms and warns",
+			newHost: newSurfaceHost,
+			preamble: func(t *testing.T, host *Host) {
+				if !noteFail(host, 0) {
+					t.Fatal("the arming failure must ask for the surface to be shown")
+				}
+				if noteOK(host, 0) {
+					t.Fatal("the surface's own load must not trigger another navigation")
+				}
+				if !host.errorSurfaceMessageAllowed("") {
+					t.Fatal("the surface must be the admitted document before this case means anything")
+				}
+			},
 			complete: func(host *Host) bool { return noteFail(host, 0) },
 			wantShow: true,
 			want:     "level=WARN msg=mullion: navigation failed, status=9, id=0",
@@ -115,7 +143,48 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 				}
 			},
 			complete: func(host *Host) bool { return noteFail(host, 0) },
-			want:     "level=WARN msg=mullion: navigation failure absorbed while the error surface loads, status=9, id=0",
+			want:     "level=WARN msg=mullion: unattributed navigation failure absorbed while the error surface loads, status=9, id=0",
+		},
+		{
+			// The unattributed absorb is reachable with an identified
+			// completion: the surface's own start was claimed under an id the
+			// runtime could not supply, so nothing later can be attributed
+			// against it. This is why the word "unattributed" carries the
+			// distinction and the id cannot.
+			name:    "an unattributable absorb says so even when the completion has an id",
+			newHost: newSurfaceHost,
+			preamble: func(t *testing.T, host *Host) {
+				host.errorSurfaceURL = "data:text/html,surface"
+				if !noteFail(host, 0) {
+					t.Fatal("the arming failure must ask for the surface to be shown")
+				}
+				if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 0) {
+					t.Fatal("the surface's own start must be claimed, id or no id")
+				}
+			},
+			complete: func(host *Host) bool { return noteFail(host, 7) },
+			want:     "level=WARN msg=mullion: unattributed navigation failure absorbed while the error surface loads, status=9, id=7",
+		},
+		{
+			name:     "an identified success is not a failure report",
+			newHost:  newSurfaceHost,
+			complete: func(host *Host) bool { return noteOK(host, 4) },
+		},
+		{
+			name:     "the surface's own success is not a failure report",
+			newHost:  newSurfaceHost,
+			preamble: func(t *testing.T, host *Host) { armAndClaim(t, host, 5, 6) },
+			complete: func(host *Host) bool { return noteOK(host, 6) },
+		},
+		{
+			name:    "an id-less success is not a failure report",
+			newHost: newSurfaceHost,
+			preamble: func(t *testing.T, host *Host) {
+				if !noteFail(host, 0) {
+					t.Fatal("the arming failure must ask for the surface to be shown")
+				}
+			},
+			complete: func(host *Host) bool { return noteOK(host, 0) },
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -130,6 +199,12 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 			if show != testCase.wantShow {
 				t.Fatalf("asked to show the fallback surface = %v, want %v", show, testCase.wantShow)
 			}
+			if testCase.want == "" {
+				if len(lines) != 0 {
+					t.Fatalf("a completion that owes no report wrote %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
+				}
+				return
+			}
 			if len(lines) != 1 {
 				t.Fatalf("one failed completion wrote %d lines, want exactly 1:\n%s", len(lines), strings.Join(lines, "\n"))
 			}
@@ -140,10 +215,11 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 	}
 }
 
-// The gate's own cancel is the eighth ending, and the only one resolved before
-// the machine is reached (decisions/0023). It joins the same family: one line,
-// debug because the host asked for the cancel, and carrying the id so it can be
-// matched to the start that was cancelled.
+// The gate's own cancel is the ending resolved before the machine is reached
+// (decisions/0023). It joins the same family: one line, debug because the host
+// asked for the cancel, carrying the id so it can be matched to the start that
+// was cancelled - and nothing at all when the cancelled navigation somehow
+// succeeded, because then there is no failure to report.
 func TestGateCancelledCompletionIsReportedWithItsNavigation(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
 	if !host.shouldCancelNavigation("https://evil.example/", 7, true) {
@@ -164,6 +240,19 @@ func TestGateCancelledCompletionIsReportedWithItsNavigation(t *testing.T) {
 	if got := host.log.WarnCount(); got != 0 {
 		t.Fatalf("SessionWarnCount = %d, want 0: the host asked for this cancel", got)
 	}
+
+	if !host.shouldCancelNavigation("https://evil.example/other", 8, true) {
+		t.Fatal("the gate did not cancel the second foreign navigation")
+	}
+	quiet := linesWrittenBy(t, logger, func() {
+		consumed = host.noteGateCancelledOutcome(true, statusNone, 8)
+	})
+	if !consumed {
+		t.Fatal("a successful completion for a cancelled navigation must still be consumed")
+	}
+	if len(quiet) != 0 {
+		t.Fatalf("a completion that did not fail wrote a failure report:\n%s", strings.Join(quiet, "\n"))
+	}
 }
 
 // Issue #79's report, driven as it was observed: six clicks on an in-origin link
@@ -175,7 +264,9 @@ func TestGateCancelledCompletionIsReportedWithItsNavigation(t *testing.T) {
 // which no headless test can drive, so the machine produced no warning at all
 // and the count read 0 whatever happened; the assertion below fails against that
 // code. The first half is the mutant lock in the other direction: it fails the
-// moment a warning is put back somewhere every failure passes through.
+// moment a warning is put back anywhere in the machine that every failure passes
+// through. What no test driving the machine can see is the callback itself -
+// TestNavigationCompletedCallbackReportsNoFailureItself covers that.
 func TestSuppressedAbortsDoNotInflateSessionWarnCount(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 

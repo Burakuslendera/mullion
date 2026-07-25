@@ -122,8 +122,18 @@ func TestErrorSurfaceAbortWithAStaleIdStillArms(t *testing.T) {
 
 // The seal - the surface's own load failing - must stay locked in the default
 // in-process mode, not only in the external-URL mode the identity tests model.
-// Without this, widening the abort exemption to noteSurfaceOwnOutcome would
-// leave the whole suite green while a failed surface load stopped sealing.
+//
+// This comment used to claim the test catches a widening of the abort exemption
+// into noteSurfaceOwnOutcome. It does not, and the audit behind decisions/0026
+// measured it: no start is recorded here, so host.navStartID is 0 while the
+// completion carries id 5, and benignAbort refuses on the id before the status
+// is ever consulted - the inserted branch is dead in this test and the suite
+// stays green. What actually makes that widening harmless is a property of the
+// surface, not of this test: errorPageURL is always a data: URL, and the seal is
+// only reachable once noteSurfaceNavigationStarting claimed a start matching it,
+// every accepted form of which leaves navStartInOrigin false. The test below
+// still earns its place - it locks the seal in the mode the identity tests do
+// not cover - it just does not lock what it said it did.
 func TestErrorSurfaceSealsInProcessToo(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 	host.errorSurfaceURL = "data:text/html,surface"

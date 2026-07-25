@@ -167,13 +167,11 @@ a pass/fail with an observable result — "looks fine" is not a result.
       failed, status=9` followed by `showing fallback error surface` is the
       issue #72 loop; with the rule in place the completion is reported once, at
       debug, as `navigation aborted, not arming the error surface, status=9,
-      id=<n>`, the frontend stays (decisions/0024), and there is **no
-      `navigation failed` line and no WARN of any kind** for it — a suppressed
-      navigation that still warns is issue #79 (decisions/0026). Repeat it — the
-      abort is a race and does not fire on every attempt. The run's
-      `SessionWarnCount` is a snapshot taken when the frontend first reports
-      ready, so it answers for the startup navigation, not for these clicks;
-      read the clicks off the absence of WARN lines.
+      id=<n>`, the frontend stays, and **no `navigation failed` line and no WARN**
+      appears for it (decisions/0024, 0026). Judge that by the absence of WARN
+      lines, not by `SessionWarnCount`, which is a snapshot taken at
+      frontend-ready. The abort is a race that needs the click to land while the
+      previous navigation is in flight: click fast, or every attempt commits.
       The clicked navigation is told apart from the app's own startup navigation
       by the trailing `?` on its `navigation starting` line
       (`uri=https://mullion.local/index.html?` against

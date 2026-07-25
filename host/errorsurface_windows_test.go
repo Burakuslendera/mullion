@@ -159,7 +159,7 @@ func TestErrorSurfaceStaysAdmittedWhenAFailureRacesItsOwnLoad(t *testing.T) {
 		t.Fatal("an absorbed failure must not be reported as the surface dying")
 	}
 	if !strings.Contains(logger.String(), "navigation failure absorbed") {
-		t.Fatal("an absorbed failure must leave a debug trace, or a genuinely dead surface becomes undiagnosable")
+		t.Fatal("an absorbed failure must leave a trace, or a genuinely dead surface becomes undiagnosable")
 	}
 }
 

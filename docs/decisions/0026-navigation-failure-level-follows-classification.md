@@ -21,12 +21,12 @@ outcome — but it had already reported the completion as a failure one line
 earlier.
 
 The two halves sat on opposite sides of that warning. `NavigationCompleted`
-consumed the cancel gate's own `OperationCanceled` first (0023) and stayed
-quiet; then it warned on `!success`; then it handed the completion to the
-error-surface machine, where the abort, the superseded surface `Navigate` and
-the absorbed straggler were each classified as expected and logged at debug.
-Same category of event, two levels, decided by which side of one `if` the
-classification happened to live on.
+consumed the cancel gate's own completion first (0023), which it reported at
+debug and never warned about; then it warned on `!success`; then it handed the
+completion to the error-surface machine, where the abort, the superseded surface
+`Navigate` and the absorbed straggler were each classified as expected and
+logged at debug. Same category of event, two levels, decided by which side of
+one `if` the classification happened to live on.
 
 The warning could not have been right there. Whether a failed completion is a
 failure the host is reporting depends on state the machine owns — whether the
@@ -41,15 +41,23 @@ Two costs, and the second is the one that matters:
   summary's warn count is the "did this run come up clean" signal, and it is the
   first thing a bug report is read for.
 
-  Being exact about the second, because the issue's own framing is looser than
-  the code: `logStartupTimingSummary` emits the count once, when the frontend
-  reports ready, so it is a snapshot rather than a running total. The six clicks
-  in the log above happened after that line was printed and did not reach it. A
-  suppression *before* frontend-ready does — and that is not a corner case, it
-  is issue #72's own shape, where the navigation that aborts and restarts is the
-  startup navigation. Later suppressions inflate no counter because nothing else
-  reads one; they only leave the contradiction above in the log. Same bug, two
-  reach.
+  Being exact about the second, because both the issue's framing and this
+  record's first draft overstated it. `logStartupTimingSummary` emits the count
+  once, when the frontend reports ready, so it is a snapshot rather than a
+  running total, and nothing else reads the counter. A suppression *before*
+  frontend-ready therefore inflates it; a suppression after it inflates nothing
+  and leaves only the contradiction above.
+
+  On every observation available, the aborts land *after*. Issue #72's repro log
+  aborts on ids 3 and 4, the clicked link; issue #77 states plainly that the
+  initial navigation (id 2) is served in full and succeeds, and asks whether
+  being host-initiated is why; and the live run in the Evidence below aborts on
+  ids 3 to 25 while printing `SessionWarnCount=0` — which it could only do if
+  frontend-ready had already passed. So the counter is the sharper half of the
+  bug in principle and the unobserved half in practice. Suppressing a startup
+  abort is possible — `benignAbort` asks only for in-process serving, an
+  on-origin target and an id match, all true of the startup navigation — but it
+  is not something any run here has shown, and this record does not claim it.
 
 Auditing the paths for this record turned up a third, unreported: the surface's
 own load dying produced **two** warnings for one dead surface — the callback's
@@ -76,16 +84,37 @@ The eight endings a completion can have, and what each owes:
 | absorbed, positively attributed to another navigation (0021) | debug |
 | an abort mullion served itself, on-origin (0024) | debug |
 | the surface's own `Navigate` superseded (0021) | debug |
-| the cancel gate's own `OperationCanceled` (0023) | debug |
+| the cancel gate's own completion, consumed before the machine (0023) | debug |
 | success | no failure line |
 
 The warning for the arming ending lives **in `armErrorSurface`**, not at its two
 call sites. Arming *is* the host deciding a failure is real and worth replacing
 the document over, so it is exactly the set of completions a warning should
 count; one site cannot drift from the other, and the invariant that the surface
-is never in flight without a warning behind it becomes structural. The
-`showing fallback error surface` info line the caller writes after it is
-unchanged — it says what was done, not that something failed.
+is never in flight without a warning behind it becomes structural.
+
+**Every report comes after the state transition it describes, never before.**
+The log call hands control to the embedder's `Logger`, which is arbitrary code,
+and a `Logger` that pumps messages — a MessageBox, a GUI toolkit's own loop —
+has a queued navigation completion dispatched inside it, re-entering this
+machine. Logging first would let that nested completion arm, claim and navigate
+a whole surface generation, and then the outer writes would land on top of it:
+the claim destroyed, a second `Navigate` issued, and the surface finally on
+screen unadmitted — issue #56's dead-caption-buttons symptom. Writing first
+means the nested call is classified against a machine that is already armed, and
+absorbs, exactly as it did before the line existed. This retires an ordering
+that was wrong in `noteSurfaceOwnOutcome`'s seal before this record as well.
+
+The follow-up line the arming path writes is now `showing fallback error
+surface`, without the `navigation failed` prefix it used to carry. The failure
+has already been reported once by the branch that classified it; repeating the
+phrase put two hits per arming in front of anyone grepping for it, against the
+sentence in bold above.
+
+The unattributed absorb says `unattributed` in its message. The level alone
+cannot separate the two absorbs in a log read after the fact — that is text —
+and neither can the id: this branch is reachable with a non-zero id, when the
+surface's own start was claimed under an id the runtime could not supply.
 
 `noteOrderedOutcome`'s absorb stays at warn while the identified one drops to
 debug, and the asymmetry is the point: absent identity, that branch is also
@@ -109,7 +138,8 @@ consulted for a completion already classified foreign, with no surface in
 flight. Hoisting it either duplicates that dispatch at the call site — two
 copies of the rule that decides whether an abort even gets asked about — or
 applies it in states the machine never would. It also fixes exactly one of the
-four suppressions.
+three suppressions the warning was wrong about — the gate's, being resolved
+before the warning, was never one of them.
 
 **Split the machine into a pure classify pass and an apply pass, and log between
 them.** The tidy version, and it keeps the log lines in written order. Rejected
@@ -150,9 +180,20 @@ cancel line, which previously had the status but not the id.
 **A branch that classifies a failure now owes it a line.** A future ending added
 to the machine that returns without logging makes a failure vanish from the log
 entirely — the failure mode the old unconditional warning could not have. The
-one-line-per-completion table in
-`host/errorsurface_logging_windows_test.go` is the trip-wire: it asserts the
-whole line, verbatim, for all eight endings.
+table in `host/errorsurface_logging_windows_test.go` is the trip-wire: it asserts
+the whole line, verbatim and with its level, for every failure ending, and
+asserts silence for the success ones.
+
+The trip-wire reaches the machine only. Two lines a real completion produces sit
+above it and no headless test can drive them, because they need a live
+`*webview2.Browser`: the callback's own `navigation completed` debug line, and
+the `showing fallback error surface` info line — so an armed failure writes two
+lines in production, one of them a failure report. That gap is what let the
+audit behind this record put the deleted warning back in the callback with the
+whole suite still green. It is closed by
+`TestNavigationCompletedCallbackReportsNoFailureItself`, which reads the source
+rather than running it, the way this repository already guards the no-port
+promise.
 
 **The warning is tied to arming.** A future caller that arms the surface for a
 reason that is not a navigation failure would emit a false `navigation failed`.
@@ -174,20 +215,37 @@ Both current callers arm behind `!success`.
 
 Commit on branch `fix-79-suppressed-abort-warn`. The contract is locked by
 `host/errorsurface_logging_windows_test.go`:
-`TestNavigationFailureIsReportedOnceAtItsClassifiedLevel` drives the seven
-machine endings and asserts each writes exactly one line, verbatim, level
-included; `TestGateCancelledCompletionIsReportedWithItsNavigation` covers the
-eighth; and `TestSuppressedAbortsDoNotInflateSessionWarnCount` walks issue #79's
-own sequence — six in-origin aborts leaving the count at 0, and a real failure
-still moving it to 1.
+`TestNavigationFailureIsReportedOnceAtItsClassifiedLevel` drives every machine
+ending — the seven that owe a failure report, each asserted as exactly one
+verbatim line including its level, and three success endings asserted to write
+nothing; `TestGateCancelledCompletionIsReportedWithItsNavigation` covers the
+gate's ending on both sides; `TestSuppressedAbortsDoNotInflateSessionWarnCount`
+walks issue #79's own sequence — six in-origin aborts leaving the count at 0,
+and a real failure still moving it to 1; and
+`TestNavigationCompletedCallbackReportsNoFailureItself` covers the callback the
+others cannot reach.
 
-Measured, not assumed: with the two source files reverted and the test file
-kept, all eight endings and the count test fail. Two mutants were run against
-the asymmetry and each was killed by the one case that owns it — the
-unattributed absorb dropped to debug fails
-`an absorb the machine could not attribute keeps its warning`, and the
-attributed absorb raised to warn fails `an attributed straggler is absorbed
-quietly`.
+Measured, not assumed. Reverting the fix's source changes and keeping the tests
+(done at the fix commit, before the file split moved four functions out — at
+this record's HEAD the same revert would duplicate their declarations instead)
+fails every ending and the count test.
+
+The suite was then attacked. A review pass ran 24 mutants against its first
+version; 11 survived, three of them on reachable production paths — including,
+at the centre of it, the deleted warning put back in the callback verbatim,
+which reopens issue #79 with everything green. The suite was extended until they
+die: the success endings, a failure arriving while the surface is already the
+document on screen, an unattributable absorb carrying an id, and the source-level
+guard for the callback.
+
+Ten mutants are recorded as killed, each by the case that owns it: the
+unattributed absorb dropped to debug, and split by id, and hard-coding `id=0`;
+the attributed absorb raised to warn; the arming warning made conditional on the
+surface not already being on screen; a warning added to the surface's own success
+branch, and to a foreign success branch; the gate line logging on a successful
+completion; the deleted warning restored in the callback; and the `showing
+fallback error surface` line raised to warn. The last two are the ones no
+behavioural test could see.
 
 Verified live, `examples/basic`, runtime 150.0.4078.83, 2026-07-25. One click on
 an in-origin link put the runtime into a navigate/abort loop that ran until the
@@ -205,4 +263,4 @@ describes; the abort reproduces when the click lands while the previous
 navigation is still in flight. That run is the negative control: it warned zero
 times too, so the rule does not merely silence the suppressed path.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a failed completion is reported once by the branch that classified it, at the level that classification deserves (issue #79); the warning moves into armErrorSurface and 0020's unattributed absorb keeps its warning.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a failed completion is reported once by the branch that classified it, at the level that classification deserves (issue #79); the warning moves into armErrorSurface and 0020's unattributed absorb keeps its warning. Revised the same day after an eight-agent audit: every report now follows its state transition rather than preceding it (a re-entrant-Logger regression the first version introduced), the unattributed absorb says so in its text, the follow-up line drops the duplicated phrase, and the counter claim was cut back to what the runs actually show.

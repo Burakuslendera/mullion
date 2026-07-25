@@ -49,7 +49,12 @@ func (host *Host) handleNavigationOutcome(browser *webview2.Browser, success boo
 	if !host.noteNavigationOutcome(success, status, navigationID) {
 		return
 	}
-	host.log.Info("mullion: navigation failed, showing fallback error surface")
+	// Not "navigation failed, showing ...": the failure was already reported, once,
+	// by the branch that classified it, and repeating the phrase here put two
+	// hits per arming in front of anyone grepping for it - which is the claim
+	// this whole change makes (issue #79, decisions/0026). This line says what
+	// the host did about it, and nothing else.
+	host.log.Info("mullion: showing fallback error surface")
 	host.errorSurfaceURL = errorPageURL(host.config, host.config.startURL())
 	if err := browser.Navigate(host.errorSurfaceURL); err != nil {
 		host.warnIf("error surface navigate", err)
@@ -185,8 +190,14 @@ func (host *Host) noteSurfaceOwnOutcome(success bool, status webview2.WebErrorSt
 	// This is the whole report of that failure: the callback no longer logs a
 	// generic one in front of it, which used to make one dead surface two
 	// warnings.
-	host.log.Warn("mullion: fallback error surface load failed, not retrying, " + navigationFailureFields(status, navigationID))
+	//
+	// The admission drops before the log for the reason armErrorSurface gives:
+	// the Logger is embedder code, and a re-entrant completion reaching this
+	// machine while the dead surface is still marked admitted would both be
+	// classified against a lie and have its own arming overwritten by the write
+	// below. This ordering was the other way round before decisions/0026.
 	host.errorSurfaceActive = false
+	host.log.Warn("mullion: fallback error surface load failed, not retrying, " + navigationFailureFields(status, navigationID))
 	return false
 }
 
@@ -287,12 +298,23 @@ func (host *Host) benignAbort(status webview2.WebErrorStatus, navigationID uint6
 // two drift, and putting it in the callback is what made the count wrong in the
 // first place. Only failures reach this - both callers arm behind !success - so
 // the line never describes a completion that worked.
+//
+// The log call comes last, and that order is load-bearing. It hands control to
+// the embedder's Logger, which is arbitrary code; if it pumps messages - a
+// MessageBox, a GUI toolkit's own loop - a queued navigation completion is
+// dispatched inside it and runs this machine re-entrantly. Logging first would
+// let that nested completion arm, claim and navigate a generation, and then the
+// four writes below would land on top of it: the claim destroyed, a second
+// surface Navigate issued, and the surface finally on screen unadmitted, which
+// is issue #56's dead-caption-buttons symptom. Writing first means the nested
+// call sees a machine that is already armed and absorbs, exactly as it would
+// have before this line existed.
 func (host *Host) armErrorSurface(status webview2.WebErrorStatus, navigationID uint64) {
-	host.log.Warn("mullion: navigation failed, " + navigationFailureFields(status, navigationID))
 	host.errorSurfaceActive = true
 	host.errorSurfaceLoading = true
 	host.errorSurfacePending = true
 	host.errorSurfaceNavID = 0
+	host.log.Warn("mullion: navigation failed, " + navigationFailureFields(status, navigationID))
 }
 
 // noteOrderedOutcome is the order-based fallback for completions the machine
@@ -327,7 +349,13 @@ func (host *Host) noteOrderedOutcome(success bool, status webview2.WebErrorStatu
 		// is - so silencing it would take the only trace of a dead surface out
 		// of the log at exactly the point the seal is unreachable
 		// (decisions/0026).
-		host.log.Warn("mullion: navigation failure absorbed while the error surface loads, " + navigationFailureFields(status, navigationID))
+		//
+		// "unattributed" is what tells the two absorbs apart in the artifact
+		// they exist for. The level alone does not: a log read after the fact is
+		// text, and the id does not separate them either - this branch is
+		// reachable with a non-zero id, when the surface's own start was claimed
+		// under an id the runtime could not supply.
+		host.log.Warn("mullion: unattributed navigation failure absorbed while the error surface loads, " + navigationFailureFields(status, navigationID))
 		return false
 	}
 	// Arming resets the generation id for the same reason as the identity
