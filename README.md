@@ -265,6 +265,16 @@ above was taken that way, on the same flat ground.
 
 ## Known limitations
 
+- **A window takes about two and a half seconds to appear, and about two of those
+  seconds are spent inside the WebView2 runtime.** Measured on one machine
+  (WebView2 runtime 150.0.4078.83, five runs): 2.03s of the 2.5s is a single wait
+  between mullion serving the main document and the renderer asking for the first
+  subresource, and all the rest of startup - window, environment, frontend - is
+  20-40 ms. Neither the frontend nor mullion's asset serving accounts for that
+  wait, and its shape resembles an open, unfixed runtime bug
+  ([WebView2Feedback #2381](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381))
+  closely enough to name but not closely enough to call it a diagnosis. The
+  measurements, and what has been ruled out, are tracked as issue #85.
 - **WebView2 does not render while the window is hidden.** With `StartHidden`, the
   frontend cannot signal readiness until the first `Show`. "Load it invisibly and
   reveal it when ready" is not achievable this way.

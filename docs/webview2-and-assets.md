@@ -237,4 +237,65 @@ express ownership in its type signature. Release too early and you get use-after
 behaviour that presents as a rendering bug rather than a memory bug; release too late,
 or never, and you get a leak that no test will fail on.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the event-handler section now states the NavigationStarting ordering - the layer cancels first and notifies the host only when put_Cancel succeeds, and both getters report their own failure (issue #73, decisions/0027).
+### The two-second gap before the first subresource (issue #85)
+
+This section is open work. It is written so the next person starts where the
+measurements stopped rather than where the guessing did.
+
+**Measured.** On one machine, WebView2 runtime 150.0.4078.83, on 2026-07-25:
+five startup navigations across five runs each waited about **2.03 seconds**
+between mullion serving the main document out of the callback above and the
+renderer requesting its first subresource. The five figures are 2.041, 2.026,
+2.035, 2.027 and 2.039 seconds, a spread of roughly 15 ms on a two-second
+interval. Startup navigations are the clean population to measure: they are
+host-initiated, not inside a retry chain, and not racing anything else.
+Everything downstream is fast, first subresource to frontend-ready being 20-40
+ms, so the interval from serving the document to frontend-ready is almost
+entirely this one gap.
+
+**Measured negatives.** Each of the following was tried and moved nothing.
+They are the valuable half of the section, because each one closes a road:
+
+| Changed | Result |
+| --- | --- |
+| `Content-Length` set on every `200` response | no change |
+| response and `IStream` held past `PutResponse` rather than released on the `defer` | no change (2.026 -> 2.031) |
+| no `AddScriptToExecuteOnDocumentCreated` registrations at all | no change (2.035) |
+| virtual host `mullion.test` in place of `mullion.local` | no change (2.027) |
+
+The gap also sits entirely **before document creation**. In one run the
+`document created` diagnostic and the request for `style.css` landed in the same
+millisecond, 2.015 s after the document itself was served. That observation
+carries the only inference this section draws, and it is a narrow one: the wait
+falls inside the runtime, between our response being handed over and the
+document being created. It does not say what the runtime is doing during it.
+
+**Suspected, on someone else's authority, and not confirmed here.**
+[WebView2Feedback #2381](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381)
+reports the same two-second shape for a virtual host whose name does not
+resolve, and *attributes* it to a network timeout. That attribution is their
+reading of their own repro, not a mechanism anything above establishes: they use
+`SetVirtualHostNameToFolderMapping` where mullion answers `WebResourceRequested`
+itself, and no measurement listed here tells a name-resolution wait apart from
+any other two-second wait. The issue is tagged bug / priority-low / tracked, and
+is not fixed. Weaker, and recorded only so it is not rediscovered as news:
+[WebView2Feedback #3398](https://github.com/MicrosoftEdge/WebView2Feedback/issues/3398)
+reports a 1-2 second slowdown after 8-10 loads through `WebResourceRequested`,
+tracked and unexplained. It resembles the retry chains in issue #77, but nothing
+connects the two.
+
+**The next experiment, which has not been run.** Start the runtime with
+`--host-resolver-rules=MAP mullion.local ~NOTFOUND` through
+`Config.BrowserArguments` and re-measure the same five startup navigations. The
+rule makes the resolver answer immediately instead of waiting, and maps the name
+to nothing reachable, so the no-port guarantee is untouched. If the gap
+collapses, the wait was resolution and #2381's reading carries over to this code
+path; if it survives, #2381 is a different bug that happens to cost two seconds
+and the search reopens. Nothing already measured separates those two outcomes,
+which is why this probe and not another.
+
+The gap is issue #85. It also bounds issue #77, an in-origin navigation that
+aborts and often never commits, in that every abort measured so far fired inside
+this two-second window. Whether that makes them one bug or two is open.
+
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new asset-serving subsection records the measured two-second gap between serving the main document and the first subresource request, the four negatives that rule out Content-Length, COM lifetime, injected scripts and the host name, and the host-resolver probe that has not yet been run (issue #85, and its overlap with issue #77).

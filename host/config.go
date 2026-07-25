@@ -61,6 +61,22 @@ type Config struct {
 	// VirtualHost is the synthetic host that serves Assets. It is the single
 	// source for both the request filter and the origin allow-list.
 	// Default "mullion.local", which yields the origin https://mullion.local.
+	//
+	// Nothing mullion does resolves this name - WebResourceRequested intercepts
+	// the request and Assets answers it in process - so it need not exist
+	// anywhere. The runtime nonetheless appears to spend time on it. Measured on
+	// WebView2 runtime 150.0.4078.83, five startup navigations on 2026-07-25 each
+	// took about 2.03 s (2.026 to 2.041) between the document being served and the
+	// renderer requesting its first subresource, all of it before document
+	// creation, and renaming the host to mullion.test changed nothing.
+	// WebView2Feedback 2381
+	// (https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381) reports the
+	// same shape for a virtual host name that does not resolve and attributes it
+	// to the runtime waiting out a name lookup - an attribution borrowed from a
+	// different API (SetVirtualHostNameToFolderMapping) and not confirmed here.
+	// The probe that would settle it, --host-resolver-rules=MAP <host> ~NOTFOUND
+	// through BrowserArguments, had not been run when this was written. Issue #85
+	// carries the outcome; issue #77 lives inside the same window.
 	VirtualHost string
 	// JSNamespace names the JavaScript global the host injects (window.<ns>) and
 	// prefixes the DOM attributes it relies on (data-<ns>-resize-edge). It must

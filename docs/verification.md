@@ -241,6 +241,22 @@ a pass/fail with an observable result — "looks fine" is not a result.
       at 125% → 1225x800; the Debug-level startup log line
       `mullion: initial placement` states the applied numbers). On a scaled monitor an unscaled window is
       the issue #59 regression (decisions/0018).
+- [ ] **Time the startup navigation gap** (issue #85). No interaction is
+      needed - the app's own startup navigation shows it. With the Logger at
+      debug level (`examples/basic` already is), read three lines in order:
+      `asset response served, status=200, ... asset=index.html` (T0),
+      `frontend diagnostic phase, phase=document created` (T1), then
+      `asset response served, status=200, ... asset=style.css` (T2). T1 minus
+      T0 is the gap; T2 minus T1 is near zero, which places the wait before
+      document creation rather than in parsing. Measured on this machine with
+      WebView2 runtime 150.0.4078.83 on 2026-07-25, five runs: 2.041, 2.026,
+      2.035, 2.027 and 2.039 seconds. Measure the **startup** navigation
+      only: a clicked in-origin navigation lands inside a retry chain the
+      runtime drives itself (one click started 45 navigations at 6-25 ms
+      intervals, most of them aborted), so timings taken from those are not
+      comparable. Suspected but not confirmed to be the runtime behaviour
+      reported at https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381
+      (tagged bug / priority-low / tracked, not fixed).
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:
       restored → `Restore` disabled, `Maximize` enabled, `Move`/`Size` enabled;
@@ -372,4 +388,4 @@ gathers it, and the rest of the reporting contract moved verbatim to
 [bug-reports.md](./bug-reports.md) when this file reached the 400-line
 reference-doc limit.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: two checklist items - what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027), and that a frontend error keeps the URL it names, which is the one part of issue #80 no headless test can reach (decisions/0028); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit. Then one more: that the window still answers while a cold system browser starts, which is the check that would establish the symptom issue #74 was fixed against (decisions/0029).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: two checklist items - what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027), and that a frontend error keeps the URL it names, which is the one part of issue #80 no headless test can reach (decisions/0028); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit. Then one more: that the window still answers while a cold system browser starts, which is the check that would establish the symptom issue #74 was fixed against (decisions/0029). And one more: how to time the startup navigation gap from the debug log, with the five measurements taken on this machine and why only the startup navigation is worth timing (issue #85).

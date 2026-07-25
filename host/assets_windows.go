@@ -46,6 +46,21 @@ func newAssetProvider(assets fs.FS, log *logSink, virtualHost string, diagnostic
 	return assetProvider{assets: assets, log: log, virtualHost: virtualHost, diagnostics: diagnostics}
 }
 
+// webResourceRequested answers one intercepted request out of the fs.FS. Serving
+// the document is not where a slow startup goes, which is worth recording where a
+// reader looks first: on WebView2 runtime 150.0.4078.83, across five startup
+// navigations on 2026-07-25, about 2.03 s (2.041, 2.026, 2.035, 2.027, 2.039)
+// passed between the "asset response served" line for index.html and the renderer
+// asking for its first subresource, and in one run the document was created in the
+// same millisecond as that request - so the wait sits before document creation,
+// not in parsing and not in the injected scripts. Declaring Content-Length,
+// holding the response and its IStream past PutResponse, injecting no
+// document-created scripts, and renaming the virtual host each moved it by
+// nothing. What causes it is not established here; the current unconfirmed
+// reading is recorded on Config.VirtualHost, from WebView2Feedback 2381
+// (https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381). Issue #85
+// tracks this, and issue #77 lives inside the same window: every abort measured
+// so far fired before the two seconds were up.
 func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs, environment *webview2.ICoreWebView2Environment) {
 	if request == nil {
 		provider.log.Warn("mullion: asset request unavailable")
