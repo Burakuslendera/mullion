@@ -317,6 +317,11 @@ https://mullion.local/index.html?in=1  ->  httpindex.html?in=1
 https://evil.example                   ->  httpevil.example
 ```
 
+(Historical: `Message` no longer does this. Issue #80 found that the same rule
+still ate the URLs sitting *inside* a message, which no call-site swap could
+reach, and decisions/0028 taught `Message` about the two http schemes. The
+lesson below is about how long it went unnoticed, which is unchanged.)
+
 Nothing caught this for the life of three issues. The output still looked like a
 diagnostic: it had the right shape, it started with `http`, and it named a real
 file. The live verifications for #6, #68 and #72 were all read off `uri=` fields

@@ -5,18 +5,29 @@ import (
 	"testing"
 )
 
-// The bug URL exists to route around (issue #78). Pinned to Message, not to URL:
-// it documents the behaviour that made URL necessary, and it fails the day
-// someone teaches Message about schemes, at which point this file and its call
-// sites want revisiting rather than silently keeping a redundant wrapper.
-func TestMessageStillManglesURLsWhichIsWhyURLExists(t *testing.T) {
+// This was TestMessageStillManglesURLsWhichIsWhyURLExists, the trip-wire
+// decisions/0025 set for the day Message learned about schemes. That day came
+// (issue #80): a URL sitting *inside* a message - a JS error, a recovered panic
+// - was losing its host for the same reason a bare one did, and no call-site
+// swap could reach it, because url.Parse rejects the sentence and hands it back.
+//
+// So the wire fired and the question it asked was answered rather than silenced:
+// Message now protects http(s) runs by delegating each one to URL, and the two
+// agree on a value that is nothing but a URL. URL is still the right call for a
+// field whose value *is* a URL - it bounds the whole value, and 0025's rule that
+// every such field goes through it stands - but it is no longer the only way to
+// keep a host in the log.
+func TestMessageAndURLAgreeOnABareURL(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
-		{"https://mullion.local/index.html?in=1", "httpindex.html?in=1"},
-		{"https://example.com/", "httpexample.com"},
-		{"https://evil.example", "httpevil.example"},
+		{"https://mullion.local/index.html?in=1", "https://mullion.local/index.html?"},
+		{"https://example.com/", "https://example.com/"},
+		{"https://evil.example", "https://evil.example"},
 	} {
 		if got := Message(c.in); got != c.want {
-			t.Fatalf("Message(%q) = %q, want %q - if this changed, re-check whether URL is still needed", c.in, got, c.want)
+			t.Fatalf("Message(%q) = %q, want %q", c.in, got, c.want)
+		}
+		if got := URL(c.in); got != c.want {
+			t.Fatalf("URL(%q) = %q, want %q - Message and URL must not disagree about a bare URL", c.in, got, c.want)
 		}
 	}
 }

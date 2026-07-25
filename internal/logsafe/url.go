@@ -63,6 +63,12 @@ func URL(raw string) string {
 	// directory. Neither is a target a browser would hand back, so the old
 	// reduction is the right answer for both. The prefix test also skips
 	// url.Parse for the common non-URL case, which is every fallback caller.
+	// Message, not messagePlain: a value that does not begin with the scheme is
+	// not a URL this can reduce, but it may still carry one - "blob:https://x/y"
+	// wraps an origin, and so does a sentence a caller passed here by mistake.
+	// Message is where those are found. It cannot loop back: whatever it hands
+	// on does begin with the scheme, and the fallbacks below that one all take
+	// messagePlain.
 	if !hasHTTPPrefix(raw) {
 		return Message(boundInput(raw))
 	}
@@ -76,14 +82,14 @@ func URL(raw string) string {
 	head, hasQuery, hasFragment := splitURLMarks(raw)
 	parsed, err := url.Parse(head)
 	if err != nil || !isHostnameShaped(parsed.Host) {
-		return Message(boundInput(head))
+		return messagePlain(boundInput(head))
 	}
 
 	origin := parsed.Scheme + "://" + parsed.Host
 	// A host that cannot fit the budget is not printed at all rather than cut,
 	// because cutting it is exactly the failure this bound exists to prevent.
 	if len(origin) > URLLimit {
-		return Message(boundInput(head))
+		return messagePlain(boundInput(head))
 	}
 
 	reduced := origin + parsed.EscapedPath()
@@ -106,7 +112,7 @@ func URL(raw string) string {
 	// hunting for a test that covers it - the property is locked at
 	// isHostnameShaped, which is where it can actually be exercised.
 	if !isPrintableASCII(reduced) {
-		return Message(boundInput(head))
+		return messagePlain(boundInput(head))
 	}
 	return reduced
 }

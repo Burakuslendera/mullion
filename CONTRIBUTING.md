@@ -122,10 +122,11 @@ touching hit-testing or the non-client area.
   ASCII rule as `.go`.
 - User-supplied strings — filesystem paths, URIs, bridge payloads — pass through
   `internal/logsafe` before they reach a log line, and through the reducer that
-  fits the input. A URI takes `logsafe.URL`, never `logsafe.Message` or
-  `logsafe.FileName`: the path sanitizer reads the `s:/` of `https://` as a
-  Windows drive letter and deletes the host (issue #78, decisions/0025).
-  Diagnostics should be readable without being a disclosure.
+  fits the input. A URI takes `logsafe.URL`, never `logsafe.FileName`: `URL`
+  bounds the whole value and refuses to print a host it cannot print in full
+  (decisions/0025). A sentence that *contains* a URI takes `logsafe.Message`,
+  which finds the URLs inside it (decisions/0028). Diagnostics should be
+  readable without being a disclosure.
 - Exported API changes are a compatibility event: new `Config` fields must have a
   zero value that preserves current behaviour.
 

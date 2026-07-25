@@ -45,9 +45,10 @@ These files are that record.
 | [0022](./0022-new-windows-to-system-browser.md) | New windows are routed to the system browser, never opened in the host | Accepted |
 | [0023](./0023-navigation-cancel-gate.md) | A top-level navigation off the trusted origin is cancelled, opt-in | Accepted, ordering corrected by 0027 |
 | [0024](./0024-benign-abort-in-process.md) | An aborted navigation is not a load failure when mullion serves the assets | Accepted |
-| [0025](./0025-urls-are-logged-as-urls.md) | A URL reaching a log line is reduced as a URL, not as a filesystem path | Accepted |
+| [0025](./0025-urls-are-logged-as-urls.md) | A URL reaching a log line is reduced as a URL, not as a filesystem path | Accepted, trip-wire fired by 0028 |
 | [0026](./0026-navigation-failure-level-follows-classification.md) | A failed navigation is logged at the level the host's own classification gives it | Accepted |
 | [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md) | A navigation cancel is committed only after the runtime has performed it | Accepted |
+| [0028](./0028-message-keeps-the-urls-inside-it.md) | A message keeps the http(s) URLs inside it | Accepted |
 
 ## When to write one
 

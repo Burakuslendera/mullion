@@ -11,21 +11,153 @@ func Reason(err error) string {
 	return Message(err.Error())
 }
 
+// Message reduces an arbitrary diagnostic string: control bytes folded, Windows
+// paths cut to their file name - and any http(s) URL inside it left readable,
+// because that is the half of such a message worth having.
+//
+// The path sanitizer below reads "http://" as a drive letter at the 'p' and
+// "//" as a UNC start, so before this every URL embedded in a sentence lost its
+// host to FileName (issue #80):
+//
+//	in   Failed to fetch dynamically imported module: https://mullion.local/app/main.js
+//	out  Failed to fetch dynamically imported module: httpmain.js
+//
+// Swapping the caller to URL does not fix that: url.Parse rejects the whole
+// sentence, and URL hands it straight back here. So the scheme has to be known
+// one level down, where the message is split around its URL runs.
+//
+// Two properties keep the widening honest. A message carrying no literal
+// http:// or https:// is reduced byte for byte as it was before - which is what
+// keeps this out of the ~90 call sites decisions/0025 did not want to audit -
+// and only those two schemes are spared, so a file: URL's path is still a local
+// filesystem path and still collapses to its file name.
 func Message(message string) string {
-	message = strings.ReplaceAll(message, "\r", " ")
-	message = strings.ReplaceAll(message, "\n", " ")
-	message = StripControl(message)
-	message = strings.TrimSpace(message)
+	return reduceAroundURLs(message)
+}
+
+// messagePlain is Message without the URL protection: the reduction every value
+// got before issue #80, and the one URL falls back to.
+//
+// The direction is one-way and load-bearing: Message may call URL, URL must
+// never call Message. URL's fallbacks keep the http(s) prefix on the value they
+// hand back - deliberately, so a URL that fails to parse is not reduced as a
+// path - and handing that to a Message that scans for http(s) runs would send it
+// straight back to URL for ever. A caller holding a sentence rather than a URL
+// should call Message, which is where the scanning lives.
+func messagePlain(message string) string {
+	message = normaliseMessage(message)
 	if message == "" {
 		return "unknown"
 	}
+	return reducePlain(message)
+}
 
+func normaliseMessage(message string) string {
+	message = strings.ReplaceAll(message, "\r", " ")
+	message = strings.ReplaceAll(message, "\n", " ")
+	message = StripControl(message)
+	return strings.TrimSpace(message)
+}
+
+func reducePlain(message string) string {
 	message = sanitizePathSpans(message)
 	parts := strings.Fields(message)
 	for index, part := range parts {
 		parts[index] = sanitizeToken(part)
 	}
 	return strings.Join(parts, " ")
+}
+
+// reduceAroundURLs splits a message into http(s) runs and everything else, and
+// reduces each part by its own rule.
+//
+// It runs on the raw message, before any control byte has been folded, and that
+// order is the whole safety of this function. StripControl turns a control byte
+// into a space; if runs were found afterwards, a host with one inside it would
+// split, and the part before the fold would be printed as though it were the
+// whole host - "https://mullion.local<U+0085>.evil.example/x" logged as
+// "https://mullion.local". That is the forgery decisions/0025 spent a round
+// eliminating, and folding a control byte is what would manufacture it here, the
+// same way folding one to a space would have manufactured a field separator
+// there. Finding the run first keeps the control byte inside it, where URL
+// refuses the host and the value falls back to the old reduction with no host
+// left at all.
+//
+// For the same reason a run ends only at ASCII whitespace. Everything else -
+// C1 bytes, DEL, anything above 0x7f - stays inside the run for URL to
+// adjudicate, and URL's own output is printable ASCII by construction.
+//
+// A run starts at the literal scheme wherever it appears, not only at a word
+// boundary, because the messages this exists for quote their URLs: Chrome's CSP
+// violation reads "Refused to load the script 'https://cdn.evil.example/x.js'".
+//
+// A part is separated from the one before it only where the source had
+// whitespace there. Separating unconditionally would put a space inside every
+// quoted URL and inside "blob:https://..." - rewriting one token into two, which
+// is a worse misreading than the one this is fixing.
+func reduceAroundURLs(message string) string {
+	var out strings.Builder
+	write := func(text string, spaced bool) {
+		if text == "" {
+			return
+		}
+		if out.Len() > 0 && spaced {
+			out.WriteByte(' ')
+		}
+		out.WriteString(text)
+	}
+	plainStart := 0
+	for index := 0; index < len(message); index++ {
+		if !hasHTTPPrefix(message[index:]) {
+			continue
+		}
+		end := urlRunEnd(message, index)
+		plain := message[plainStart:index]
+		write(reducePlainSegment(plain), startsWithASCIISpace(plain))
+		write(URL(message[index:end]), endsWithASCIISpace(plain))
+		plainStart = end
+		index = end - 1
+	}
+	write(reducePlainSegment(message[plainStart:]), startsWithASCIISpace(message[plainStart:]))
+	if out.Len() == 0 {
+		return "unknown"
+	}
+	return out.String()
+}
+
+// reducePlainSegment is the plain reduction applied to one part of a message.
+// Unlike messagePlain it returns "" for an empty part rather than "unknown": a
+// message that is nothing but a URL has empty parts on both sides of it, and
+// neither of them is a value anyone is missing.
+func reducePlainSegment(part string) string {
+	return reducePlain(normaliseMessage(part))
+}
+
+// urlRunEnd finds where a URL run stops: the next ASCII whitespace byte, or the
+// end of the message. See reduceAroundURLs for why nothing else may end one.
+func urlRunEnd(message string, start int) int {
+	for index := start; index < len(message); index++ {
+		if isASCIISpace(message[index]) {
+			return index
+		}
+	}
+	return len(message)
+}
+
+func isASCIISpace(value byte) bool {
+	switch value {
+	case ' ', '\t', '\n', '\v', '\f', '\r':
+		return true
+	}
+	return false
+}
+
+func startsWithASCIISpace(part string) bool {
+	return part != "" && isASCIISpace(part[0])
+}
+
+func endsWithASCIISpace(part string) bool {
+	return part != "" && isASCIISpace(part[len(part)-1])
 }
 
 // IsControl reports whether r is a C0 or C1 control character, or DEL. It is the
@@ -50,87 +182,4 @@ func StripControl(message string) string {
 		}
 		return r
 	}, message)
-}
-
-func FileName(path string) string {
-	name := strings.TrimSpace(StripControl(path))
-	name = strings.Trim(name, `"'`)
-	name = strings.TrimRight(name, `\/`)
-	if index := strings.LastIndexAny(name, `\/`); index >= 0 {
-		name = name[index+1:]
-	}
-	if name == "." || name == "" {
-		return "unknown"
-	}
-	return name
-}
-
-func sanitizeToken(token string) string {
-	core := token
-	suffix := ""
-	for len(core) > 0 {
-		last := core[len(core)-1]
-		if last != ':' && last != ';' && last != ',' && last != '.' {
-			break
-		}
-		suffix = string(last) + suffix
-		core = core[:len(core)-1]
-	}
-	if strings.ContainsAny(core, `/\`) {
-		core = FileName(core)
-	}
-	if core == "" {
-		core = "unknown"
-	}
-	return core + suffix
-}
-
-func sanitizePathSpans(message string) string {
-	var builder strings.Builder
-	builder.Grow(len(message))
-	for index := 0; index < len(message); {
-		if !isPathStart(message, index) {
-			builder.WriteByte(message[index])
-			index++
-			continue
-		}
-
-		end := pathSpanEnd(message, index)
-		builder.WriteString(FileName(message[index:end]))
-		index = end
-	}
-	return builder.String()
-}
-
-func pathSpanEnd(message string, start int) int {
-	for index := start; index < len(message); index++ {
-		// Only the double quote terminates a path span. The apostrophe is a
-		// valid character in Windows user and folder names (O'Brien, D'Angelo,
-		// Team's Files), so treating it as a terminator would cut the span early
-		// and leak the trailing directory/user segments.
-		if message[index] == '"' {
-			return index
-		}
-		if message[index] == ':' && index > start+1 {
-			if index+1 == len(message) || message[index+1] == ' ' || message[index+1] == '\t' {
-				return index
-			}
-		}
-	}
-	return len(message)
-}
-
-func isPathStart(message string, index int) bool {
-	if index+2 < len(message) && isASCIIAlpha(message[index]) && message[index+1] == ':' && isPathSeparator(message[index+2]) {
-		return true
-	}
-	return index+1 < len(message) && isPathSeparator(message[index]) && isPathSeparator(message[index+1])
-}
-
-func isPathSeparator(value byte) bool {
-	return value == '\\' || value == '/'
-}
-
-func isASCIIAlpha(value byte) bool {
-	return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z')
 }
