@@ -1,6 +1,6 @@
 # 0025. A URL reaching a log line is reduced as a URL, not as a filesystem path
 
-**Status:** Accepted. Its trip-wire fired: [0028](./0028-message-keeps-the-urls-inside-it.md) teaches `Message` about the http(s) schemes, which this record rejected on the cost of auditing ~90 callers — the widening there is byte-identical for any message carrying no such URL, so the audit does not arise. `URL` keeps its job and every rule below still holds; what changes is that it is no longer the only way a host survives a log line (issue #80).
+**Status:** Accepted. Its trip-wire fired: [0028](./0028-message-keeps-the-urls-inside-it.md) teaches `Message` about the http(s) schemes, which this record rejected on the cost of auditing ~90 callers — the widening there leaves a message with no such URL reduced as it was, bar one narrow case it records, so the audit is a smaller question. `URL` keeps its job. Two statements below no longer hold: "the non-http(s) reduction is now frozen" — a value *wrapping* an http(s) URL, `blob:` and `filesystem:` among them, now shows the origin it wraps (the three specific re-checks that sentence names, `file:`, `:unknown` and 0021's `data:` form, were verified and do still hold) — and this record's implication that `URL` is the only way a host survives a log line (issue #80).
 
 ## Context
 

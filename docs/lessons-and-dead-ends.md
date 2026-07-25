@@ -367,4 +367,4 @@ The decision is [0025](decisions/0025-urls-are-logged-as-urls.md).
 12. **A sanitiser can remove the wrong half.** Reducing more than intended is not automatically safe: the URL reducer deleted the host and kept the query, which is the identifying half gone and the disclosing half kept. (§15)
 13. **Bound the output, not the input.** Truncating before parsing produces a well-formed value that names something else; a well-formed lie beats visible garbage past every reader. (§15)
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new §15 - a path sanitiser silently mangled every URL it reduced, and the first fix (clamp before parse) turned that into a well-formed wrong host; two short-version entries added (issue #78, decisions/0025).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: §15 marked historical at its head - `Message` no longer mangles URLs (issue #80, decisions/0028) - and the lesson it carries, about how long a plausible-looking mangling went unnoticed, is unchanged. The dead end it records was then reached twice more from new directions, which is the §15 lesson arriving about itself.

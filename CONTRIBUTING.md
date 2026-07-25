@@ -162,4 +162,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: the inline-foreign-source rule is now universal, per maintainer direction — no language hosts another language's source inline, in any file (Go, PowerShell, YAML, JS alike); `scripts/screenshot.cs` joins `host/errorpage.html` and `host/*.js` as the pattern.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the logsafe rule was rewritten — it justified itself with the bug issue #80 fixed, so it told a contributor the right thing for a reason that had stopped being true; a URI takes `logsafe.URL` because URL bounds the value, and a sentence containing one takes `logsafe.Message` (decisions/0028).

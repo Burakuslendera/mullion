@@ -57,6 +57,7 @@ $skip = @(
 $pathFixtures = @(
     "internal/logsafe/logsafe_test.go",
     "internal/logsafe/url_test.go",
+    "internal/logsafe/message_url_test.go",
     "internal/doctor/doctor_test.go",
     "host/diagnostics_windows_test.go"
 )
