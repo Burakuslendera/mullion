@@ -106,7 +106,7 @@ will spend the afternoon hunting a scaling bug that does not exist. The script
 declares per-monitor awareness before it measures anything. That is the whole
 reason it exists.
 
-The full contract is in [docs/verification.md](../docs/verification.md).
+The full contract is in [docs/bug-reports.md](../docs/bug-reports.md).
 
 ## Labels that are not used
 

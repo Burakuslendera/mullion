@@ -160,6 +160,23 @@ a pass/fail with an observable result — "looks fine" is not a result.
       trusted origin, in-origin routing and the `data:` error surface are never
       cancelled. Verify a redirect specifically, and that the app's own startup
       navigation is not cancelled (decisions/0023).
+- [ ] **The cancel was performed, not merely asked for**, in the same run as the
+      item above. Each cancelled navigation logs `navigation cancelled off
+      origin, routed to system browser` and then `cancelled navigation completed,
+      status=14, id=<n>` at debug — the completion consumed, so the fallback
+      error surface must not appear and the frontend must not be replaced. Four
+      WARN lines say it went otherwise, and a good run has none of them:
+      `cancelled navigation committed anyway` (the runtime accepted `put_Cancel`
+      and navigated regardless, which is 0023's `unverified` premise failing),
+      `cancelled navigation forgotten` (four cancels outstanding at once, so one
+      of them reverts to the pre-issue-73 behaviour and its completion may arm
+      the surface), `navigation cancelled off origin, target unreadable` (the URI
+      getter failed and the gate cancelled a navigation it could not read), and
+      `webview2 runtime warning, reason=cancel navigation <n>` (the runtime
+      refused the cancel, so the foreign document loads — check that it is then
+      **not** also opened in the system browser). Judge by the presence or
+      absence of those lines, for the reason the next item gives about
+      `SessionWarnCount` (decisions/0027).
 - [ ] **An in-origin full navigation does not fall into the error surface.**
       Serving the embedded assets (no `Config.URL`), click a link that navigates
       the top frame to another in-origin document (`<a href="index.html?x=1">`)
@@ -327,74 +344,9 @@ Rules:
 
 ## 6. What a good bug report contains
 
-Frame bugs are environment-dependent; a report without environment is a report
-that cannot be reproduced.
+The environment a frame bug report needs, the `mullion doctor` block that
+gathers it, and the rest of the reporting contract moved verbatim to
+[bug-reports.md](./bug-reports.md) when this file reached the 400-line
+reference-doc limit.
 
-**Do not gather the environment by hand. Run it:**
-
-```
-go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor   # no checkout needed
-go run -buildvcs=true ./cmd/mullion doctor                           # from a checkout
-go install ./cmd/mullion                                             # keep it: $(go env GOPATH)/bin
-```
-
-It prints a paste-ready block: Windows build (corrected — the registry still says
-"Windows 10" on Windows 11), GPUs, every monitor with its **physical** resolution,
-scaling and work area, and the WebView2 runtime — not the one the registry
-advertises, but **the one mullion would actually load**, together with whether it
-still exports the entry point the host calls. Exit code 0 means mullion can start
-on that machine. See [decisions/0008](./decisions/0008-doctor-is-a-go-command.md).
-
-The monitor section is why this is a command rather than a checklist. Windows
-reports a *virtualised* resolution to a process that is not DPI-aware, so a
-reporter reading their own settings panel writes "1536x864" for a 1920x1080
-monitor at 125% — and the reader spends an afternoon chasing a scaling bug that
-was never there. The command declares per-monitor awareness before it measures.
-
-Mind the `-buildvcs=true` from a checkout: `go run` does not stamp the revision
-into the binary, so without it the version line reads a bare `devel` and
-identifies nothing. `go install` and `go build` do stamp it. The report says so
-when it happens rather than letting the line pass as an answer.
-
-**The build identifies itself.** `Run` logs `mullion: version=…` at startup, read
-out of the binary's own build info: a tag (`v0.1.0`), a pseudo-version carrying
-the commit hash (`v0.0.0-20060102150405-abcdef123456`), a `devel` build with its
-revision, or a disclosed `replace` directive. A report that includes the log has
-already answered "which commit" — and answered it more reliably than the reporter
-could from memory.
-
-Then include:
-
-- **What you did, in frame terms** ("dragged down from maximized on the
-  secondary 150% monitor and released over the primary"), and **expected vs.
-  observed** stated as an observable — cursor shape, window rect, which control
-  responded — not as an impression.
-- **The relevant log lines**, not the whole log: the hit-test lines around the
-  failing gesture (`MULLION_HITTEST_DIAG=1`), plus any warning or error from the
-  host or the WebView2 layer in the same window of time.
-- **Which switches were on** — build tags used, env variables set. A trace taken
-  from a diagnostic build must say so.
-- **The asset source** — whether `Config.URL` pointed the WebView at a caller-served
-  loopback origin instead of the embedded `fs.FS`. The startup
-  `mullion: asset source=` line records it. With a caller URL the served bytes and
-  the asset boundary are the caller's, not mullion's, so it is a different report.
-- **WebView2 Runtime version — and which runtime was actually loaded.** A large
-  share of "works on my machine" in a WebView2 host is a runtime-version
-  difference. mullion discovers the runtime itself (registry, or a
-  `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` pin) and loads the runtime's own DLL, so
-  the version alone is not the whole answer: say whether that environment
-  variable was set, and give the resolved runtime path if the host logs it. A
-  report against a pinned fixed-version runtime is a different report.
-- **Windows build**, and whether the session was a normal desktop, a remote
-  session or a VM — remote sessions change DWM composition and can invalidate
-  visual findings.
-- **Monitor setup, generically**: how many monitors, the scale factor of each,
-  which is primary, and where the window was when it failed. Say explicitly
-  whether the scale factors differ; mixed-DPI is its own bug class.
-- **Repro steps from a cold launch**, with a hit rate if intermittent. "3 of 10
-  launches" is useful; "sometimes" is not.
-
-A report that lets someone else reproduce the failure on the first try is worth
-more than a patch.
-
-> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: checklist item for the in-origin full navigation that must not fall into the error surface (issue #72, decisions/0024), and the headless rule now covers a Win32 call a test reaches indirectly (issue #76).
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: checklist item for what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit.

@@ -19,6 +19,7 @@ other document answers one narrower question below.
 | **Why is it done this way, and what would change that?** | [decisions/](./decisions/) |
 | What was already tried, and why was it abandoned? | [lessons-and-dead-ends.md](./lessons-and-dead-ends.md) |
 | How do I prove a change actually works? | [verification.md](./verification.md) |
+| What does a bug report have to contain? | [bug-reports.md](./bug-reports.md) |
 
 ## Why the decision records matter
 
@@ -37,4 +38,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: index webview2-and-assets.md, split out of architecture.md at the 400-line reference-doc limit.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: index bug-reports.md, split out of verification.md at the 400-line reference-doc limit.

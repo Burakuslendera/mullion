@@ -349,7 +349,21 @@ the field separator it exists to defend against. A host of
 `evil.example,<C1>user_initiated=false` becomes a second, forged field. Refusing
 the host outright was the only version that held.
 
-The decision is [0025](decisions/0025-urls-are-logged-as-urls.md).
+**The first of those came back, twice.** Issue #80 taught `Message` to keep the
+URLs inside a sentence (decisions/0028), and "never cut a host at all" had to be
+re-derived in two shapes nobody was watching for. A value bounded *before* it was
+scanned: `URL`'s non-http fallback cut its input at 160 bytes and handed the rest
+to a `Message` that now keeps hosts, so the cut could land on a label boundary
+inside one - reached through a function whose own comment justified the cut with
+"Message deletes the identifying part of the value anyway", which that same
+change had just made false. And a run ended by a TAB, LF or CR: a URL parser
+deletes those three bytes before it resolves a value, so ending a run at one and
+printing what precedes it prints a prefix of the real host. Neither is a
+truncation, and both print a shortened host as a whole one. A rule of the form
+"this is safe because X holds" is owed a re-check by whoever changes X.
+
+The decisions are [0025](decisions/0025-urls-are-logged-as-urls.md) and
+[0028](decisions/0028-message-keeps-the-urls-inside-it.md).
 
 ## 16. The short version
 
@@ -367,4 +381,4 @@ The decision is [0025](decisions/0025-urls-are-logged-as-urls.md).
 12. **A sanitiser can remove the wrong half.** Reducing more than intended is not automatically safe: the URL reducer deleted the host and kept the query, which is the identifying half gone and the disclosing half kept. (§15)
 13. **Bound the output, not the input.** Truncating before parsing produces a well-formed value that names something else; a well-formed lie beats visible garbage past every reader. (§15)
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: §15 marked historical at its head - `Message` no longer mangles URLs (issue #80, decisions/0028) - and the lesson it carries, about how long a plausible-looking mangling went unnoticed, is unchanged. The dead end it records was then reached twice more from new directions, which is the §15 lesson arriving about itself.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: §15 records the two new directions its first dead end - cutting a host - was reached from while issue #80 was being fixed: a value bounded before it is scanned, and a run ended by TAB/LF/CR. The historical note at its head, and the lesson about how long a plausible-looking mangling went unnoticed, are unchanged.
