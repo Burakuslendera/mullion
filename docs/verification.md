@@ -198,6 +198,17 @@ a pass/fail with an observable result — "looks fine" is not a result.
       `Select-String -SimpleMatch` or `index\.html\?$`. If a check ever needs
       more than two navigations told apart, give them distinct paths rather than
       distinct queries.
+- [ ] **A frontend error keeps the URL it names.** Make the frontend throw with
+      a URL in the message — `throw new Error("could not load
+      https://mullion.local/app/main.js")` from `app.js` is enough, or point a
+      `<script src>` at a missing in-origin file. The ERROR line must read
+      `frontend diagnostic error, message=…https://mullion.local/app/main.js`,
+      with the host intact; `httpmain.js` is issue #80, the shape three releases
+      of live verification were read past without anyone noticing
+      (decisions/0028). A query in that URL must still be reduced to a bare `?`.
+      This is the one part of #80 no headless test can reach: everything from the
+      reducer down is pinned, but that a real `window.onerror` string arrives at
+      that line unclamped and unmangled is only observable live.
 - [ ] **Second `Run` in the same process after a pre-loop failure.** With a
       driver that runs the host twice in one process, make the first `Run`
       fail before the message loop (e.g. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
@@ -349,4 +360,4 @@ gathers it, and the rest of the reporting contract moved verbatim to
 [bug-reports.md](./bug-reports.md) when this file reached the 400-line
 reference-doc limit.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: checklist item for what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: two checklist items - what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027), and that a frontend error keeps the URL it names, which is the one part of issue #80 no headless test can reach (decisions/0028); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit.
