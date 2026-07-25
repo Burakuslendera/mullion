@@ -140,6 +140,13 @@ type Config struct {
 	DevTools bool
 
 	// Logger receives diagnostic output. Default NopLogger.
+	//
+	// It must be safe to call from more than one goroutine. Most lines are
+	// written from the UI thread, but not all, and never have been: the render
+	// watchdog and the startup show gate write from timers, and a system-browser
+	// launch writes from the worker it runs on (issue #74, decisions/0029). A
+	// Logger that holds state - a buffer, a file handle, a counter - needs its
+	// own lock; ColourLogger has one.
 	Logger Logger
 
 	// Bridge handles application-defined calls from the frontend. It receives

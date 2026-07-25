@@ -139,6 +139,14 @@ type Host struct {
 	// also makes the routing decision observable, so which target gets handed
 	// over is now pinned by a test rather than only by the live checklist.
 	openExternal func(uri string)
+
+	// externalOpenSlots bounds the system-browser launches in flight at once
+	// (issue #74, decisions/0029). One token is held for the life of one launch
+	// goroutine; the channel is buffered to externalOpenLimit and never closed.
+	// Created in New rather than in Run, because a launch is reachable from an
+	// event handler before Run's own bookkeeping exists and a nil channel would
+	// drop every one of them.
+	externalOpenSlots chan struct{}
 }
 
 // New prepares a host. It does not create a window; Run does that.
@@ -152,12 +160,13 @@ type Host struct {
 func New(config Config) *Host {
 	normalised := config.normalise()
 	return &Host{
-		config:          normalised,
-		log:             newLogSink(normalised.Logger),
-		js:              normalised.jsScripts(),
-		dpiAwarenessErr: enablePerMonitorV2DPIAwareness(),
-		startupTiming:   newStartupTiming(normalised.StartHidden),
-		diagnostics:     newNativeDiagnostics(),
+		config:            normalised,
+		log:               newLogSink(normalised.Logger),
+		js:                normalised.jsScripts(),
+		dpiAwarenessErr:   enablePerMonitorV2DPIAwareness(),
+		startupTiming:     newStartupTiming(normalised.StartHidden),
+		diagnostics:       newNativeDiagnostics(),
+		externalOpenSlots: make(chan struct{}, externalOpenLimit),
 	}
 }
 
