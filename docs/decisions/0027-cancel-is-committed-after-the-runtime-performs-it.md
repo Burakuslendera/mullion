@@ -200,16 +200,19 @@ callback now answer the same question in opposite directions.
 
 ## Evidence
 
-Commit on branch `fix-73-cancel-after-confirmation`. Locked by
-`host/navigationcancel_windows_test.go` — the decision commits to nothing, the
-ledger holds four out-of-order completions, a consumed slot is reused before
-anything is evicted, an eviction drops the *oldest* entry and says so, both
-halves report what they forget, repeated starts under one id are one entry, an
-id-less cancel is recognised exactly once, an id-less *failure* is not mistaken
-for one, the two halves never cross-match, the ledger is consulted whatever the
-surface is doing, and an unreadable target is cancelled loudly and never routed
-— plus the gate cases in `host/systembrowser_windows_test.go`, driven through
-both halves from `noteAndGateNavigation`, and the cancel-did-not-take line in
+Commit on branch `fix-73-cancel-after-confirmation`. Locked by two files, split
+by the question each answers. `host/navigationcancel_windows_test.go` covers what
+a cancel *means*: the decision commits to nothing, an id-less cancel is
+recognised exactly once, an id-less *failure* is not mistaken for one, and an
+unreadable target is cancelled loudly and never routed.
+`host/navigationledger_windows_test.go` covers the ledger as a data structure: it
+holds four out-of-order completions, a consumed slot is reused before anything is
+evicted, an eviction drops the *oldest* entry and says so, both halves report
+what they forget, repeated starts under one id are one entry, the two halves
+never cross-match, the ledger is consulted whatever the surface is doing, and the
+eviction warning survives a `Logger` that re-enters the ledger. Plus the gate
+cases in `host/systembrowser_windows_test.go`, driven through both halves from
+`noteAndGateNavigation`, and the cancel-did-not-take line in
 `host/errorsurface_logging_windows_test.go`.
 
 Two things no behavioural test in this suite can execute are guarded by reading
@@ -227,6 +230,16 @@ in the wiring, a commit added one level above where the decision test probed,
 and four separate ways past the layer's source guard. Every one of those is now
 killed, and the guards read a comment-stripped body, scope the `return` to the
 error branch it belongs to, and count the call sites they cannot see into.
+
+A later audit found that last sentence was true of the layer's guard and not yet
+of the host's. `host/navigation_report_source_test.go` was reading
+`webview_windows.go` with its comments intact, and matching the verdict *call*
+rather than the whole condition — which its own comment said was not enough,
+without then checking it. Two more mutants walked through it with the suite
+green: the real `return` deleted and the word left in a comment above it, and
+`&& navigationID == 0` conjoined onto the verdict so the branch is never taken.
+It now strips comments the way the layer's guard does, and refuses a condition
+carrying anything but the verdict.
 
 Verified live, `examples/basic` with `PinNavigationToOrigin` on, runtime
 150.0.4078.83, two runs on 2026-07-25. Nine off-origin navigations were
@@ -253,4 +266,4 @@ What could not be exercised live is the failure this record is mostly about:
 `put_Cancel` returning an error has never been observed and cannot be provoked
 from outside.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a cancel is committed only after put_Cancel succeeds, outstanding cancels are a bounded ledger rather than one slot, and an unreadable target is cancelled loudly (issue #73, closing the fail-open half of 0023). Rewritten the same day after an eight-agent audit: the ledger evicts on occupancy and logs after it writes, both halves report what they drop, and four claims the first draft inherited or invented - the startup-show-gate chain, 0021's probe as evidence for concurrent cancels, the id-less branch's safety, and the double-open being gone - are withdrawn or corrected.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a cancel is committed only after put_Cancel succeeds, outstanding cancels are a bounded ledger rather than one slot, and an unreadable target is cancelled loudly (issue #73, closing the fail-open half of 0023). Rewritten the same day after an eight-agent audit: the ledger evicts on occupancy and logs after it writes, both halves report what they drop, and four claims the first draft inherited or invented - the startup-show-gate chain, 0021's probe as evidence for concurrent cancels, the id-less branch's safety, and the double-open being gone - are withdrawn or corrected. Audited again the same day: the Evidence above named one test file where the ledger's half lives in a second one, and the host's source guard was neither comment-stripped nor scoped to the whole condition - two mutants passed it green, and both are now killed.

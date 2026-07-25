@@ -247,6 +247,17 @@ completion; the deleted warning restored in the callback; and the `showing
 fallback error surface` line raised to warn. The last two are the ones no
 behavioural test could see.
 
+A later audit found the ordering rule in bold above locked nowhere. It is
+applied at both of this record's own sites, and both took the warning back in
+front of the state it describes with the whole suite green — `armErrorSurface`'s
+four writes, and the seal's admission drop in `noteSurfaceOwnOutcome` — while the
+same rule in 0027's cancelled-navigation ledger had been driven from the start.
+`host/errorsurface_reentrancy_windows_test.go` closes it: a `Logger` that
+dispatches a completion from inside each warning, asserting that the nested call
+finds a machine already armed and absorbs rather than arming a generation of its
+own, and that the generation it does arm survives the rest of the outer call.
+Both mutants now die.
+
 Verified live, `examples/basic`, runtime 150.0.4078.83, 2026-07-25. One click on
 an in-origin link put the runtime into a navigate/abort loop that ran until the
 window was closed: **23 aborts, ids 3 to 25**, each reported exactly once, at
@@ -263,4 +274,4 @@ describes; the abort reproduces when the click lands while the previous
 navigation is still in flight. That run is the negative control: it warned zero
 times too, so the rule does not merely silence the suppressed path.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a failed completion is reported once by the branch that classified it, at the level that classification deserves (issue #79); the warning moves into armErrorSurface and 0020's unattributed absorb keeps its warning. Revised the same day after an eight-agent audit: every report now follows its state transition rather than preceding it (a re-entrant-Logger regression the first version introduced), the unattributed absorb says so in its text, the follow-up line drops the duplicated phrase, and the counter claim was cut back to what the runs actually show.
+> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a failed completion is reported once by the branch that classified it, at the level that classification deserves (issue #79); the warning moves into armErrorSurface and 0020's unattributed absorb keeps its warning. Revised the same day after an eight-agent audit: every report now follows its state transition rather than preceding it (a re-entrant-Logger regression the first version introduced), the unattributed absorb says so in its text, the follow-up line drops the duplicated phrase, and the counter claim was cut back to what the runs actually show. Audited again the same day: that ordering rule was applied in the code but locked by no test, and errorsurface_reentrancy_windows_test.go now drives both of its sites.
