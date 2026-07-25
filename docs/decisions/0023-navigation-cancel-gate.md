@@ -94,7 +94,7 @@ COM args.
 - `host/systembrowser_windows_test.go` `TestShouldCancelNavigation`: an
   off-origin non-http(s) target is cancelled and dropped, never routed; the
   trusted origin is never cancelled.
-- `host/errorsurface_windows_test.go`: `TestGateCancelledCompletionDoesNotArmTheSurface`
+- `host/errorsurface_abort_windows_test.go`: `TestGateCancelledCompletionDoesNotArmTheSurface`
   - a cancelled navigation's `OperationCanceled` completion is consumed and never
   arms the surface, while an unrelated foreign failure still does;
   `TestNoteAndGateNavigationNeverCancelsTheSurface` - a surface start reported

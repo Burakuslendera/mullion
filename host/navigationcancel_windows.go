@@ -20,25 +20,46 @@ import "github.com/Burakuslendera/mullion/internal/webview2"
 // fields need no lock.
 
 // cancelledNavSlots is how many cancelled navigations can be outstanding at
-// once. Four, because the live probe behind decisions/0021 watched the runtime
-// run two navigations for one user action, and a redirect chain plus a
-// runtime-initiated retry is the worst shape anyone has measured. It is a
-// bound, not a capacity estimate: exceeding it is reported.
+// once. It is a bound, not a capacity estimate: exceeding it is reported, on
+// both halves of the ledger.
+//
+// Four, and the reason is a shape rather than a measurement. put_Cancel is
+// issued while NavigationStarting is being handled, but the OperationCanceled
+// completion that clears the entry is a separately queued event, so nothing
+// stops the runtime dispatching a second start before the first completion is
+// delivered. How many can stack up that way has never been measured here; four
+// is room for a couple of them plus the runtime's own retry.
+//
+// An earlier version of this comment said decisions/0021's live probe had
+// measured two navigations outstanding at once. It had not: 0021 records "the
+// second starting right after the first's failure completion", which is
+// strictly sequential and is the single-slot premise holding, not failing.
 const cancelledNavSlots = 4
 
 // rememberCancelledNavigation enters a confirmed cancel in the ledger.
 //
-// Position is age: the newest entry is appended at the end and the oldest falls
-// off the front. A redirect reuses its navigation's id, so a redirect chain is
-// one entry, not one per hop.
+// The live entries are a dense prefix, oldest first: takeCancelledNavigation
+// closes the gap when it removes one, so the first empty slot is always the end
+// and an entry's position really is its age. Getting that wrong is not
+// cosmetic - an earlier version zeroed in place and shifted unconditionally,
+// which evicted a live entry while three slots stood empty and told the reader
+// the ledger was full.
+//
+// An id already present is left alone. That covers a redirect, which the
+// runtime is documented to run under its navigation's original id, so a chain
+// would otherwise book one entry per hop. The branch is defensive rather than
+// load-bearing: an abandoned navigation should produce no further hop at all,
+// and the id-sharing itself is `unverified` in decisions/0023.
 func (host *Host) rememberCancelledNavigation(navigationID uint64) {
 	if navigationID == 0 {
 		// No identity to match on. Count it instead, and stop counting at the
 		// bound - nothing but a matching completion ever decrements this, and a
 		// completion that never comes must not make the count grow forever.
-		if host.cancelledNavAnonymous < cancelledNavSlots {
-			host.cancelledNavAnonymous++
+		if host.cancelledNavAnonymous >= cancelledNavSlots {
+			host.log.Warn("mullion: cancelled navigation forgotten, ledger full and it has no id")
+			return
 		}
+		host.cancelledNavAnonymous++
 		return
 	}
 	for _, id := range host.cancelledNavIDs {
@@ -46,15 +67,27 @@ func (host *Host) rememberCancelledNavigation(navigationID uint64) {
 			return
 		}
 	}
-	if evicted := host.cancelledNavIDs[0]; evicted != 0 {
-		// Four cancels outstanding at once, none of them completed. Whatever is
-		// dropped here reverts to the pre-issue-73 behaviour for that one
-		// navigation: its completion reaches the error-surface machine and may
-		// arm the fallback. Say so - the bound being reached is itself the news.
-		host.log.Warn("mullion: cancelled navigation forgotten, ledger full, id=" + formatUint64(evicted))
+	for i, id := range host.cancelledNavIDs {
+		if id == 0 {
+			host.cancelledNavIDs[i] = navigationID
+			return
+		}
 	}
+	// Genuinely full: every slot holds a cancel whose completion has not
+	// arrived. The oldest is dropped, and that one navigation reverts to the
+	// pre-issue-73 behaviour - its completion reaches the error-surface machine
+	// and may arm the fallback - so the bound being reached is itself the news.
+	//
+	// The warning comes after the writes, and that order is load-bearing for the
+	// reason armErrorSurface gives (decisions/0026): the Logger is embedder code,
+	// and one that pumps messages runs a queued navigation event inside this
+	// call. Logging first let the nested call see the pre-shift array, name the
+	// same id a second time, and shift again - losing an entry that no line ever
+	// named.
+	evicted := host.cancelledNavIDs[0]
 	copy(host.cancelledNavIDs[:], host.cancelledNavIDs[1:])
 	host.cancelledNavIDs[len(host.cancelledNavIDs)-1] = navigationID
+	host.log.Warn("mullion: cancelled navigation forgotten, ledger full, id=" + formatUint64(evicted))
 }
 
 // noteGateCancelledOutcome intercepts the completion of a navigation the gate
@@ -87,22 +120,32 @@ func (host *Host) noteGateCancelledOutcome(success bool, status webview2.WebErro
 }
 
 // takeCancelledNavigation removes this completion's navigation from the ledger
-// and reports whether it was there.
+// and reports whether it was there. Removing closes the gap, which is what keeps
+// the live entries a dense, age-ordered prefix for rememberCancelledNavigation.
 //
 // With an id the match is positive and the status is not consulted: the id is
 // proof enough, and requiring a particular status would fail open the day the
 // runtime picks a different one. Without an id there is only order, so the
 // match is narrowed to the status a cancel is documented to produce - which
 // keeps an ordinary id-less failure from being mistaken for a cancel that is
-// still outstanding. The cost of the id-less branch is decision 0020's cost in
-// a different place: absent identity, a superseded navigation's own cancel can
-// be taken for the gate's. It cannot arm the surface, which is the direction
-// that matters.
+// still outstanding.
+//
+// Identity here is a property of the *event*, not of the navigation: the id is
+// read separately at the start and at the completion, and either read can fail
+// on its own. A start that had an id and a completion that does not - or the
+// reverse - therefore never match, and the entry is stranded until the bound
+// evicts it while the completion goes to the error-surface machine. Absent
+// identity the id-less credit can also be spent on the wrong completion, and
+// then the right one arms the surface instead. Both are the pre-issue-73
+// behaviour for one navigation, they are bounded, and they exist only while
+// GetNavigationID is failing - but the earlier claim that this branch can only
+// ever cost a skipped cleanup was wrong, and it is corrected here.
 func (host *Host) takeCancelledNavigation(status webview2.WebErrorStatus, navigationID uint64) bool {
 	if navigationID != 0 {
 		for i, id := range host.cancelledNavIDs {
 			if id == navigationID {
-				host.cancelledNavIDs[i] = 0
+				copy(host.cancelledNavIDs[i:], host.cancelledNavIDs[i+1:])
+				host.cancelledNavIDs[len(host.cancelledNavIDs)-1] = 0
 				return true
 			}
 		}

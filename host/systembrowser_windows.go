@@ -35,9 +35,10 @@ func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 }
 
 // shouldCancelNavigation is the PinNavigationToOrigin gate applied to a
-// NavigationStarting event. It returns whether to cancel the navigation, and for
-// a cancelled off-origin one it routes an http/https target to the system browser
-// - any other scheme is dropped - the same containment and routing as
+// NavigationStarting event, and it is a decision and nothing else: no state
+// written, nothing routed, nothing logged. Everything that follows a cancel is
+// noteNavigationCancelled's, and runs only once the runtime has confirmed the
+// cancel (issue #73, decisions/0027). What it decides is the same containment as
 // NewWindowRequested (issue #6, decisions/0023). With the gate off (the default)
 // navigationOffOrigin is false for every uri, so this returns false and cancels
 // nothing.

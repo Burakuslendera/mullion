@@ -109,7 +109,7 @@ func (host *Host) createWebView() error {
 	}
 	browser.NavigationStartingCallback = func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool {
 		host.logNavigationStarting(uri, navigationID, isUserInitiated, isRedirected)
-		return host.noteAndGateNavigation(uri, navigationID, isUserInitiated)
+		return host.noteAndGateNavigation(uri, navigationID)
 	}
 	browser.NavigationCancelledCallback = func(uri string, navigationID uint64, isUserInitiated bool) {
 		host.noteNavigationCancelled(uri, navigationID, isUserInitiated)

@@ -9,16 +9,15 @@ import (
 	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
-// The ledger of cancelled navigations (issue #73, decisions/0027). Three
-// defects shared one root - the gate committed to a cancel before the runtime
-// had performed it, and never learned whether it took - and each half is locked
-// here: deciding has no side effects, more than one cancel can be outstanding,
-// and a cancel with no identity is still recognised when its completion arrives.
+// What a cancel means (issue #73, decisions/0027). Three defects shared one
+// root - the gate committed to a cancel before the runtime had performed it,
+// and never learned whether it took - and the contract that replaced them is
+// locked here: deciding has no side effects, a cancel with no identity is still
+// recognised when its completion arrives, and a target the runtime could not
+// read is cancelled rather than let through.
 //
-// The pair of calls a real NavigationStarting makes is `cancelNavigation`
-// (systembrowser_windows_test.go). A test that wants the failed-cancel path
-// calls only the first half, which is exactly what the runtime does when
-// put_Cancel fails.
+// The ledger those cancels are entered in is navigationledger_windows_test.go,
+// which is also where outstandingCancels and wantOutstanding live.
 
 // Deciding to cancel must change nothing. Everything that follows a cancel -
 // the ledger entry, the system-browser hand-off - belongs to the navigation
@@ -26,12 +25,16 @@ import (
 // that. Before this split, a put_Cancel that failed left the foreign document
 // loading in the WebView, the same target opened in the browser, and the
 // document's own completion swallowed as though it had been cancelled.
+//
+// It drives noteAndGateNavigation, which is what the runtime's callback calls.
+// Probing shouldCancelNavigation instead left the fail-open reachable one level
+// up with the whole suite green.
 func TestGateDecisionAloneCommitsToNothing(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
 	var opened []string
 	host.openExternal = func(uri string) { opened = append(opened, uri) }
 
-	if !host.shouldCancelNavigation("https://evil.example/x") {
+	if !host.noteAndGateNavigation("https://evil.example/x", 4) {
 		t.Fatal("the gate did not decide to cancel an off-origin navigation")
 	}
 
@@ -41,6 +44,7 @@ func TestGateDecisionAloneCommitsToNothing(t *testing.T) {
 	if logger.String() != "" {
 		t.Fatalf("deciding to cancel wrote to the log:\n%s", logger.String())
 	}
+	wantOutstanding(t, host)
 	// The navigation is going ahead, so its completion belongs to the machine.
 	// Consuming it here is what hid a foreign document from the host entirely.
 	if host.noteGateCancelledOutcome(true, statusNone, 4) {
@@ -48,65 +52,6 @@ func TestGateDecisionAloneCommitsToNothing(t *testing.T) {
 	}
 	if host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 4) {
 		t.Fatal("a failed completion was consumed for a cancel that was never confirmed")
-	}
-}
-
-// More than one cancel can be outstanding. The single slot this replaced meant
-// the second cancel evicted the first, and the evicted navigation's own
-// OperationCanceled completion then reached the error-surface machine, armed it
-// and tore the live frontend down into the fallback page - the exact failure the
-// id consumption was added to prevent.
-//
-// 0021's live probe is why this is not hypothetical: the runtime was watched
-// starting a second navigation of its own after the first ended, so "a top-frame
-// navigation completes before the next starts" is not a rule.
-func TestLedgerHoldsSeveralOutstandingCancels(t *testing.T) {
-	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
-
-	for id := uint64(5); id <= 8; id++ {
-		if !cancelNavigation(host, "https://evil.example/", id, true) {
-			t.Fatalf("the gate did not cancel navigation %d", id)
-		}
-	}
-
-	// Completions arrive out of order, as completions do.
-	for _, id := range []uint64{7, 5, 8, 6} {
-		if !host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, id) {
-			t.Fatalf("the completion of cancelled navigation %d was not recognised", id)
-		}
-	}
-	if host.errorSurfaceActive || host.errorSurfacePending || host.errorSurfaceLoading {
-		t.Fatalf("a cancelled navigation armed the error surface: active=%v pending=%v loading=%v",
-			host.errorSurfaceActive, host.errorSurfacePending, host.errorSurfaceLoading)
-	}
-}
-
-// The ledger is bounded, and reaching the bound is news rather than silence: the
-// navigation dropped to make room reverts to the behaviour this issue is about,
-// and nothing downstream could otherwise say which one it was.
-func TestLedgerReportsWhatItForgets(t *testing.T) {
-	host, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
-
-	for id := uint64(1); id <= cancelledNavSlots; id++ {
-		cancelNavigation(host, "https://evil.example/", id, true)
-	}
-	if strings.Contains(logger.String(), "cancelled navigation forgotten") {
-		t.Fatalf("the ledger reported an eviction before it was full:\n%s", logger.String())
-	}
-
-	cancelNavigation(host, "https://evil.example/", cancelledNavSlots+1, true)
-
-	if !strings.Contains(logger.String(), "cancelled navigation forgotten, ledger full, id=1") {
-		t.Fatalf("the evicted navigation was dropped silently:\n%s", logger.String())
-	}
-	if host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 1) {
-		t.Fatal("the evicted navigation was still in the ledger")
-	}
-	// The one that took its place is held, and so are the ones it did not evict.
-	for _, id := range []uint64{2, cancelledNavSlots + 1} {
-		if !host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, id) {
-			t.Fatalf("navigation %d should still be in the ledger", id)
-		}
 	}
 }
 
@@ -126,12 +71,15 @@ func TestIdlessCancelIsStillRecognised(t *testing.T) {
 	if !host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 0) {
 		t.Fatal("the id-less cancel's completion was not recognised")
 	}
-	if host.errorSurfaceActive || host.errorSurfacePending || host.errorSurfaceLoading {
-		t.Fatal("an id-less cancel armed the error surface")
-	}
 	// Exactly one: the count is not a licence to swallow every later cancel.
 	if host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 0) {
 		t.Fatal("the id-less cancel was consumed twice")
+	}
+	// And the completion that is no longer consumed is a real failure again: it
+	// reaches the machine and asks for the surface, which is what the id-less
+	// branch is spending its one credit to prevent.
+	if !host.noteNavigationOutcome(false, webview2.WebErrorStatusOperationCanceled, 0) {
+		t.Fatal("an unconsumed cancellation must reach the machine as a failure")
 	}
 }
 

@@ -105,7 +105,7 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 			name:    "an abort mullion served itself is expected and handled",
 			newHost: func(t *testing.T) (*Host, *captureLogger) { return newTestHost(t, Config{}) },
 			preamble: func(t *testing.T, host *Host) {
-				host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3, true)
+				host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3)
 			},
 			complete: func(host *Host) bool { return noteFail(host, 3) },
 			want:     "level=DEBUG msg=mullion: navigation aborted, not arming the error surface, status=9, id=3",
@@ -276,7 +276,7 @@ func TestSuppressedAbortsDoNotInflateSessionWarnCount(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 
 	for id := uint64(1); id <= 6; id++ {
-		host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", id, true)
+		host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", id)
 		if noteFail(host, id) {
 			t.Fatalf("suppressed abort %d asked for the fallback surface", id)
 		}

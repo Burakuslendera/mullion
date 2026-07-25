@@ -26,8 +26,11 @@ import "strings"
 //
 // Deciding is all it does. What follows a cancel - remembering the id, routing
 // the target - happens in noteNavigationCancelled, which the runtime calls only
-// once the cancel has actually taken (decisions/0027).
-func (host *Host) noteAndGateNavigation(uri string, navigationID uint64, isUserInitiated bool) bool {
+// once the cancel has actually taken (decisions/0027). That is also why this no
+// longer takes isUserInitiated: the only thing that ever used it was the routing
+// log line, and the routing now receives its own copy from the cancelled
+// callback.
+func (host *Host) noteAndGateNavigation(uri string, navigationID uint64) bool {
 	host.noteNavigationTarget(uri, navigationID)
 	if host.noteSurfaceNavigationStarting(uri, navigationID) {
 		host.log.Debug("mullion: error surface navigation identified, id=" + formatUint64(navigationID))

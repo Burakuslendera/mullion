@@ -95,27 +95,27 @@ type Host struct {
 	// the current document stays - so the machine treats a matching completion
 	// as cleanup (decisions/0023, 0027).
 	//
-	// It is a set rather than the single slot it started as because more than
-	// one cancel can be outstanding: 0021's live probe watched the runtime start
-	// a second navigation of its own after the first ended, so "a top-frame
-	// navigation completes before the next starts" is not a rule of the runtime.
-	// With one slot the second cancel evicted the first and the evicted
-	// completion armed the error surface, tearing the live frontend down into
-	// the fallback page - the exact failure the id consumption exists to prevent
-	// (issue #73).
+	// It is a set rather than the single slot it started as because nothing
+	// stops more than one cancel being outstanding: put_Cancel is issued while
+	// NavigationStarting is handled, while the completion that clears the entry
+	// is a separately queued event. With one slot the second cancel evicted the
+	// first and the evicted completion armed the error surface, tearing the live
+	// frontend down into the fallback page - the exact failure the id
+	// consumption exists to prevent (issue #73).
 	//
-	// The set is small and fixed. An id is only ever removed by its completion,
-	// and a completion that never comes would otherwise hold a slot forever, so
-	// the oldest entry is evicted when a new cancel needs room. Evicting fails
-	// in the pre-issue-73 direction, which is understood, and needing to evict
-	// at all means four cancels are outstanding at once.
+	// The set is small and fixed, and the live entries are kept a dense prefix
+	// so eviction happens on occupancy rather than on position. An id is removed
+	// by its completion, or by the eviction when all four slots are occupied;
+	// either way the dropped navigation reverts to the pre-issue-73 behaviour,
+	// which is why the eviction is reported.
 	cancelledNavIDs [cancelledNavSlots]uint64
 	// cancelledNavAnonymous counts cancelled navigations the runtime gave no id
 	// for. Identity is what the set above matches on, and without it the only
 	// thing left is order: an id-less OperationCanceled completion arriving
 	// while one of these is outstanding is taken as its cleanup, the same
 	// order-based fallback decision 0020 makes for the error surface. Bounded by
-	// the same slot count, because nothing else ever removes an entry.
+	// the same slot count, and reaching the bound is reported like the other
+	// half's eviction, because nothing but a matching completion removes one.
 	cancelledNavAnonymous int
 
 	// navStartID is the id of the last top-level navigation the runtime reported

@@ -27,21 +27,7 @@ import (
 // every platform, so the guard runs in the Linux CI job too, where none of the
 // windows-tagged tests do.
 func TestNavigationCompletedCallbackReportsNoFailureItself(t *testing.T) {
-	const (
-		open  = "browser.NavigationCompletedCallback = func("
-		close = "browser.ProcessFailedCallback = func("
-	)
-	source := readRepoFile(t, "host", "webview_windows.go")
-
-	start := strings.Index(source, open)
-	if start < 0 {
-		t.Fatalf("%q not found in host/webview_windows.go - this guard is scoped by that literal, and a rename silently empties it", open)
-	}
-	end := strings.Index(source[start:], close)
-	if end < 0 {
-		t.Fatalf("%q not found after the completion callback - the guard cannot tell where the closure ends", close)
-	}
-	body := source[start : start+end]
+	body := callbackSource(t, "browser.NavigationCompletedCallback = func(", "browser.ProcessFailedCallback = func(")
 
 	// A warning or an error here would be reporting the completion's outcome
 	// before anything has classified it, which is the defect. warnIf is a
@@ -68,6 +54,65 @@ func TestNavigationCompletedCallbackReportsNoFailureItself(t *testing.T) {
 	if !strings.Contains(surface, followUp) {
 		t.Fatalf("host/errorsurface_windows.go no longer contains %s", followUp)
 	}
+}
+
+// The other half of the same gap: the two navigation callbacks are wired inside
+// createWebView, so the wiring itself is beyond every behavioural test in this
+// suite. An audit measured what that costs - the whole pre-issue-73 shape can be
+// restored in these six lines, or the cancelled callback deleted outright, with
+// the entire suite green - so the wiring gets the same treatment as the bodies
+// (issue #73, decisions/0027).
+func TestTheNavigationCallbacksAreWiredToTheirOwnHalves(t *testing.T) {
+	starting := callbackSource(t, "browser.NavigationStartingCallback = func(", "browser.NavigationCancelledCallback = func(")
+	if !strings.Contains(starting, "host.noteAndGateNavigation(") {
+		t.Fatal("NavigationStartingCallback no longer asks the gate for a decision")
+	}
+	// The decision half must commit to nothing: that is the fix.
+	for _, banned := range []string{"noteNavigationCancelled(", "rememberCancelledNavigation(", "openInSystemBrowser("} {
+		if strings.Contains(starting, banned) {
+			t.Fatalf("NavigationStartingCallback contains %q: it would commit to a cancel the runtime has not performed (issue #73)", banned)
+		}
+	}
+
+	cancelled := callbackSource(t, "browser.NavigationCancelledCallback = func(", "browser.NavigationCompletedCallback = func(")
+	if !strings.Contains(cancelled, "host.noteNavigationCancelled(") {
+		t.Fatal("NavigationCancelledCallback is not wired to the commit, so confirmed cancels are remembered nowhere and every one of them reaches the error-surface machine")
+	}
+
+	// And the completion callback must act on the ledger's verdict rather than
+	// merely consulting it.
+	completed := callbackSource(t, "browser.NavigationCompletedCallback = func(", "browser.ProcessFailedCallback = func(")
+	// "if" attached directly to the call, so the verdict is the whole condition:
+	// anything conjoined with it can turn the branch off while leaving a guard
+	// that only looks for the call itself perfectly happy.
+	verdict := strings.Index(completed, "if host.noteGateCancelledOutcome(")
+	if verdict < 0 {
+		t.Fatal("NavigationCompletedCallback no longer branches on the cancelled-navigation ledger alone")
+	}
+	branch := completed[verdict:]
+	if closed := strings.Index(branch, "}"); closed >= 0 {
+		branch = branch[:closed]
+	}
+	if !strings.Contains(branch, "return") {
+		t.Fatal("NavigationCompletedCallback consults the ledger and carries on regardless: a deliberate cancel would still be resynced, re-evaluated and fed to the error-surface machine")
+	}
+}
+
+// callbackSource returns one callback assignment's source, and fails loudly if
+// either delimiter has moved - a rename that silently emptied a guard would
+// leave its assertions trivially true.
+func callbackSource(t *testing.T, open, close string) string {
+	t.Helper()
+	source := readRepoFile(t, "host", "webview_windows.go")
+	start := strings.Index(source, open)
+	if start < 0 {
+		t.Fatalf("%q not found in host/webview_windows.go - this guard is scoped by that literal", open)
+	}
+	end := strings.Index(source[start:], close)
+	if end < 0 {
+		t.Fatalf("%q not found after it - the guard cannot tell where the closure ends", close)
+	}
+	return source[start : start+end]
 }
 
 // readRepoFile reads a file by its path from the module root, so the guards

@@ -64,8 +64,15 @@ func TestRouteNewWindowDropsUnsafeSchemes(t *testing.T) {
 // suite cannot make, which is the point of the split (issue #73,
 // decisions/0027): a test that wants the failed-cancel path simply does not call
 // the second half.
+//
+// It enters at noteAndGateNavigation, not at shouldCancelNavigation, because
+// that is what the runtime's callback calls (host/webview_windows.go) - so the
+// navigation target is recorded and the surface claim runs first, exactly as
+// they do live. Entering one level lower left a blind spot: a commit added to
+// noteAndGateNavigation, which is the pre-issue-73 fail-open one level up, went
+// unnoticed by every test that used this helper.
 func cancelNavigation(host *Host, uri string, navigationID uint64, isUserInitiated bool) bool {
-	if !host.shouldCancelNavigation(uri) {
+	if !host.noteAndGateNavigation(uri, navigationID) {
 		return false
 	}
 	host.noteNavigationCancelled(uri, navigationID, isUserInitiated)

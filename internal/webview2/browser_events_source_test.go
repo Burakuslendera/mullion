@@ -4,6 +4,7 @@ package webview2
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -17,25 +18,26 @@ import (
 // have noticed. The ordering is the whole fix, so it gets a guard of the kind
 // this repository already uses where the type system cannot see an invariant.
 //
-// It is deliberately narrow. It says the cancel is attempted before the host is
-// told, that a failed attempt tells nobody, and that neither getter's failure is
-// discarded. It says nothing about what the host then does, which is host code
-// and is tested there.
+// The first version of this guard was measured and found bypassable four ways:
+// a comment could supply either literal it searched for, the `return` it
+// required could belong to a neighbouring nil check, and its "both getters are
+// reported" test counted a third report that belongs to put_Cancel. All four
+// mutants restored issue #73 with the guard green. So: comments are stripped
+// before anything is searched, the return has to sit inside the error branch,
+// and each getter's report is asserted in its own span.
 
-// navigationStartingBody returns the source of the NavigationStarting handler,
-// and fails loudly if it cannot find it - a rename that silently emptied this
-// guard would leave every assertion below trivially true.
-func navigationStartingBody(t *testing.T) string {
+var sourceComment = regexp.MustCompile(`(?m)//.*$`)
+
+// handlerSource returns the source of one registered handler with its comments
+// removed, and fails loudly if it cannot find it - a rename that silently
+// emptied this guard would leave every assertion below trivially true.
+func handlerSource(t *testing.T, open, close string) string {
 	t.Helper()
 	data, err := os.ReadFile("browser_events_windows.go")
 	if err != nil {
 		t.Fatalf("read browser_events_windows.go: %v", err)
 	}
-	source := string(data)
-	const (
-		open  = "NewNavigationStartingHandler("
-		close = "NewNavigationCompletedHandler("
-	)
+	source := sourceComment.ReplaceAllString(string(data), "")
 	start := strings.Index(source, open)
 	if start < 0 {
 		t.Fatalf("%q not found: this guard is scoped by that literal", open)
@@ -47,12 +49,19 @@ func navigationStartingBody(t *testing.T) string {
 	return source[start : start+end]
 }
 
-func TestNavigationStartingCancelsBeforeItTellsTheHost(t *testing.T) {
-	body := navigationStartingBody(t)
+func navigationStartingSource(t *testing.T) string {
+	t.Helper()
+	return handlerSource(t, "NewNavigationStartingHandler(", "NewNavigationCompletedHandler(")
+}
 
-	cancel := strings.Index(body, "args.PutCancel(true)")
+func TestNavigationStartingCancelsBeforeItTellsTheHost(t *testing.T) {
+	body := navigationStartingSource(t)
+
+	// The combined form is the assertion: the error is captured and tested, not
+	// discarded.
+	cancel := strings.Index(body, "args.PutCancel(true); err != nil {")
 	if cancel < 0 {
-		t.Fatal("the NavigationStarting handler no longer calls PutCancel")
+		t.Fatal("the NavigationStarting handler no longer tests put_Cancel's error")
 	}
 	notify := strings.Index(body, "NavigationCancelledCallback(")
 	if notify < 0 {
@@ -61,30 +70,61 @@ func TestNavigationStartingCancelsBeforeItTellsTheHost(t *testing.T) {
 	if notify < cancel {
 		t.Fatal("the host is told about the cancel before put_Cancel is attempted: it would commit to a cancel that may not happen (issue #73, decisions/0027)")
 	}
-	// And a failed attempt must tell nobody at all, which is the half that
-	// matters: the navigation is still going ahead.
-	between := body[cancel:notify]
-	if !strings.Contains(between, "return") {
-		t.Fatal("nothing returns between put_Cancel failing and the host being told, so a failed cancel is reported as a cancel (issue #73)")
+
+	// And the failed attempt must tell nobody at all, which is the half that
+	// matters: the navigation is still going ahead. The return has to be inside
+	// the error branch, so the check stops at that branch's closing brace rather
+	// than accepting any return between here and the notify.
+	branch := body[cancel:notify]
+	if closed := strings.Index(branch, "}"); closed >= 0 {
+		branch = branch[:closed]
+	}
+	if !strings.Contains(branch, "return") {
+		t.Fatal("put_Cancel's error branch does not return, so a failed cancel is reported to the host as a cancel (issue #73)")
+	}
+}
+
+// One call site, inside that handler. A second one anywhere else would be
+// outside the span this guard reads, and would tell the host about a cancel on
+// terms nothing here checks.
+func TestTheHostIsToldAboutACancelInExactlyOnePlace(t *testing.T) {
+	data, err := os.ReadFile("browser_events_windows.go")
+	if err != nil {
+		t.Fatalf("read browser_events_windows.go: %v", err)
+	}
+	source := sourceComment.ReplaceAllString(string(data), "")
+	if got := strings.Count(source, "NavigationCancelledCallback("); got != 1 {
+		t.Fatalf("NavigationCancelledCallback is called %d times in this file, want exactly 1 - the guard above reads only the NavigationStarting handler, so a second call site is unchecked", got)
 	}
 }
 
 // Both getters report their failures. The id already did; the URI did not, and
 // an unreadable URI is not cosmetic - it reaches a host gate as the empty
 // string, which is no origin's, so the gate decides against a navigation it
-// could not read. That has to be diagnosable (issue #73).
+// could not read (issue #73). Each is asserted in its own span, because a count
+// over the whole handler also counts put_Cancel's report and is satisfied by
+// keeping one getter's and dropping the other's.
 func TestNavigationStartingReportsBothGetterFailures(t *testing.T) {
-	body := navigationStartingBody(t)
+	body := navigationStartingSource(t)
 
-	for _, want := range []string{"uri, err := args.GetUri()", "id, err := args.GetNavigationID()"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("the NavigationStarting handler does not keep the error from %q", want)
+	for _, span := range []struct {
+		what  string
+		open  string
+		close string
+	}{
+		{"the URI getter", "uri, err := args.GetUri()", "id, err := args.GetNavigationID()"},
+		{"the navigation-id getter", "id, err := args.GetNavigationID()", "args.GetIsUserInitiated()"},
+	} {
+		start := strings.Index(body, span.open)
+		if start < 0 {
+			t.Fatalf("%s no longer keeps its error: %q not found", span.what, span.open)
 		}
-	}
-	if strings.Contains(body, "args.GetUri()") && strings.Contains(body, "uri, _ :=") {
-		t.Fatal("the URI getter's error is discarded again")
-	}
-	if strings.Count(body, "browser.reportWarning(err)") < 2 {
-		t.Fatal("both getter failures must be reported, not just one")
+		end := strings.Index(body[start:], span.close)
+		if end < 0 {
+			t.Fatalf("cannot bound %s's span: %q not found after it", span.what, span.close)
+		}
+		if !strings.Contains(body[start:start+end], "browser.reportWarning(err)") {
+			t.Fatalf("%s captures its error and then discards it", span.what)
+		}
 	}
 }

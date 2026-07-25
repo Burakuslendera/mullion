@@ -10,6 +10,7 @@ package webview2
 
 import (
 	"errors"
+	"strconv"
 	"unsafe"
 )
 
@@ -88,7 +89,11 @@ func (browser *Browser) registerEvents() error {
 		// cancel that did not happen - no id to swallow the completion with,
 		// and no second copy of the target opened somewhere else (issue #73).
 		if err := args.PutCancel(true); err != nil {
-			browser.reportWarning(err)
+			// Named, because the bare HRESULT this used to report says neither
+			// that a cancel failed nor which navigation it was - and a failed
+			// cancel is the one event the whole split exists to handle
+			// correctly, so it has to be recognisable in a log.
+			browser.reportWarning(errors.Join(errors.New("cancel navigation "+strconv.FormatUint(id, 10)), err))
 			return
 		}
 		if browser.NavigationCancelledCallback != nil {
@@ -127,7 +132,14 @@ func (browser *Browser) registerEvents() error {
 		if browser.NewWindowRequestedCallback == nil {
 			return
 		}
-		uri, _ := args.GetUri()
+		// Reported for the same reason as the navigation getter's: an unreadable
+		// URI reaches the host as the empty string, where it is dropped as an
+		// unsupported scheme - a request that silently did nothing, with nothing
+		// to say why (issue #73).
+		uri, err := args.GetUri()
+		if err != nil {
+			browser.reportWarning(err)
+		}
 		userInitiated, _ := args.GetIsUserInitiated()
 		browser.NewWindowRequestedCallback(uri, userInitiated)
 	}), core.AddNewWindowRequested); err != nil {
