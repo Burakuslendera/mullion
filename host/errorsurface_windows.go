@@ -2,19 +2,16 @@
 
 package host
 
-import (
-	"strings"
-
-	"github.com/Burakuslendera/mullion/internal/webview2"
-)
+import "github.com/Burakuslendera/mullion/internal/webview2"
 
 // The fallback error surface's admission state machine, split out of
 // webview_windows.go: that file owns the WebView's lifecycle - embed, commit,
-// navigate, tear down - and this one owns what the navigation callbacks mean
-// once they arrive. The two seams the PinNavigationToOrigin gate meets it
-// through (decisions/0023) live here too, because their whole reason for
-// existing is the interaction: a claimed surface start is never cancelled, and
-// a cancelled navigation's completion never reaches the machine below.
+// navigate, tear down - and this one owns what a NavigationCompleted means once
+// it arrives. What a NavigationStarting means is the other half, in
+// errorsurface_claim_windows.go. The seam the PinNavigationToOrigin gate meets
+// this machine through (decisions/0023) lives here, because its whole reason for
+// existing is the interaction: a cancelled navigation's completion never reaches
+// the machine below.
 //
 // The rules themselves are decisions 0017, 0020, 0021, 0024 and 0026.
 // Everything here runs on the UI thread, from the navigation callbacks, so none
@@ -96,81 +93,9 @@ func (host *Host) noteGateCancelledOutcome(success bool, status webview2.WebErro
 	return true
 }
 
-// noteAndGateNavigation runs the error-surface identity claim and then the
-// PinNavigationToOrigin gate for one NavigationStarting, and reports whether to
-// cancel. The surface's own navigation - claimed here - is never cancelled,
-// whatever URI the runtime reports for it: an empty or truncated data: URI is a
-// tolerated form of the surface's start (surfaceURIMatches), and cancelling it
-// would tear down mullion's own fallback page the moment it was recognised. Split
-// from the callback so the claim-beats-gate rule and the gate are both
-// headless-testable (issue #6, decisions/0023).
-func (host *Host) noteAndGateNavigation(uri string, navigationID uint64, isUserInitiated bool) bool {
-	host.noteNavigationTarget(uri, navigationID)
-	if host.noteSurfaceNavigationStarting(uri, navigationID) {
-		host.log.Debug("mullion: error surface navigation identified, id=" + formatUint64(navigationID))
-		return false
-	}
-	return host.shouldCancelNavigation(uri, navigationID, isUserInitiated)
-}
-
-// noteNavigationTarget records where the navigation that is starting was going,
-// keyed by its id, because the completion will not say (decisions/0024). It runs
-// before the surface claim and the gate, so it sees every start, including the
-// surface's own - whose data: URI is not the trusted origin, which is the right
-// answer: an aborted surface load is resolved by identity, never by this pair.
-//
-// An unreadable URI reaches here as the empty string, which is not the trusted
-// origin either, so a start the runtime could not describe never earns the
-// abort exemption.
-func (host *Host) noteNavigationTarget(uri string, navigationID uint64) {
-	host.navStartID = navigationID
-	host.navStartInOrigin = sameHTTPOrigin(uri, host.config.trustedOrigin())
-}
-
-// noteSurfaceNavigationStarting claims a NavigationStarting event as the
-// fallback error surface's own navigation and records its id. It reports
-// whether the claim happened, so the caller can log it. Split from the
-// callback so the claim is headless-testable without a Browser.
-//
-// The claim is guarded twice. errorSurfacePending scopes it to the window
-// between the host issuing the surface Navigate and that navigation starting,
-// so no later data: navigation can steal the identity. The URI match then
-// keeps a racing foreign navigation - one already queued when the host
-// navigated - from being claimed inside that window: its http(s) URI matches
-// none of the accepted forms, so it passes through unclaimed and the surface's
-// own start, which the runtime guarantees will still fire, claims later.
-func (host *Host) noteSurfaceNavigationStarting(uri string, navigationID uint64) bool {
-	if !host.errorSurfacePending {
-		return false
-	}
-	if !surfaceURIMatches(uri, host.errorSurfaceURL) {
-		return false
-	}
-	host.errorSurfacePending = false
-	host.errorSurfaceNavID = navigationID
-	return true
-}
-
-// surfaceURIMatches reports whether a NavigationStarting URI can be the
-// surface's own navigation. The exact data: URL is deterministic
-// (errorPageURL is a pure function of Config), so equality is the primary
-// test. Two tolerances cover runtime reporting variance while the surface
-// Navigate is pending: an empty URI, because the runtime erases data: URIs at
-// both GetSource levels (issue #56, measured live) and it is unverified
-// whether NavigationStarting shares that erasure; and any other data: URI,
-// because content cannot navigate the top frame to data: (Chromium blocks
-// renderer-initiated top-level data: navigations; likely) and the host issues
-// no data: URL but the surface - so a data: start inside the pending window is
-// the surface's own start, however the runtime chose to report or truncate it.
-func surfaceURIMatches(reported, expected string) bool {
-	if reported == expected {
-		return true
-	}
-	if reported == "" {
-		return true
-	}
-	return strings.HasPrefix(reported, "data:")
-}
+// The NavigationStarting half - the surface's claim on a start, the navigation
+// target the abort exemption reads back, and the gate seam that lets a claimed
+// start through uncancelled - is in errorsurface_claim_windows.go. It was here.
 
 // noteSurfaceNavigateFailed unwinds an arming whose Navigate call itself
 // failed: no NavigationStarting and no completion will ever arrive for the
