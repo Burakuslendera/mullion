@@ -3,6 +3,7 @@ package host
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -82,14 +83,27 @@ func TestTheNavigationCallbacksAreWiredToTheirOwnHalves(t *testing.T) {
 	// And the completion callback must act on the ledger's verdict rather than
 	// merely consulting it.
 	completed := callbackSource(t, "browser.NavigationCompletedCallback = func(", "browser.ProcessFailedCallback = func(")
-	// "if" attached directly to the call, so the verdict is the whole condition:
-	// anything conjoined with it can turn the branch off while leaving a guard
-	// that only looks for the call itself perfectly happy.
-	verdict := strings.Index(completed, "if host.noteGateCancelledOutcome(")
+	const verdictCall = "if host.noteGateCancelledOutcome("
+	verdict := strings.Index(completed, verdictCall)
 	if verdict < 0 {
 		t.Fatal("NavigationCompletedCallback no longer branches on the cancelled-navigation ledger alone")
 	}
-	branch := completed[verdict:]
+	// "if" attached directly to the call is not enough on its own: a condition
+	// conjoined with the verdict turns the branch off while a guard that only
+	// looks for the call itself stays perfectly happy. This guard's first version
+	// said exactly that in a comment and then did not check it, and the mutant
+	// `&& navigationID == 0` walked through it with the suite green. So the
+	// condition between the call and its brace has to be the verdict and nothing
+	// else.
+	tail := completed[verdict+len(verdictCall):]
+	brace := strings.Index(tail, "{")
+	if brace < 0 {
+		t.Fatal("the ledger verdict's branch has no body: the guard cannot tell what acting on it would mean")
+	}
+	if condition := tail[:brace]; strings.ContainsAny(condition, "&|") {
+		t.Fatalf("the ledger's verdict is conjoined with something else (%q): the branch can be turned off without this guard noticing (issue #73, decisions/0027)", strings.TrimSpace(condition))
+	}
+	branch := tail[brace:]
 	if closed := strings.Index(branch, "}"); closed >= 0 {
 		branch = branch[:closed]
 	}
@@ -98,12 +112,21 @@ func TestTheNavigationCallbacksAreWiredToTheirOwnHalves(t *testing.T) {
 	}
 }
 
+var sourceComment = regexp.MustCompile(`(?m)//.*$`)
+
 // callbackSource returns one callback assignment's source, and fails loudly if
 // either delimiter has moved - a rename that silently emptied a guard would
 // leave its assertions trivially true.
+//
+// Comments are stripped first, the way the sibling guard in
+// internal/webview2/browser_events_source_test.go already does it. Without that,
+// every literal these assertions search for can be supplied - or, worse,
+// withheld - by a comment: deleting the real `return` and leaving the word in a
+// comment above it kept this guard green while a cancelled navigation was fed
+// straight back to the error-surface machine.
 func callbackSource(t *testing.T, open, close string) string {
 	t.Helper()
-	source := readRepoFile(t, "host", "webview_windows.go")
+	source := sourceComment.ReplaceAllString(readRepoFile(t, "host", "webview_windows.go"), "")
 	start := strings.Index(source, open)
 	if start < 0 {
 		t.Fatalf("%q not found in host/webview_windows.go - this guard is scoped by that literal", open)
