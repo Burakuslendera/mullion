@@ -86,6 +86,21 @@ func TestTheSystemBrowserLaunchLeavesTheUIThread(t *testing.T) {
 		t.Fatal("shellExecuteOpen runs on the calling thread rather than from the goroutine: the goroutine below it changes nothing (issue #74)")
 	}
 
+	// And the slot the claim took has to be given back, on the goroutine. The
+	// bound case above calls releaseExternalOpenSlot directly - it has to, the
+	// seam returns before the goroutine exists - so it covers the function and
+	// not this call site. Deleting the release here left the whole suite green
+	// while the bound saturated permanently after externalOpenLimit launches,
+	// dropping every later click with a warning: the failure the bound case
+	// describes in a comment and cannot reach.
+	release := strings.Index(body, "host.releaseExternalOpenSlot()")
+	if release < 0 {
+		t.Fatal("openInSystemBrowser never gives the launch slot back: after externalOpenLimit launches the bound is saturated for the life of the process and every click is dropped (issue #74, decisions/0029)")
+	}
+	if release < launch {
+		t.Fatal("the launch slot is released on the calling thread rather than from the goroutine: it would be free again before the launch it bounds has finished, so the bound counts nothing")
+	}
+
 	// And the apartment the launch needs is entered on the goroutine's own
 	// thread, because a fresh goroutine is in none and ShellExecuteW can activate
 	// a COM handler.
@@ -94,6 +109,14 @@ func TestTheSystemBrowserLaunchLeavesTheUIThread(t *testing.T) {
 		if !strings.Contains(worker, want) {
 			t.Fatalf("shellExecuteOpen no longer contains %q", want)
 		}
+	}
+	// S_FALSE - the thread was already in a compatible apartment - arrives as
+	// ERROR_INVALID_FUNCTION and still owes a CoUninitialize, which is why the
+	// balance is claimed for it too. Narrowing that condition to err == nil
+	// leaks an apartment per launch, and no headless test can reach the branch
+	// to notice: CoInitializeEx has to fail on the worker for it to run.
+	if !strings.Contains(worker, "ERROR_INVALID_FUNCTION") {
+		t.Fatal("shellExecuteOpen no longer balances the S_FALSE case: a thread already in a compatible apartment still owes a CoUninitialize (decisions/0029)")
 	}
 
 	// One call site for the syscall, so the check above covers every path to it.
