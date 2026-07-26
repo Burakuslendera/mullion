@@ -8,6 +8,8 @@ Everything below was built, run, and failed. Each entry: **what was tried → wh
 
 Working rule throughout: a claim is only "verified" if it was observed at runtime on a real window. Passing tests, clean logs and plausible static analysis have each been wrong here.
 
+The dead ends about what a log line may say — a `data:` document that reports no source, and a sanitiser that mangled what it reduced — moved verbatim to [logging-dead-ends.md](./logging-dead-ends.md) when this file reached the 400-line reference-doc limit.
+
 ## Contents
 
 - [1. The bug that forced us to own the window: maximized title bar drag-down restore](#1-the-bug-that-forced-us-to-own-the-window-maximized-title-bar-drag-down-restore)
@@ -23,9 +25,8 @@ Working rule throughout: a claim is only "verified" if it was observed at runtim
 - [11. Injected mouse input never reaches the WebView2 child](#11-injected-mouse-input-never-reaches-the-webview2-child)
 - [12. Performance notes: where the WebView2 levers actually are](#12-performance-notes-where-the-webview2-levers-actually-are)
 - [13. Building on a third-party WebView2 binding](#13-building-on-a-third-party-webview2-binding--the-slow-squeeze)
-- [14. A data: document has no reportable source](#14-a-data-document-has-no-reportable-source)
-- [15. A sanitiser that mangles its input plausibly is worse than one that fails](#15-a-sanitiser-that-mangles-its-input-plausibly-is-worse-than-one-that-fails)
-- [16. The short version](#16-the-short-version)
+- [14. A flag-based probe has an unreadable null result](#14-a-flag-based-probe-has-an-unreadable-null-result)
+- [15. The short version](#15-the-short-version)
 
 ---
 
@@ -251,121 +252,49 @@ It is more code, and the ABI parts of it fail by crashing rather than by returni
 
 ---
 
-## 14. A data: document has no reportable source
+## 14. A flag-based probe has an unreadable null result
 
-**Symptom.** The fallback error surface loads, the window appears — and every
-bridge message the page posts is rejected, `untrusted source, origin=:unknown`,
-ten in a row: dead caption buttons on the one page whose whole job is having
-working caption buttons (issue #56).
+**What was tried.** Issue #85 measured a constant ~2 s between mullion serving
+its main document and the renderer asking for the first subresource. Name
+resolution was the leading suspect, and the cheap test looked like one line:
+pass `--host-resolver-rules=MAP mullion.local 127.0.0.1` through
+`Config.BrowserArguments`, and if the gap collapsed the attribution becomes a
+measurement.
 
-**Tried and dead.**
+**Why it looked reasonable.** No rebuild, no code change, and the switch is
+Chromium's own.
 
-- **Recognise the surface by its message source.** The `WebMessageReceived`
-  args' `GetSource` returns the **empty string** for a data: document — not the
-  data: URI, not `null` (measured live, runtime 150.0.4078.65).
-- **Ask the core at message time.** `ICoreWebView2.get_Source` — the current
-  top-level document's URI — returns the empty string for the same document.
-  The runtime erases the data: URI at both levels, so there is nothing to
-  match; a `GetSource` binding written for this was deleted as dead code.
+**Why it failed.** The gap did not move — and that result could not be read. A
+switch that applied and changed nothing, and a switch that never arrived, produce
+exactly the same observation.
+[`get_AdditionalBrowserArguments`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2environmentoptions)
+documents that WebView2 ignores switches it blocks or cannot parse, silently and
+without saying which. Two runs went to learning only that.
 
-A diagnostic trap on the way: the rejection log's origin form collapses every
-schemeless source — empty and `null` alike — to the same `:unknown`, so the raw
-value can only be learned from a live probe. The rejection path now logs the
-reduced raw source at debug for exactly this reason.
+A NetLog capture later settled the gap, and settled the probe with it: the
+browser's own recorded command line read `--host-resolver-rules=MAP` with the
+mapping cut at its first space, and `127.0.0.1` appears nowhere in the capture.
+The rule never reached the browser. Where it was cut is not recorded, and it is
+not obviously this library — `internal/webview2/loader_options_windows_test.go`
+round-trips a space-containing two-switch string byte-for-byte.
 
-**Instead.** The host itself knows when it navigated to its own surface, so
-identity comes from a UI-thread state machine (`noteNavigationOutcome`,
-`errorSurfaceActive` in `host/errorsurface_windows.go`): the empty source is admitted
-only while the surface is the current document, and only for the reserved
-window controls — `Config.Bridge` stays origin-gated (decisions/0014). The
-accepted costs of that identification, and what would retire it, are recorded
-in decisions/0017, 0020 (the failed-Retry absorb window, issue #68), 0021
-(navigation-id attribution, which retired 0020's ordering and keeps it only
-as the id-less fallback) and 0024 (which failures deserve the surface at all).
+**Instead.** `--log-net-log` and `--net-log-capture-mode` are on WebView2's own
+documented flag list and go through `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` with
+no rebuild. A NetLog has neither failure mode: it names the span or it proves the
+wait is not in the network stack. It named it — a `HOST_RESOLVER_MANAGER_JOB` for
+the virtual host, 2.007 s. The measurement, and the five other probes that came
+back null before it, are in
+[webview2-and-assets.md](./webview2-and-assets.md).
 
-**The tail of it: a failure status is not a diagnosis.** The machine armed on
-any failed completion, and `ConnectionAborted` turned out to mean two unrelated
-things — a dead endpoint when the caller serves the frontend over a socket, and
-a navigation the runtime abandoned and restarted when mullion serves it in
-process. Arming on the second replaced a live frontend with the fallback page,
-whose Retry aborted the same way (issue #72). The fix is not a better reading of
-the status, which carries no more information: it is to ask where *that*
-navigation's bytes came from, which the host knows from the navigation id it
-recorded at `NavigationStarting`. The first attempt keyed on the config mode
-instead and two audit passes refuted it — the mode says where the frontend is
-served from, not where the top frame went, and with the cancel gate off those
-differ (decisions/0024).
-
-**Lesson.** When the runtime's own identity channel reports nothing, parsing
-harder is not the answer; the identity you need must come from state you
-already own. The same holds one level up: when a status code is ambiguous, do
-not tune the reading of it — find the state you already hold that disambiguates
-it.
+**Lesson.** Before spending a run on a behavioural probe, ask what its *negative*
+would prove. If "it did nothing" and "it never ran" look identical from outside,
+the probe cannot answer the question however many times it is repeated — and an
+instrument that reports its own presence is worth more than a cheaper one that
+does not.
 
 ---
 
-## 15. A sanitiser that mangles its input plausibly is worse than one that fails
-
-`internal/logsafe.Message` was written to strip Windows paths out of error
-strings. Its drive-letter rule is `<alpha> ':' <separator>`, which is inside
-`http://` at the `p` and inside `https://` at the `s`; its UNC rule is `//`,
-which every `scheme://host` URL contains. So every URL it ever reduced came out
-as its last path segment with a clipped scheme welded to the front:
-
-```
-https://mullion.local/index.html?in=1  ->  httpindex.html?in=1
-https://evil.example                   ->  httpevil.example
-```
-
-(Historical: `Message` no longer does this. Issue #80 found that the same rule
-still ate the URLs sitting *inside* a message, which no call-site swap could
-reach, and decisions/0028 taught `Message` about the two http schemes. The
-lesson below is about how long it went unnoticed, which is unchanged.)
-
-Nothing caught this for the life of three issues. The output still looked like a
-diagnostic: it had the right shape, it started with `http`, and it named a real
-file. The live verifications for #6, #68 and #72 were all read off `uri=` fields
-that had already lost their host, and nobody reading them noticed, because a
-mangled value that looks reduced is indistinguishable from a value that was
-correctly reduced.
-
-Two dead ends came out of fixing it.
-
-**Bounding the input.** The first fix reduced with `net/url` but kept the
-existing call-site clamp, which cut the value at 160 bytes *before* parsing.
-A URL prefix is a valid URL. Pad a hostname so the cut lands on a label boundary
-and `mullion.local.evil.example` logs as `mullion.local` - not garbled, not
-marked, just a different and more trustworthy host. The same clamp deletes an
-`@` past the limit, after which Go reads the credential as the host and prints
-it. The first version was strictly worse than the bug: it converted visible
-garbage into confident wrongness, and a reader acts on the second.
-The rule that came out of it: **bound the reduction, never the input, and never
-cut a host at all - print it whole or do not print it.**
-
-**Folding control bytes to spaces.** `Message` neutralises a control byte by
-turning it into a space. These log lines are `key=value, key=value`, so for a
-host - where Go permits `,` and `=` unescaped - the neutraliser *manufactures*
-the field separator it exists to defend against. A host of
-`evil.example,<C1>user_initiated=false` becomes a second, forged field. Refusing
-the host outright was the only version that held.
-
-**The first of those came back, twice.** Issue #80 taught `Message` to keep the
-URLs inside a sentence (decisions/0028), and "never cut a host at all" had to be
-re-derived in two shapes nobody was watching for. A value bounded *before* it was
-scanned: `URL`'s non-http fallback cut its input at 160 bytes and handed the rest
-to a `Message` that now keeps hosts, so the cut could land on a label boundary
-inside one - reached through a function whose own comment justified the cut with
-"Message deletes the identifying part of the value anyway", which that same
-change had just made false. And a run ended by a TAB, LF or CR: a URL parser
-deletes those three bytes before it resolves a value, so ending a run at one and
-printing what precedes it prints a prefix of the real host. Neither is a
-truncation, and both print a shortened host as a whole one. A rule of the form
-"this is safe because X holds" is owed a re-check by whoever changes X.
-
-The decisions are [0025](decisions/0025-urls-are-logged-as-urls.md) and
-[0028](decisions/0028-message-keeps-the-urls-inside-it.md).
-
-## 16. The short version
+## 15. The short version
 
 1. **Search the DOM before the frame.** Native-looking symptoms are frequently web bugs. (§7)
 2. **Log the container, not the content.** A tiny render is usually a tiny rect. (§2)
@@ -376,9 +305,8 @@ The decisions are [0025](decisions/0025-urls-are-logged-as-urls.md) and
 7. **When five fixes produce clean logs and no change, the ownership model is wrong** — not the message handling. (§1)
 8. **No listening sockets in a desktop app.** Intercept the resource request instead. (§8)
 9. **Count your escape hatches into a dependency.** When you have forked it once and bypassed it once, the abstraction is already gone; owning the binding is cheaper than pretending otherwise. (§13)
-10. **A data: document reports no source.** Identify your own surfaces from navigation state you already hold, not by parsing the source harder. (§14)
-11. **An ambiguous status code is not a diagnosis.** The same failure status meant two different things; the state that told them apart was already recorded at the navigation's start. (§14)
-12. **A sanitiser can remove the wrong half.** Reducing more than intended is not automatically safe: the URL reducer deleted the host and kept the query, which is the identifying half gone and the disclosing half kept. (§15)
-13. **Bound the output, not the input.** Truncating before parsing produces a well-formed value that names something else; a well-formed lie beats visible garbage past every reader. (§15)
+10. **Ask what a probe's null result would prove.** If "it did nothing" and "it never ran" look the same from outside, the probe cannot answer the question. Prefer an instrument that reports its own presence. (§14)
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: §15 records the two new directions its first dead end - cutting a host - was reached from while issue #80 was being fixed: a value bounded before it is scanned, and a run ended by TAB/LF/CR. The historical note at its head, and the lesson about how long a plausible-looking mangling went unnoticed, are unchanged.
+The four items about what a log line may say are in [logging-dead-ends.md](./logging-dead-ends.md) with the sections they summarise.
+
+> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: the data: source and sanitiser dead ends moved verbatim to logging-dead-ends.md, with their four short-version items, because this file had reached 384 of its 400 lines. Numbering 1-13 is untouched, since decision records and one source comment cite these sections by number; only the two moved sections and the short version were renumbered, and decisions/0017's references were repointed. A new §14 records the --host-resolver-rules probe that was staged, run and unreadable - the negative it produced could not distinguish "not the cause" from "never applied", which is what the NetLog was reached for instead (issue #85).

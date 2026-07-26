@@ -11,7 +11,7 @@ the runtime reports a `data:` document's source as the **empty string** — at t
 `data:` branch never matches there, and every message the surface posted was
 rejected: dead caption buttons on the one page whose whole job is having working
 caption buttons. The runtime provides no representation of the surface to match
-(the dead ends are lessons-and-dead-ends.md §14).
+(the dead ends are logging-dead-ends.md §1).
 
 ## Decision
 
@@ -88,6 +88,7 @@ source never reaches `Config.Bridge`:
 - The live re-run after the fix: zero rejections; the surface's
   phase/diagnostic messages flow through the same
   notify → postMessage → gate → reserved-method chain the caption buttons use.
-- lessons-and-dead-ends.md §14: the dead ends this record's decision replaced.
+- logging-dead-ends.md §1: the dead ends this record's decision replaced (moved
+  there verbatim from lessons-and-dead-ends.md §14).
 
 > Last updated: 2026-07-21 | Editor: Claude (Fable 5) | Change: status line extended by 0020 — the failure-counting side of the missing-identity assumption sealed the surface on a failed Retry (issue #68); the body is unchanged, per the supersede rules.

@@ -111,6 +111,7 @@ and a bridge round-trip printed into the page.
 | [snap-and-nonclient-region.md](docs/snap-and-nonclient-region.md)     | What WebView2 can and cannot do with Windows 11 snap, and the COM binding for it  |
 | [snap-sources.md](docs/snap-sources.md)                               | The 40 primary and secondary sources those findings rest on                       |
 | [lessons-and-dead-ends.md](docs/lessons-and-dead-ends.md)             | Approaches that were tried and abandoned, and why                                 |
+| [logging-dead-ends.md](docs/logging-dead-ends.md)                     | The same, for what the host may truthfully say in a log line                      |
 | [verification.md](docs/verification.md)                               | How to check a change actually works — "it compiles" is not acceptance            |
 | [bug-reports.md](docs/bug-reports.md)                                 | What a bug report has to contain, and how to gather it                            |
 
