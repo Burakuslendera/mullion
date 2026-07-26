@@ -61,6 +61,33 @@ type Config struct {
 	// VirtualHost is the synthetic host that serves Assets. It is the single
 	// source for both the request filter and the origin allow-list.
 	// Default "mullion.local", which yields the origin https://mullion.local.
+	//
+	// Nothing mullion does resolves this name - WebResourceRequested intercepts
+	// the request and Assets answers it in process - so it need not exist
+	// anywhere. The runtime resolves it anyway, and the current default makes
+	// that expensive: a NetLog capture on WebView2 150.0.4078.83 shows a
+	// HOST_RESOLVER_MANAGER_JOB for "mullion.local:443" running 2.007 s, spanning
+	// the gap between the document being served and the first subresource being
+	// requested. Seven runs measured 2.012 to 2.041 s.
+	//
+	// The name is what decides it, and the rule is not "pick something that will
+	// not resolve" - that is the version that fails. mullion.test was measured
+	// and cost the same 2.027 s, because .test (RFC 2606) only means nobody may
+	// register it, which says nothing about what a resolver does when asked for
+	// one. The TLD RFC 6761 pins to the loopback address is different in kind:
+	// the RFC requires resolvers to answer it without going to the network. A
+	// VirtualHost under it measured 11-79 ms with LaunchToWindowVisibleMs falling
+	// from ~2500 to ~500. That is the workaround available today; it is spelled
+	// out in docs/webview2-and-assets.md rather than here, because this package's
+	// no-port guard (decisions/0002, TestNoNetworkListener) refuses to let any
+	// file but loopback.go name a loopback host - which is also why the default
+	// cannot simply be renamed.
+	//
+	// This wait is known, measured and tracked. It does not need re-reporting:
+	//
+	//	https://github.com/Burakuslendera/mullion/issues/85  the wait itself
+	//	https://github.com/Burakuslendera/mullion/issues/77  the aborts it caused
+	//	https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381  upstream
 	VirtualHost string
 	// JSNamespace names the JavaScript global the host injects (window.<ns>) and
 	// prefixes the DOM attributes it relies on (data-<ns>-resize-edge). It must
@@ -140,6 +167,13 @@ type Config struct {
 	DevTools bool
 
 	// Logger receives diagnostic output. Default NopLogger.
+	//
+	// It must be safe to call from more than one goroutine. Most lines are
+	// written from the UI thread, but not all, and never have been: the render
+	// watchdog and the startup show gate write from timers, and a system-browser
+	// launch writes from the worker it runs on (issue #74, decisions/0029). A
+	// Logger that holds state - a buffer, a file handle, a counter - needs its
+	// own lock; ColourLogger has one.
 	Logger Logger
 
 	// Bridge handles application-defined calls from the frontend. It receives

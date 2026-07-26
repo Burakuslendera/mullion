@@ -242,7 +242,9 @@ func TestTheTwoHalvesOfTheLedgerDoNotCrossMatch(t *testing.T) {
 // Logger does when it pumps messages - a MessageBox, a GUI toolkit's own loop -
 // and a queued navigation event is dispatched inside the call. Decision 0026
 // established that every report must therefore follow the state transition it
-// describes; this is the first test in the suite that actually drives it.
+// describes; this was the first test in the suite that actually drove it, and
+// errorsurface_reentrancy_windows_test.go now drives 0026's own two sites with
+// the same logger.
 type reentrantLogger struct {
 	*captureLogger
 	onWarn func()

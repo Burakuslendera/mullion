@@ -189,6 +189,15 @@ string; the one thing they now print whole is a local path sitting inside an
 http(s) URL's own path — a dev server's `/@fs/` form does that — because a URL
 path is not reduced as a filesystem path. `SlogLogger(*slog.Logger)` is provided.
 
+Your `Logger` must be safe to call from more than one goroutine. Most lines come
+from the UI thread, but not all: the render watchdog and the startup show gate
+write from timers, and handing a URL to the system browser runs on a worker so
+the window keeps answering while the browser starts
+([decisions/0029](docs/decisions/0029-system-browser-launch-off-the-ui-thread.md)).
+A `Logger` holding state - a buffer, a file handle - needs its own lock.
+`ColourLogger` has one; `SlogLogger` holds none of its own and inherits whatever
+its `slog.Handler` gives it, which for the standard library's handlers is safe.
+
 ## Frontend API
 
 `window.mullion` is injected before your scripts run. There is nothing to import
@@ -256,6 +265,33 @@ above was taken that way, on the same flat ground.
 
 ## Known limitations
 
+- **A window takes about two and a half seconds to appear, and two of those
+  seconds are the WebView2 runtime resolving the virtual host name.** The default
+  `mullion.local` does not exist anywhere - nothing needs it to, because
+  `WebResourceRequested` answers every request in process - but the runtime looks
+  it up regardless and the navigation waits on it. Measured on WebView2
+  150.0.4078.83: a NetLog capture shows the lookup running 2.007 s, spanning the
+  wait between mullion serving the document and the runtime asking for the next
+  file; mullion's own startup line reported `LaunchToWindowVisibleMs` at
+  2419-2543. Upstream since 2022 and unfixed
+  ([WebView2Feedback #2381](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381)).
+
+  **The workaround is one field:** set `VirtualHost` to a name under `.localhost`,
+  which RFC 6761 reserves as always-loopback and requires resolvers to answer
+  without going to the network.
+
+  ```go
+  host.Config{Assets: assets, VirtualHost: "yourapp.localhost"}
+  ```
+
+  Measured on the same machine and frontend: `LaunchToWindowVisibleMs` **495-508**
+  instead of 2419-2543. Note that a name that merely *fails* to resolve is not
+  enough - `mullion.test` was measured here and cost the same two seconds, and
+  three people have reported the same for `.example` upstream. This is not yet the
+  default, for the reason recorded in
+  [issue #85](https://github.com/Burakuslendera/mullion/issues/85) — which, with
+  [#77](https://github.com/Burakuslendera/mullion/issues/77), tracks this. Both
+  are measured and open; neither needs re-reporting.
 - **WebView2 does not render while the window is hidden.** With `StartHidden`, the
   frontend cannot signal readiness until the first `Show`. "Load it invisibly and
   reveal it when ready" is not achievable this way.

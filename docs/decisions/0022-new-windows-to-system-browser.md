@@ -1,6 +1,6 @@
 # 0022. New windows are routed to the system browser, never opened in the host
 
-**Status:** Accepted
+**Status:** Accepted. The launch moved off the UI thread by [0029](./0029-system-browser-launch-off-the-ui-thread.md): the routing this record decides is unchanged, but `ShellExecuteW` now runs on a bounded per-launch goroutine with its own STA, because running it inside the WebView2 event handler parked the message loop until the browser had started (issue #74).
 
 ## Context
 
@@ -110,4 +110,4 @@ scheme is dropped. `isExternalBrowserSafe` is the gate, and it admits only
   click by seconds. Only a genuinely gesture-less open would read `false`; that
   is the signal a future gate would key on.
 
-> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: the live probe ran and confirmed the routing end to end; the unverified marker is resolved with what was observed.
+> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: the live probe ran and confirmed the routing end to end; the unverified marker is resolved with what was observed. Then the status line records 0029, which moved the launch off the UI thread - the index credited it and this header did not.

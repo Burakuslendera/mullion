@@ -46,6 +46,20 @@ func newAssetProvider(assets fs.FS, log *logSink, virtualHost string, diagnostic
 	return assetProvider{assets: assets, log: log, virtualHost: virtualHost, diagnostics: diagnostics}
 }
 
+// webResourceRequested answers one intercepted request out of the fs.FS. Serving
+// the document is not where a slow startup goes, which is worth saying where a
+// reader looks first: on WebView2 150.0.4078.83, about 2.03 s passed between the
+// "asset response served" line for index.html and the renderer asking for its
+// first subresource, across seven runs. A NetLog capture named the span - a
+// HOST_RESOLVER_MANAGER_JOB for the virtual host, 2.007 s, spanning that
+// window - so the cost is resolving the synthetic host name, not answering the
+// request. Pointing Config.VirtualHost at a name under the TLD RFC 6761 reserves
+// for loopback measured 11-79 ms instead, and took issue #77's aborts with it. The
+// reasoning, the exact name, the six negatives it took to get there, and why the
+// default cannot simply be renamed are on Config.VirtualHost and in
+// docs/webview2-and-assets.md. It is known, measured and tracked at
+// https://github.com/Burakuslendera/mullion/issues/85, and does not need
+// re-reporting.
 func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs, environment *webview2.ICoreWebView2Environment) {
 	if request == nil {
 		provider.log.Warn("mullion: asset request unavailable")

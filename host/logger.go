@@ -20,6 +20,12 @@ import "log/slog"
 // from hot paths (WM_SIZE, WM_MOVE), and a variadic signature would push
 // formatting work into those paths for no benefit.
 //
+// An implementation must be safe to call from more than one goroutine. Most
+// lines come from the UI thread, but not all: the render watchdog and the
+// startup show gate write from timers, and handing a URL to the system browser
+// writes from the worker it runs on (decisions/0029). A Logger holding state - a
+// buffer, a file handle, a counter of its own - needs its own lock.
+//
 // A Logger that panics is contained, not fatal: the line is dropped, the
 // process keeps running, and the warn/error counts still record the attempt
 // (issue #26). The host calls the Logger from goroutines with no recover above

@@ -1,5 +1,15 @@
 # WebView2 and asset serving
 
+## Contents
+
+- [Talking to WebView2 without a third-party binding](#talking-to-webview2-without-a-third-party-binding)
+  - [Finding the runtime, and skipping the loader DLL](#finding-the-runtime-and-skipping-the-loader-dll)
+  - [Event handlers are COM objects we implement](#event-handlers-are-com-objects-we-implement)
+- [Asset serving without a port](#asset-serving-without-a-port)
+  - [Serving from a caller URL instead (`Config.URL`)](#serving-from-a-caller-url-instead-configurl)
+  - [COM stream lifetime](#com-stream-lifetime)
+  - [The two-second gap before the first subresource (issues #85, #77)](#the-two-second-gap-before-the-first-subresource-issues-85-77)
+
 How the host talks to WebView2 without a third-party binding, and how the
 frontend's assets are served without opening a port. Both sections moved
 verbatim out of [architecture.md](./architecture.md) — the end-to-end map —
@@ -237,4 +247,125 @@ express ownership in its type signature. Release too early and you get use-after
 behaviour that presents as a rendering bug rather than a memory bug; release too late,
 or never, and you get a leak that no test will fail on.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the event-handler section now states the NavigationStarting ordering - the layer cancels first and notifies the host only when put_Cancel succeeds, and both getters report their own failure (issue #73, decisions/0027).
+### The two-second gap before the first subresource (issues #85, #77)
+
+**Root cause found and measured: the navigation waits on the resolution of the
+virtual host name.** Every navigation waited about 2.03 seconds between mullion
+serving the main document out of the callback above and the renderer requesting
+its first subresource. A NetLog capture named the span: a
+`HOST_RESOLVER_MANAGER_JOB` for `mullion.local:443`, running **2.007 s**. The fit
+is read across two logs, because the capture holds neither end of the window -
+WebView2 answers both documents from the virtual-host callback, so they never
+reach the URLRequest path. The job spans 23:28:47.238 to 49.245; mullion's own
+log for that run served `index.html` at 47.245 and `style.css` at 49.257.
+Changing the virtual host to a name reserved for loopback collapses it.
+
+What the capture records there is a duration, not an outcome. The job ends with
+its last request detaching and a `CANCELLED` event, carrying no `net_error` and
+no finished attempt - so "the lookup times out" is the upstream issue's wording,
+marked as theirs below, and is not something measured here.
+
+Nor is non-existence on its own the explanation. In the same capture the three
+`wpad:80` resolver jobs - another name that does not exist on this machine,
+though a single-label one reached down a different path - finished in **3, 2 and
+1 ms** with `ERR_NAME_NOT_RESOLVED`, while `mullion.local:443` ran 2.007 s and
+was then abandoned. What separates the two is not recorded here, and
+the obvious candidate does not survive this section's own table: Chromium routes
+`.local` to the system resolver and lets `.test` use its built-in one
+(`ResemblesMulticastDNSName`, `net/dns/host_resolver_manager.cc`), but
+`mullion.test` measured 2.027 s, so both paths cost the same and the routing
+cannot be what makes the difference. The wait is measured and its span is named;
+the mechanism inside it is still open.
+
+| virtual host | document to first subresource | in-origin navigations |
+| --- | --- | --- |
+| `mullion.local` | 2.012 - 2.041 s, seven runs | 45 consecutive aborts, none committed |
+| `mullion.localhost` | **11 - 79 ms** | **16 of 16 committed, none aborted** |
+
+`LaunchToWindowVisibleMs` went from 2419-2543 to **495-508** on the same machine
+and frontend. Issue #77 - an in-origin navigation that aborts and often never
+commits - disappeared with it: the two-second window was where that race lived,
+and at 11-79 ms there is nothing left to lose it in.
+
+One number in that table is not settled. The same row was written into issue #77
+as **11-22 ms** within a minute of being written into #85 as 11-79 ms, from the
+same run, and the raw logs were not kept. The lower bound agrees; only the upper
+one does not, so this is two readings rather than a typo. It does not affect
+anything above - both ranges are two orders of magnitude below the wait they
+replaced - but the figure repeated across this repository is 11-79, and the live
+run that applies the fix should settle it rather than copy it forward.
+
+**Why that name and not another.** The rule is not "pick a name that will not
+resolve" - that is the version that fails. `.example`, `.test` and `.invalid` are
+reserved by RFC 2606 so that nobody registers them, which says nothing about what
+a resolver does when it is asked for one. `.localhost` is different in kind: RFC
+6761 reserves it as *always loopback* and requires resolvers to answer it without
+querying the network. That requirement is the RFC's. No capture was taken on the
+new name, so what is measured here is the 11-79 ms that replaced the wait, not
+the absence of a lookup. Renaming `mullion.local` to `mullion.test` was measured
+first and changed nothing (2.027 s), which is the same result three other people
+have reported for `.example` on the upstream issue.
+
+**What was ruled out on the way, each by its own measurement.** Recorded so the
+next person does not re-run them:
+
+| Changed | Result |
+| --- | --- |
+| `Content-Length` set on every `200` response | no change |
+| response and `IStream` held past `PutResponse` rather than released on the `defer` | no change (2.026 to 2.031) |
+| no `AddScriptToExecuteOnDocumentCreated` registrations at all | no change (2.035) |
+| virtual host `mullion.test` | no change (2.027) |
+| `--no-proxy-server` | no change (2.017) |
+| `--host-resolver-rules=MAP mullion.local 127.0.0.1` | no change - **and the rule never reached the browser**, see below |
+
+The response-lifetime negative is worth keeping on its own: it confirms
+behaviourally what `asset_responses_windows.go`'s comment previously only
+assumed, that the runtime takes its own references at `PutResponse`.
+
+**Two things the NetLog settled that no behavioural probe could.** First, proxy
+auto-config was the leading suspect before the capture - Chromium carries a
+literal `kDelayAfterNetworkChangesMs = 2000` and WPAD auto-detect is on for this
+machine - and the capture killed it outright: the `wpad:80` lookups failed in 1-3
+ms each, the whole `PAC_FILE_DECIDER` span was 10 ms, and the proxy resolved to
+`DIRECT` well before the document was served. Second, the `--host-resolver-rules`
+rule **never reached the browser**, and the capture says why: `127.0.0.1` appears
+nowhere in it, and the browser command line it records reads
+`--host-resolver-rules=MAP` with the mapping gone. The value was cut at its first
+space before the browser wrote down its own command line, so what arrived was a
+switch with no rule. Where it was cut is not in the capture, and it is not
+obviously this library: `internal/webview2/loader_options_windows_test.go`
+round-trips a space-containing two-switch string through
+`Get`/`PutAdditionalBrowserArguments` and asserts byte equality.
+
+The lesson that cost two runs survives the correction, and is the reason to state
+it precisely: a behavioural probe built on a browser flag cannot distinguish "not
+the cause" from "never applied". There is more than one way to land there. The
+argument can be mangled before the browser sees it, as it was here, and
+[`get_AdditionalBrowserArguments`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2environmentoptions)
+documents that WebView2 also ignores switches it blocks or cannot parse without
+saying which. Either way the null result is unreadable. A NetLog has neither
+failure mode: it names the span or it proves the wait is not in the network
+stack.
+
+Upstream:
+[WebView2Feedback #2381](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381)
+reports the same shape for `SetVirtualHostNameToFolderMapping` and attributes it
+to the runtime waiting out a name-lookup timeout. The name lookup is what the
+capture here confirms for the `WebResourceRequested` path as well; the timeout is
+theirs, for the reason given above. It is tagged bug / priority-low / tracked
+and has been open since 2022. The workaround offered there is a hosts-file entry,
+which an application cannot ask of its users; `.localhost` needs nothing from the
+machine. Note that the Microsoft engineer's advice on that issue - use
+`*.example` - does not work, and has now been contradicted four times including
+by the `.test` measurement above.
+
+**The fix is not applied yet, and the obstacle is worth stating.** Changing
+`defaultVirtualHost` to `mullion.localhost` fails `TestNoNetworkListener`: that
+test is the no-port promise's guard (decisions/0002), it greps the tree for
+loopback literals, and it reads the "localhost" inside the new default as one.
+Six tests fail in total; the other five pin the current default and are ordinary
+updates. So the change is not a one-line default swap - it needs the guard taught
+to tell a virtual host name from a loopback URL, without weakening what it
+catches. That is a decision record's worth of work, not a rename.
+
+> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: the two-second gap is resolved - a NetLog capture named it as a HOST_RESOLVER_MANAGER_JOB for the virtual host running 2.007 s, and moving the host to a .localhost name (RFC 6761) collapses it to 11-79 ms and takes issue #77's aborts with it (16 of 16 in-origin navigations commit where 45 consecutive ones had aborted). Records the six negatives, that the --host-resolver-rules rule never reached the browser, and why the default cannot simply be renamed: TestNoNetworkListener reads the "localhost" in it as a loopback literal. Then an audit re-read the captures and withdrew four claims this section had stated as its own measurements - the resolver job ends CANCELLED with no net_error rather than timing out (the timeout is the upstream issue's attribution, and the wpad jobs answered NXDOMAIN in 1-3 ms in the same capture), the --host-resolver-rules value was cut at its first space before the browser recorded its command line and where it was cut is not in the capture, RFC 6761's no-network requirement is the RFC's rather than an observation here, and "covering exactly" is gone because the capture holds neither end of the window and the fit is read across two logs. It also notes that .test's 2.027 s rules out .local-specific resolver routing as the mechanism, so the span is named but what fills it is open; the root cause, the negatives and the obstacle are unchanged. Also records that the 11-79 ms figure is unsettled - issue #77 has 11-22 ms for the same row from the same run - and drops the "15 ms" shorthand that had been carried over from the narrower reading. Adds the contents list the 250-line rule requires.

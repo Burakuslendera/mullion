@@ -122,6 +122,25 @@ from a non-UI thread and used only where the caller must observe the outcome.
 Read-only queries Windows documents as cross-thread safe (`IsZoomed`, behind
 `IsMaximised()`) are called directly.
 
+Two threads enter a COM apartment, not one. The UI thread's is the process's
+(`initializeCOM`, step 3 above). The second belongs to the system-browser launch:
+`ShellExecuteW` blocks until the target application has started, and running it
+inside a WebView2 event handler parked the message loop for as long as that took,
+so each launch gets a goroutine that pins its OS thread, enters its own STA,
+launches and returns
+([decisions/0029](./decisions/0029-system-browser-launch-off-the-ui-thread.md)).
+Eight may be in flight; over that a launch is dropped and said out loud. It
+touches no window, so the rule above is unaffected — nothing window-affine runs
+there.
+
+That worker is why `Config.Logger` carries a concurrency contract: an
+implementation must be safe to call from more than one goroutine. The launch
+reports from its own thread, and the render watchdog and the startup show gate
+write from `time.AfterFunc` timers. `NopLogger` is trivially safe and
+`SlogLogger` inherits whatever `*slog.Logger` guarantees; a Logger of the
+embedder's own that holds a buffer, a file handle or a counter of its own needs
+its own lock.
+
 Drag and resize are handed back to the window manager rather than emulated:
 `StartDrag` releases capture and sends `WM_NCLBUTTONDOWN` with `HTCAPTION`;
 `StartResize` sends the same message with the edge's hit-test code. Snap, aero shake
@@ -254,4 +273,4 @@ window is actually shown. An application that starts in a tray must treat the fi
 `ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
 hit-test model have no portable equivalent, and no abstraction layer is attempted.
 
-> Last updated: 2026-07-24 | Editor: Claude (Fable 5) | Change: docs-vs-code accuracy pass — step 6 lists the sixth callback (new window requested, 0022), and the bridge section states the origin gate and the real reply behaviour (a malformed or restricted-source request gets a log line and no reply, not `ok: false`).
+> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: docs-vs-code accuracy pass — step 6 lists the sixth callback (new window requested, 0022), and the bridge section states the origin gate and the real reply behaviour (a malformed or restricted-source request gets a log line and no reply, not `ok: false`). Then the threading model gained the second apartment it had been missing: the system-browser launch runs on a bounded set of per-launch goroutines with their own STA (issue #74, 0029), which is also why Config.Logger states a concurrency contract — this file enumerated the cross-thread rules without that one.
