@@ -213,17 +213,19 @@ Both current callers arm behind `!success`.
 
 ## Evidence
 
-Commit on branch `fix-79-suppressed-abort-warn`. The contract is locked by
-`host/errorsurface_logging_windows_test.go`:
+Commit on branch `fix-79-suppressed-abort-warn`. The contract is locked across
+two files. In `host/errorsurface_logging_windows_test.go`,
 `TestNavigationFailureIsReportedOnceAtItsClassifiedLevel` drives every machine
 ending — the seven that owe a failure report, each asserted as exactly one
 verbatim line including its level, and three success endings asserted to write
 nothing; `TestGateCancelledCompletionIsReportedWithItsNavigation` covers the
 gate's ending on both sides; `TestSuppressedAbortsDoNotInflateSessionWarnCount`
 walks issue #79's own sequence — six in-origin aborts leaving the count at 0,
-and a real failure still moving it to 1; and
+and a real failure still moving it to 1. In
+`host/navigation_report_source_test.go`,
 `TestNavigationCompletedCallbackReportsNoFailureItself` covers the callback the
-others cannot reach.
+others cannot reach — it is a closure built inside `createWebView`, so no
+headless test can invoke it and the guard reads the source instead.
 
 Measured, not assumed. Reverting the fix's source changes and keeping the tests
 (done at the fix commit, before the file split moved four functions out — at
@@ -274,4 +276,4 @@ describes; the abort reproduces when the click lands while the previous
 navigation is still in flight. That run is the negative control: it warned zero
 times too, so the rule does not merely silence the suppressed path.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a failed completion is reported once by the branch that classified it, at the level that classification deserves (issue #79); the warning moves into armErrorSurface and 0020's unattributed absorb keeps its warning. Revised the same day after an eight-agent audit: every report now follows its state transition rather than preceding it (a re-entrant-Logger regression the first version introduced), the unattributed absorb says so in its text, the follow-up line drops the duplicated phrase, and the counter claim was cut back to what the runs actually show. Audited again the same day: that ordering rule was applied in the code but locked by no test, and errorsurface_reentrancy_windows_test.go now drives both of its sites.
+> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: new record - a failed completion is reported once by the branch that classified it, at the level that classification deserves (issue #79); the warning moves into armErrorSurface and 0020's unattributed absorb keeps its warning. Revised the same day after an eight-agent audit: every report now follows its state transition rather than preceding it (a re-entrant-Logger regression the first version introduced), the unattributed absorb says so in its text, the follow-up line drops the duplicated phrase, and the counter claim was cut back to what the runs actually show. Audited again the same day: that ordering rule was applied in the code but locked by no test, and errorsurface_reentrancy_windows_test.go now drives both of its sites. Audited once more on 2026-07-26: the Evidence attributed four tests to one file, and TestNavigationCompletedCallbackReportsNoFailureItself lives in navigation_report_source_test.go - the same mis-attribution 0027's Evidence was corrected for, unchecked here at the time.

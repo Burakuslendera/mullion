@@ -1,6 +1,6 @@
 # 0023. A top-level navigation off the trusted origin is cancelled, opt-in
 
-**Status:** Accepted. Corrected by [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md): this record's gate commits to the cancel — remembering the id, routing the target — *before* `put_Cancel` is attempted and never learns whether it took, which fails open in three ways (issue #73). The gate's policy is unchanged; when it acts on it is.
+**Status:** Accepted. Corrected by [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md): this record's gate commits to the cancel — remembering the id, routing the target — *before* `put_Cancel` is attempted and never learns whether it took, which fails open in three ways (issue #73). The gate's policy is unchanged; when it acts on it is. The launch it routes to also moved off the UI thread by [0029](./0029-system-browser-launch-off-the-ui-thread.md), for the reason 0022 records.
 
 ## Context
 
@@ -104,4 +104,4 @@ COM args.
   (including a redirect), that `put_Cancel` actually abandons it, and that
   `ShellExecute` opens the routed target are `unverified` pending the live probe.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: status line corrected by 0027 — the commit-before-confirmation ordering this record describes fails open (issue #73); the body and the gate's policy are unchanged, per the supersede rules.
+> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: status line corrected by 0027 — the commit-before-confirmation ordering this record describes fails open (issue #73); the body and the gate's policy are unchanged, per the supersede rules. Then the status line also records 0029's launch move, which the index credited and this header did not.

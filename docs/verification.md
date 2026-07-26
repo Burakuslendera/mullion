@@ -257,9 +257,10 @@ a pass/fail with an observable result — "looks fine" is not a result.
       comparable. **Cause found:** a NetLog capture names the span as a
       `HOST_RESOLVER_MANAGER_JOB` for the virtual host, 2.007 s - the runtime
       resolves a name nothing needs resolved. Setting `Config.VirtualHost` to a
-      `.localhost` name (never sent to the network, RFC 6761) measured 11-79 ms
-      and stopped issue #77's aborts as well: 16 of 16 in-origin navigations
-      committed where 45 consecutive ones had aborted. Upstream, unfixed:
+      name under the TLD RFC 6761 reserves for loopback measured 11-79 ms (#77
+      has 11-22 for the same run - unsettled, so re-measure rather than cite)
+      and stopped its aborts: 16 of 16 in-origin navigations committed where
+      45 consecutive ones had aborted. Upstream, unfixed:
       https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:
