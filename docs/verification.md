@@ -40,7 +40,7 @@ cd examples/basic && go run .                    # it actually starts
 | `go build ./...` | Compile errors on the default Windows path only. |
 | `go vet ./...` | Misuse of `unsafe.Pointer` around Win32 calls, wrong printf verbs in log lines, suspicious struct tags. Vet is the closest thing to a static check on syscall boundaries. |
 | `go test ./...` | Pure-logic invariants: hit-test region maths, non-client rect adjustment, DPI scaling, style-bit composition, asset MIME/range handling, diagnostic log parsing — **and every COM vtable offset and IID in `internal/webview2`** (see below). |
-| `TestNoNetworkListener` | The promise on the README's first screen: **no local port is ever opened.** It greps the source for `net.Listen`, `http.ListenAndServe`, `httptest` and loopback literals. Until this existed the claim was documentation and nothing else — the kind of invariant that decays quietly, when somebody reaches for a test server "just for a fixture" and the build stays green. See [decisions/0002](./decisions/0002-no-local-port.md). |
+| `TestNoNetworkListener` | The promise on the README's first screen: **no local port is ever opened.** It greps the source for `net.Listen`, `http.ListenAndServe`, `httptest` and loopback literals — with one exemption, the default virtual host name, and only where that name stands alone: `preview.mullion.localhost`, `mullion.localhost:443` and the trailing-dot FQDN form all still fail ([decisions/0030](./decisions/0030-guard-exempts-the-virtual-host-name.md)). Until this existed the claim was documentation and nothing else — the kind of invariant that decays quietly, when somebody reaches for a test server "just for a fixture" and the build stays green. See [decisions/0002](./decisions/0002-no-local-port.md). |
 | `TestNoUpstreamBrandLeak`, `TestNoNonASCIIInSource` | The repository stays in one language, and carries nothing from the private code base it was extracted from. |
 | `go test -race ./...` | Data races between the UI thread and any goroutine that touches shared state (asset serving, watchdogs, bound callbacks). The window procedure runs on one thread; anything reachable from another must be synchronised, and the race detector is the only automated proof of it. |
 | `go build -tags <diag>` | Diagnostic builds rot silently. A plain `go build ./...` never compiles a file behind a build tag, so a rename in the default path can break a diagnostic variant for weeks without anyone noticing. Each diagnostic tag gets its own build in CI. |
@@ -203,8 +203,8 @@ a pass/fail with an observable result — "looks fine" is not a result.
       previous navigation is in flight: click fast, or every attempt commits.
       The clicked navigation is told apart from the app's own startup navigation
       by the trailing `?` on its `navigation starting` line
-      (`uri=https://mullion.local/index.html?` against
-      `uri=https://mullion.local/index.html`); the query *value* is dropped from
+      (`uri=https://mullion.localhost/index.html?` against
+      `uri=https://mullion.localhost/index.html`); the query *value* is dropped from
       the log (decisions/0025). Match it literally — `?` is a regex
       metacharacter, so an unescaped `index.html?` matches both lines. Use
       `Select-String -SimpleMatch` or `index\.html\?$`. If a check ever needs
@@ -212,9 +212,9 @@ a pass/fail with an observable result — "looks fine" is not a result.
       distinct queries.
 - [ ] **A frontend error keeps the URL it names.** Make the frontend throw with
       a URL in the message — `throw new Error("could not load
-      https://mullion.local/app/main.js")` from `app.js` is enough, or point a
+      https://mullion.localhost/app/main.js")` from `app.js` is enough, or point a
       `<script src>` at a missing in-origin file. The ERROR line must read
-      `frontend diagnostic error, message=…https://mullion.local/app/main.js`,
+      `frontend diagnostic error, message=…https://mullion.localhost/app/main.js`,
       with the host intact; `httpmain.js` is issue #80, the shape three releases
       of live verification were read past without anyone noticing
       (decisions/0028). A query in that URL must still be reduced to a bare `?`.
@@ -241,26 +241,27 @@ a pass/fail with an observable result — "looks fine" is not a result.
       at 125% → 1225x800; the Debug-level startup log line
       `mullion: initial placement` states the applied numbers). On a scaled monitor an unscaled window is
       the issue #59 regression (decisions/0018).
-- [ ] **Time the startup navigation gap** (issue #85). No interaction is
+- [ ] **Time the startup navigation gap** (issues #85, #77 - fixed, and this is
+      the check that it stays fixed). No interaction is
       needed - the app's own startup navigation shows it. With the Logger at
       debug level (`examples/basic` already is), read three lines in order:
       `asset response served, status=200, ... asset=index.html` (T0),
       `frontend diagnostic phase, phase=document created` (T1), then
       `asset response served, status=200, ... asset=style.css` (T2). T1 minus
       T0 is the gap; T2 minus T1 is near zero, which places the wait before
-      document creation rather than in parsing. Measured on this machine with
-      WebView2 runtime 150.0.4078.83 on 2026-07-25, five runs: 2.041, 2.026,
-      2.035, 2.027 and 2.039 seconds. Measure the **startup** navigation
-      only: a clicked in-origin navigation lands inside a retry chain the
-      runtime drives itself (one click started 45 navigations at 6-25 ms
+      document creation rather than in parsing. Measure the **startup**
+      navigation only: a clicked in-origin navigation lands inside a retry chain
+      the runtime drives itself (one click started 45 navigations at 6-25 ms
       intervals, most of them aborted), so timings taken from those are not
-      comparable. **Cause found:** a NetLog capture names the span as a
-      `HOST_RESOLVER_MANAGER_JOB` for the virtual host, 2.007 s - the runtime
-      resolves a name nothing needs resolved. Setting `Config.VirtualHost` to a
-      name under the TLD RFC 6761 reserves for loopback measured 11-79 ms (#77
-      has 11-22 for the same run - unsettled, so re-measure rather than cite)
-      and stopped its aborts: 16 of 16 in-origin navigations committed where
-      45 consecutive ones had aborted. Upstream, unfixed:
+      comparable. On the old default `mullion.local` this gap ran 2.026 - 2.041 s
+      across five runs (WebView2 150.0.4078.83, 2026-07-25) and a NetLog capture
+      named it as a `HOST_RESOLVER_MANAGER_JOB` for the virtual host, 2.007 s -
+      the runtime resolving a name nothing needs resolved. The default is now
+      under the TLD RFC 6761 reserves for loopback (decisions/0030), so the gap
+      must read in the tens of milliseconds and in-origin navigations must
+      commit. Two readings of the post-fix figure are on record from the same
+      run, 11-79 ms and 11-22 ms: **settle it here** and write the result to #85
+      rather than citing either. Upstream, unfixed:
       https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:
@@ -393,4 +394,4 @@ gathers it, and the rest of the reporting contract moved verbatim to
 [bug-reports.md](./bug-reports.md) when this file reached the 400-line
 reference-doc limit.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: two checklist items - what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027), and that a frontend error keeps the URL it names, which is the one part of issue #80 no headless test can reach (decisions/0028); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit. Then one more: that the window still answers while a cold system browser starts, which is the check that would establish the symptom issue #74 was fixed against (decisions/0029). And one more: how to time the startup navigation gap from the debug log, with the five measurements taken on this machine and why only the startup navigation is worth timing (issue #85).
+> Last updated: 2026-07-28 | Editor: Claude (Opus 5) | Change: the virtual-host fix landed, so the startup-gap item inverts - it now checks the gap is absent on the new default and owes a settled figure to #85, where 11-79 ms and 11-22 ms are both on record from the same run. TestNoNetworkListener's row states its one exemption (the default virtual host name, only where it stands alone; a subdomain, a port or the trailing-dot form still fail - decisions/0030), and the log lines the checklist greps for now read mullion.localhost. Previously: two checklist items - what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027), and that a frontend error keeps the URL it names, which is the one part of issue #80 no headless test can reach (decisions/0028); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit. Then one more: that the window still answers while a cold system browser starts, which is the check that would establish the symptom issue #74 was fixed against (decisions/0029). And one more: how to time the startup navigation gap from the debug log, with the five measurements taken on this machine and why only the startup navigation is worth timing (issue #85).

@@ -31,7 +31,7 @@ func TestFrontendDiagnosticFailureBranches(t *testing.T) {
 	}{
 		{"window error", "error", "boom", "level=ERROR", "frontend diagnostic error, message=boom"},
 		{"unhandled rejection", "unhandledrejection", "nope", "level=ERROR", "frontend diagnostic unhandled rejection, message=nope"},
-		{"resource load failure", "resource-css", "https://mullion.local/style.css", "level=WARN", "frontend resource load failed, kind=resource-css, asset=style.css"},
+		{"resource load failure", "resource-css", "https://mullion.localhost/style.css", "level=WARN", "frontend resource load failed, kind=resource-css, asset=style.css"},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {

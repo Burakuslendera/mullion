@@ -22,7 +22,7 @@ These files are that record.
 | # | Decision | Status |
 | --- | --- | --- |
 | [0001](./0001-own-webview2-com-layer.md) | The WebView2 COM layer is written here, not taken from a third-party binding | Accepted |
-| [0002](./0002-no-local-port.md) | Assets are served over an in-process virtual host, never a local port | Accepted |
+| [0002](./0002-no-local-port.md) | Assets are served over an in-process virtual host, never a local port | Accepted, guard scoped by 0012 and 0030 |
 | [0003](./0003-keep-caption-bits.md) | The frameless frame keeps `WS_CAPTION` and `WS_SYSMENU` | Accepted |
 | [0004](./0004-host-answers-window-controls.md) | The host answers the window control methods; `Config.Bridge` is optional | Accepted |
 | [0005](./0005-queryinterface-not-version.md) | Capability detection is `QueryInterface`, never a version compare | Accepted |
@@ -32,7 +32,7 @@ These files are that record.
 | [0009](./0009-public-package-at-host.md) | The public package lives at /host, not the module root | Accepted |
 | [0010](./0010-ci-requires-the-runtime.md) | CI requires the WebView2 runtime, so the export check cannot silently skip | Accepted |
 | [0011](./0011-host-owns-rasterization-scale.md) | The host owns the WebView2 rasterization scale | Accepted |
-| [0012](./0012-config-url-loopback.md) | Config.URL lets a caller serve the frontend itself; mullion still opens no socket | Accepted |
+| [0012](./0012-config-url-loopback.md) | Config.URL lets a caller serve the frontend itself; mullion still opens no socket | Accepted, guard exemption extended by 0030 |
 | [0013](./0013-backdrop-is-a-mullion-command.md) | The screenshot backdrop is a mullion command | Accepted |
 | [0014](./0014-bridge-origin-at-dispatch.md) | The injected bridge acts only on messages from the trusted origin | Accepted, follow-up landed as 0022 + 0023 |
 | [0015](./0015-maximize-insets-for-autohide-taskbar.md) | Maximized geometry insets 1px on an auto-hide taskbar edge | Accepted, narrowed by 0019 |
@@ -50,6 +50,7 @@ These files are that record.
 | [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md) | A navigation cancel is committed only after the runtime has performed it | Accepted |
 | [0028](./0028-message-keeps-the-urls-inside-it.md) | A message keeps the http(s) URLs inside it | Accepted |
 | [0029](./0029-system-browser-launch-off-the-ui-thread.md) | The system-browser launch runs off the UI thread, bounded | Accepted |
+| [0030](./0030-guard-exempts-the-virtual-host-name.md) | The no-port guard exempts one virtual host name, not a file | Accepted |
 
 ## When to write one
 

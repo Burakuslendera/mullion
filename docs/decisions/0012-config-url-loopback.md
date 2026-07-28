@@ -1,6 +1,6 @@
 # 0012. Config.URL lets a caller serve the frontend itself; mullion still opens no socket
 
-**Status:** Accepted
+**Status:** Accepted, guard exemption extended by [0030](./0030-guard-exempts-the-virtual-host-name.md)
 
 ## Context
 

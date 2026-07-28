@@ -6,7 +6,7 @@ import "testing"
 
 // contentTypeForAsset decides how the browser interprets the bytes an asset
 // serves, so its extension mapping is a small security surface: the wrong type
-// can turn inert data into executable script in the mullion.local origin. The
+// can turn inert data into executable script in the mullion.localhost origin. The
 // hardcoded switch and the http.DetectContentType fallback are deterministic
 // and locked here; the mime.TypeByExtension middle branch reads the machine's
 // registry MIME table and is deliberately left unpinned.

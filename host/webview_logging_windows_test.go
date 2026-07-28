@@ -22,10 +22,10 @@ import (
 func TestLogNavigationStartingNamesTheHost(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true})
 
-	host.logNavigationStarting("https://mullion.local/index.html?in=1", 41, true, false)
+	host.logNavigationStarting("https://mullion.localhost/index.html?in=1", 41, true, false)
 
 	logged := logger.String()
-	if !strings.Contains(logged, "uri=https://mullion.local/index.html?\n") {
+	if !strings.Contains(logged, "uri=https://mullion.localhost/index.html?\n") {
 		t.Fatalf("navigation line does not carry the host and query marker:\n%s", logged)
 	}
 	if strings.Contains(logged, "in=1") {
