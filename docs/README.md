@@ -18,6 +18,7 @@ other document answers one narrower question below.
 | Where do those snap / non-client claims come from? | [snap-sources.md](./snap-sources.md) |
 | **Why is it done this way, and what would change that?** | [decisions/](./decisions/) |
 | What was already tried, and why was it abandoned? | [lessons-and-dead-ends.md](./lessons-and-dead-ends.md) |
+| The same question, for what a log line may say | [logging-dead-ends.md](./logging-dead-ends.md) |
 | How do I prove a change actually works? | [verification.md](./verification.md) |
 | What does a bug report have to contain? | [bug-reports.md](./bug-reports.md) |
 
@@ -38,4 +39,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: index bug-reports.md, split out of verification.md at the 400-line reference-doc limit.
+> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: index bug-reports.md, split out of verification.md at the 400-line reference-doc limit. Then logging-dead-ends.md, split out of lessons-and-dead-ends.md at the same limit: the data: source and sanitiser dead ends, which are the two about what the host may truthfully say in a log line.
