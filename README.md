@@ -280,7 +280,7 @@ above was taken that way, on the same flat ground.
 
   Measured on WebView2 150.0.4078.83: the previous default `mullion.local` cost a
   2.007 s lookup per navigation with `LaunchToWindowVisibleMs` at 2419-2543,
-  against **495-508** on the default today. A name that merely *fails* to resolve
+  against **448-630** on the default today. A name that merely *fails* to resolve
   is not enough - `mullion.test` was measured here and cost the same two seconds,
   and three people have reported the same for `.example` upstream. The change and
   what it cost the no-port guard are in

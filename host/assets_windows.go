@@ -54,7 +54,7 @@ func newAssetProvider(assets fs.FS, log *logSink, virtualHost string, diagnostic
 // HOST_RESOLVER_MANAGER_JOB for the virtual host, 2.007 s, spanning that
 // window - so the cost was resolving the synthetic host name, not answering the
 // request. The default moved to a name under the TLD RFC 6761 reserves for
-// loopback, which measured 11-79 ms instead and took issue #77's aborts with it.
+// loopback, which measured 47-141 ms instead and took issue #77's aborts with it.
 // The reasoning, the exact name, the six negatives it took to get there and what
 // the change cost the no-port guard are on Config.VirtualHost, in
 // docs/decisions/0030 and in docs/webview2-and-assets.md. A caller that overrides

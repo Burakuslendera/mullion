@@ -9,9 +9,10 @@ about two seconds before the first subresource was requested. A NetLog capture
 named the span: a `HOST_RESOLVER_MANAGER_JOB` for `mullion.local:443` running
 2.007 s. Seven runs measured 2.012 - 2.041 s document-to-first-subresource, and
 45 consecutive in-origin navigations aborted without committing - issue #77 lived
-inside that window. Moving the name under `.localhost` measured 11 - 79 ms and 16
-of 16 navigations committed, with `LaunchToWindowVisibleMs` falling from
-2419 - 2543 to 495 - 508. The full measurement, the six negatives and what stays
+inside that window. Moving the name under `.localhost` collapsed it: five runs on
+2026-07-28, WebView2 runtime 150.0.4078.99, measured 47 - 141 ms
+document-to-first-subresource, with `LaunchToWindowVisibleMs` falling from
+2419 - 2543 to 448 - 630. The full measurement, the six negatives and what stays
 open are in [webview2-and-assets.md](../webview2-and-assets.md); issues #85 and
 #77 carry the captures.
 

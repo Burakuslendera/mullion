@@ -242,26 +242,29 @@ a pass/fail with an observable result — "looks fine" is not a result.
       `mullion: initial placement` states the applied numbers). On a scaled monitor an unscaled window is
       the issue #59 regression (decisions/0018).
 - [ ] **Time the startup navigation gap** (issues #85, #77 - fixed, and this is
-      the check that it stays fixed). No interaction is
-      needed - the app's own startup navigation shows it. With the Logger at
-      debug level (`examples/basic` already is), read three lines in order:
-      `asset response served, status=200, ... asset=index.html` (T0),
-      `frontend diagnostic phase, phase=document created` (T1), then
-      `asset response served, status=200, ... asset=style.css` (T2). T1 minus
-      T0 is the gap; T2 minus T1 is near zero, which places the wait before
-      document creation rather than in parsing. Measure the **startup**
+      the check that it stays fixed). No interaction is needed - the app's own
+      startup navigation shows it. With the Logger at debug level
+      (`examples/basic` already is), read two lines:
+      `asset response served, status=200, ... asset=index.html` (T0) and
+      `asset response served, status=200, ... asset=style.css` (T2). **T2 minus
+      T0 is the gap** - document to first subresource. Do not end the window at
+      `frontend diagnostic phase, phase=document created`: that line is stamped
+      when the host receives a bridge message from the injected script, so it
+      lags by a few milliseconds and now lands *after* T2. Measure the **startup**
       navigation only: a clicked in-origin navigation lands inside a retry chain
       the runtime drives itself (one click started 45 navigations at 6-25 ms
       intervals, most of them aborted), so timings taken from those are not
-      comparable. On the old default `mullion.local` this gap ran 2.026 - 2.041 s
-      across five runs (WebView2 150.0.4078.83, 2026-07-25) and a NetLog capture
-      named it as a `HOST_RESOLVER_MANAGER_JOB` for the virtual host, 2.007 s -
-      the runtime resolving a name nothing needs resolved. The default is now
+      comparable. On the old default this gap ran 2.026 - 2.041 s, named by a
+      NetLog capture as a `HOST_RESOLVER_MANAGER_JOB` for the virtual host
+      (webview2-and-assets.md). The default is now
       under the TLD RFC 6761 reserves for loopback (decisions/0030), so the gap
       must read in the tens of milliseconds and in-origin navigations must
-      commit. Two readings of the post-fix figure are on record from the same
-      run, 11-79 ms and 11-22 ms: **settle it here** and write the result to #85
-      rather than citing either. Upstream, unfixed:
+      commit. Run it twice from the same launcher and read the second: the
+      WebView2 profile is per executable name, so an IDE-built binary starts cold
+      and its first navigation pays a measured ~1.6 s of profile creation, which
+      is not the gap. Five runs on 2026-07-28 (runtime 150.0.4078.99) measured
+      47-141 ms, the 141 on the session's first run; two earlier readings, 11-79
+      and 11-22 ms, did not reproduce and are superseded. Upstream, unfixed:
       https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:
@@ -394,4 +397,4 @@ gathers it, and the rest of the reporting contract moved verbatim to
 [bug-reports.md](./bug-reports.md) when this file reached the 400-line
 reference-doc limit.
 
-> Last updated: 2026-07-28 | Editor: Claude (Opus 5) | Change: the virtual-host fix landed, so the startup-gap item inverts - it now checks the gap is absent on the new default and owes a settled figure to #85, where 11-79 ms and 11-22 ms are both on record from the same run. TestNoNetworkListener's row states its one exemption (the default virtual host name, only where it stands alone; a subdomain, a port or the trailing-dot form still fail - decisions/0030), and the log lines the checklist greps for now read mullion.localhost. Previously: two checklist items - what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027), and that a frontend error keeps the URL it names, which is the one part of issue #80 no headless test can reach (decisions/0028); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit. Then one more: that the window still answers while a cold system browser starts, which is the check that would establish the symptom issue #74 was fixed against (decisions/0029). And one more: how to time the startup navigation gap from the debug log, with the five measurements taken on this machine and why only the startup navigation is worth timing (issue #85).
+> Last updated: 2026-07-28 | Editor: Claude (Opus 5) | Change: the virtual-host fix landed, so the startup-gap item inverts - it now checks the gap is absent on the new default, ends the window at the first subresource rather than at phase=document created (a bridge message, stamped on receipt, which now lands after it), and carries the settled figure: 47-141 ms over five runs on 2026-07-28, runtime 150.0.4078.99, superseding the 11-79 and 11-22 ms readings that did not reproduce. TestNoNetworkListener's row states its one exemption (the default virtual host name, only where it stands alone; a subdomain, a port or the trailing-dot form still fail - decisions/0030), and the log lines the checklist greps for now read mullion.localhost. Previously: two checklist items - what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027), and that a frontend error keeps the URL it names, which is the one part of issue #80 no headless test can reach (decisions/0028); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit. Then one more: that the window still answers while a cold system browser starts, which is the check that would establish the symptom issue #74 was fixed against (decisions/0029). And one more: how to time the startup navigation gap from the debug log, with the five measurements taken on this machine and why only the startup navigation is worth timing (issue #85).

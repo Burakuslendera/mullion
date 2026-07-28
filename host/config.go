@@ -78,10 +78,10 @@ type Config struct {
 	// nothing about what a resolver does when asked for one. The TLD RFC 6761
 	// pins to the loopback address is different in kind: the RFC requires
 	// resolvers to answer it without going to the network. The default moved
-	// under it and measured 11-79 ms, with LaunchToWindowVisibleMs falling from
-	// ~2500 to ~500. decisions/0030 carries that change, including how the
-	// no-port guard (decisions/0002, TestNoNetworkListener) was taught to tell
-	// this name from an address.
+	// under it and measured 47-141 ms over five runs, with LaunchToWindowVisibleMs
+	// falling from ~2500 to 448-630. decisions/0030 carries that change, including
+	// how the no-port guard (decisions/0002, TestNoNetworkListener) was taught to
+	// tell this name from an address.
 	//
 	// A caller that overrides this field takes the cost back on itself: a name
 	// outside the TLD that RFC reserves is resolved like any other and the wait
