@@ -19,19 +19,20 @@ open are in [webview2-and-assets.md](../webview2-and-assets.md); issues #85 and
 Renaming the constant is a one-line change that fails six tests. Five of them pin
 the current default and are ordinary updates. The sixth is `TestNoNetworkListener`,
 which enforces [0002](./0002-no-local-port.md)'s promise that no local port is
-ever opened. It greps every `.go` file for `net.Listen`, `http.ListenAndServe`,
-`http.Serve(`, `httptest`, `127.0.0.1` and `localhost`. [0012](./0012-config-url-loopback.md)
+ever opened. It greps every `.go` file but its own for `net.Listen`,
+`http.ListenAndServe`, `http.Serve(`, `httptest`, `127.0.0.1` and `localhost`.
+[0012](./0012-config-url-loopback.md)
 narrowed the last two to `loopback.go`/`loopback_test.go`, the files that exist to
 *reject* a non-loopback `Config.URL`.
 
 That guard reads the `localhost` inside `mullion.localhost` as a loopback literal.
 It is a substring match, and it is right to be: the tier exists so that no file
 can quietly hard-code an address on the local machine. But the name it now
-catches is not an address. Nothing resolves that exact name and nothing connects
-to it: `WebResourceRequested` answers the request in this process, and 0002's
-guarantee is untouched. The guard cannot tell the two apart, and the distinction -
-which turns out to be narrower than "the name appears somewhere in the file" - is
-the whole content of this record.
+catches is not an address. The runtime resolves the name like any other - that is
+the whole reason it has to sit under this TLD - but nothing *connects* to it:
+`WebResourceRequested` answers the request in this process, and 0002's guarantee
+is untouched. The guard cannot tell a name from an address, and that distinction,
+narrower than "the name appears in the file", is this record's content.
 
 ## Decision
 
@@ -47,10 +48,13 @@ that continues a name or turns one into an address: another label, an FQDN's
 trailing dot, a port, userinfo, a percent escape. The reason is not syntactic
 tidiness. The request filter is registered for this origin exactly -
 `AddWebResourceRequestedFilter(origin()+"/*")` - so `mullion.localhost` is a name
-this process answers, while `preview.mullion.localhost` is one it never sees:
-that request goes to the network stack, and RFC 6761 pins the whole subtree to
-the loopback interface. The graft is a real local address wearing the product's
-name, which is precisely what this tier exists to catch.
+this process answers, while `preview.mullion.localhost` does not match that
+pattern and raises no `WebResourceRequested` at all. That much is in the code.
+What follows is inference, not measured here: an unintercepted request goes to
+the network stack, and RFC 6761 reserves the whole `.localhost` subtree for the
+loopback interface, so the graft is a local address wearing the product's name -
+which is precisely what this tier exists to catch. No navigation to a subdomain
+of the virtual host has ever been run against this repository.
 
 The token is spelled out in the test rather than derived from
 `defaultVirtualHost`, and the test fails if the two stop matching. Deriving it
@@ -83,11 +87,12 @@ a bare name is not necessarily one this process answers - so the rule now tests
 both sides of the token rather than one character on the right. The port case is
 still caught; it is no longer the only thing caught.
 
-**Split the literal in the source: `"mullion." + "localhost"`.** Passes the guard
-by hiding from it. `leak_test.go` builds its own needles this way so the scanner
-does not match itself, which is legitimate for a scanner; the same trick in
-production code inverts the meaning, because the guard would then be satisfied by
-any file willing to concatenate.
+**Split the literal in the source.** The split has to cut the needle itself -
+`"mullion." + "localhost"` still fails, because the second half is the banned
+token whole; it takes `"local" + "host"` to hide. `leak_test.go` builds its own
+needles that way so the scanner does not match itself, which is legitimate for a
+scanner; the same trick in production code inverts the meaning, because the guard
+would then be satisfied by any file willing to concatenate.
 
 **Drop the loopback tier and keep the listener markers.** The listeners are the
 socket, so 0002's promise would still be guarded. But 0012 considered removing
@@ -150,9 +155,10 @@ gap rather than an oversight.
   same ceiling the fourth rejected alternative names.
 - `host/config.go`: `defaultVirtualHost`, and the field comment that carries the
   measurement and the caller-side gap.
-- `docs/webview2-and-assets.md`: the capture, the table, the six negatives, and
-  the two readings of the post-fix figure that a live run still has to settle.
+- `docs/webview2-and-assets.md`: the capture, the table, the six negatives, the
+  readings the live run replaced, and the two measurement traps it exposed - the
+  profile warmth and the end of the window.
 - Issues #85 (the wait) and #77 (the aborts it caused); both close with the
   rename this record unblocks.
 
-> Last updated: 2026-07-28 | Editor: Claude (Opus 5) | Change: new record - the default virtual host moves to mullion.localhost, which collapses the two-second per-navigation wait measured in #85 and takes #77's aborts with it, and the no-port guard is taught to tell that name from an address. The exemption is one exact token, stripped only where it stands alone; a port-only version of the rule was written first and refuted before it shipped by preview.mullion.localhost and the trailing-dot FQDN form, both of which reach the network stack because the request filter is registered for this origin exactly. Twelve mutants run against the shipped rule, listed under Evidence, including the two the first version missed.
+> Last updated: 2026-07-28 | Editor: Claude (Opus 5) | Change: new record - the default virtual host moves to mullion.localhost, which collapses the two-second per-navigation wait measured in #85 and takes #77's aborts with it, and the no-port guard is taught to tell that name from an address. The exemption is one exact token, stripped only where it stands alone; a port-only version of the rule was written first and refuted before it shipped by preview.mullion.localhost and the trailing-dot FQDN form, both of which reach the network stack because the request filter is registered for this origin exactly. Twelve mutants run against the shipped rule, listed under Evidence, including the two the first version missed. Then the live run: five runs measured 47-141 ms document-to-first-subresource and LaunchToWindowVisibleMs 448-630 on runtime 150.0.4078.99, replacing the 11-79 and 11-22 ms readings that did not reproduce, and 31 clicked in-origin navigations all committed. An audit of this record then corrected four things it had asserted: that nothing resolves the exempt name (the runtime does; nothing connects to it), that the guard greps every .go file (not its own), that splitting the literal at the dot hides it (it does not - the split has to cut the needle), and that a subdomain reaching the network stack was measured here (it is inference).

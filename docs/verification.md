@@ -250,21 +250,21 @@ a pass/fail with an observable result — "looks fine" is not a result.
       T0 is the gap** - document to first subresource. Do not end the window at
       `frontend diagnostic phase, phase=document created`: that line is stamped
       when the host receives a bridge message from the injected script, so it
-      lags by a few milliseconds and now lands *after* T2. Measure the **startup**
-      navigation only: a clicked in-origin navigation lands inside a retry chain
-      the runtime drives itself (one click started 45 navigations at 6-25 ms
-      intervals, most of them aborted), so timings taken from those are not
-      comparable. On the old default this gap ran 2.026 - 2.041 s, named by a
-      NetLog capture as a `HOST_RESOLVER_MANAGER_JOB` for the virtual host
-      (webview2-and-assets.md). The default is now
-      under the TLD RFC 6761 reserves for loopback (decisions/0030), so the gap
-      must read in the tens of milliseconds and in-origin navigations must
-      commit. Run it twice from the same launcher and read the second: the
-      WebView2 profile is per executable name, so an IDE-built binary starts cold
-      and its first navigation pays a measured ~1.6 s of profile creation, which
-      is not the gap. Five runs on 2026-07-28 (runtime 150.0.4078.99) measured
-      47-141 ms, the 141 on the session's first run; two earlier readings, 11-79
-      and 11-22 ms, did not reproduce and are superseded. Upstream, unfixed:
+      lags by a few milliseconds and now lands *after* T2. Time the **startup**
+      navigation: on the old default a click landed inside a retry chain the
+      runtime drove itself (one click started 45 navigations, most aborted) and
+      was not comparable, which no longer happens - 31 clicked navigations
+      measured 10-18 ms in the same session, all committing. The old gap ran
+      2.026 - 2.041 s, named by a NetLog capture as a `HOST_RESOLVER_MANAGER_JOB`
+      for the virtual host (webview2-and-assets.md). The default is now under the
+      TLD RFC 6761 reserves for loopback (decisions/0030), so the gap must read in
+      the tens of milliseconds and in-origin navigations must commit. Run it twice
+      from the same launcher and read the second: this package points WebView2 at
+      a profile named after the executable, so an IDE-built binary starts on a
+      fresh one and its first navigation measured 1633 ms against 15 ms warm.
+      Five runs on 2026-07-28 (runtime 150.0.4078.99) measured 47-141 ms, the 141
+      on the session's first run; two earlier readings, 11-79 and 11-22 ms, did
+      not reproduce and are superseded. Upstream, unfixed:
       https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381
 - [ ] **Right-click the title bar → system menu appears**, and its item states
       are correct **in both window states**:

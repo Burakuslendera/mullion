@@ -163,10 +163,10 @@ func TestNoNetworkListener(t *testing.T) {
 	}
 
 	// One exemption, and it is a name rather than a file. mullion.localhost is
-	// answered in this process by WebResourceRequested: nothing resolves it and
-	// nothing connects to it, so the "localhost" inside it is a name, not an
-	// address. A port after the name is an address, and that form stays visible
-	// to the scan below. See docs/decisions/0030.
+	// answered in this process by WebResourceRequested: the runtime resolves the
+	// name like any other, but nothing connects to it, so the "localhost" inside
+	// it is a name and not an address. A port after the name is an address, and
+	// that form stays visible to the scan below. See docs/decisions/0030.
 	//
 	// Spelled out here rather than read from defaultVirtualHost, because
 	// deriving it would exempt whatever the default became - "localhost"

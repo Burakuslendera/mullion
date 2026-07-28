@@ -278,9 +278,12 @@ above was taken that way, on the same flat ground.
   host.Config{Assets: assets, VirtualHost: "yourapp.localhost"} // keep the TLD
   ```
 
-  Measured on WebView2 150.0.4078.83: the previous default `mullion.local` cost a
-  2.007 s lookup per navigation with `LaunchToWindowVisibleMs` at 2419-2543,
-  against **448-630** on the default today. A name that merely *fails* to resolve
+  Measured on WebView2 150.0.4078.83, the previous default `mullion.local` ran
+  2.012-2.041 s from document to first subresource, with one NetLog capture
+  showing a 2.007 s lookup inside that window, and `LaunchToWindowVisibleMs` at
+  2419-2543. On 150.0.4078.99 today the default measures 47-141 ms and
+  **448-630**. The runtime moved between the two, and `mullion.local` was not
+  re-measured on the newer one, so the pair is not a single-variable comparison. A name that merely *fails* to resolve
   is not enough - `mullion.test` was measured here and cost the same two seconds,
   and three people have reported the same for `.example` upstream. The change and
   what it cost the no-port guard are in

@@ -281,41 +281,41 @@ the mechanism inside it is still open.
 | virtual host | document to first subresource | in-origin navigations |
 | --- | --- | --- |
 | `mullion.local` | 2.012 - 2.041 s, seven runs | 45 consecutive aborts, none committed |
-| `mullion.localhost` | **47 - 141 ms**, five runs | **16 of 16 committed, none aborted** |
+| `mullion.localhost` | **47 - 141 ms**, five runs | **31 of 31 clicked, all committed** |
 
 `LaunchToWindowVisibleMs` went from 2419-2543 to **448 - 630 ms** on the same
-machine and frontend. Issue #77 - an in-origin navigation that aborts and often
-never commits - disappeared with it: the two-second window was where that race
-lived, and at these numbers there is nothing left to lose it in.
+machine and frontend. **Not on the same runtime, though:** the old numbers are
+from 150.0.4078.83 and the new ones from 150.0.4078.99, and `mullion.local` was
+never re-measured on .99. The comparison is therefore not single-variable, and
+nothing here rules out the update having contributed. Issue #77 - an in-origin
+navigation that aborts and often never commits - disappeared with it: the
+two-second window was where that race lived, and there is nothing left to lose
+it in.
 
-**The post-fix row is the run that applied the fix, and it settles an older
-disagreement by replacing it.** Two readings had been recorded from an earlier
-run whose raw logs were not kept - 11-79 ms in issue #85 and 11-22 ms in #77,
-written within a minute of each other. Neither reproduces. Five runs on
-2026-07-28, WebView2 runtime 150.0.4078.99, measured 47, 48, 57, 64 and 141 ms
-document-to-first-subresource, with the 141 on the first run of the session and
-the rest inside 47-64. Those logs are kept. The conclusion the older readings
-supported is untouched: this is still two orders of magnitude below the wait it
-replaced.
+**The post-fix row settles an older disagreement by replacing it.** Two readings
+had been recorded from an earlier run whose raw logs were not kept - 11-79 ms in
+#85 and 11-22 ms in #77, a minute apart. Neither reproduces. Five runs on
+2026-07-28, runtime 150.0.4078.99, measured 47, 48, 57, 64 and 141 ms, the 141 on
+the session's first run and the rest inside 47-64, and those logs are kept. What
+the older readings supported is untouched: two orders of magnitude below the wait.
 
-**Measure on a warm browser profile, or you measure profile creation.** The user
-data folder defaults to `%LOCALAPPDATA%\<executable name>\WebView2`
-(`internal/webview2/browser_windows.go`), so a different launcher is a different
-profile. The same commit run from an IDE - which builds the binary under its own
-long name - created a profile at the second the run started, and that run's first
-navigation took **1633 ms**; a second run of the identical configuration, against
-the now-warm profile, took **15 ms**. Only the first navigation pays it: the
-clicked navigations inside the cold run were 12-16 ms. `go run .` keeps one
-profile, which is what makes the five runs above comparable to each other.
+**Measure the second run from a given launcher.** This package points WebView2 at
+`%LOCALAPPDATA%\<executable name>\WebView2` (`internal/webview2/browser_windows.go`;
+the runtime's own fallback is a folder beside the executable, which is why that
+default exists), so a different launcher is a different profile. Run from an IDE,
+which builds under its own long name, the same commit created a profile at the
+second the run started and its first navigation took **1633 ms**, against **15 ms**
+on the second run of that configuration. Only the first paid it. That the 1.6 s is
+profile creation is the obvious reading rather than a measured one, and that
+console log was not kept; what is kept is the folder, stamped at the run's own
+second. `go run .` keeps one profile, which is what makes the five runs comparable.
 
-**Measure it as document-to-first-subresource, not document-to-document-created.**
-The `frontend diagnostic phase, phase=document created` line is timestamped when
-the host *receives* the message, and `host/diagnostics.js` sends it over the
-bridge from the injected script, so the line lags the event by a few milliseconds.
-Against a two-second wait that lag was invisible. At 50 ms it is not: in all five
-runs the `style.css` request was served 3-12 ms **before** the document-created
-line. The subresource request is the renderer's own, so it is the honest end of
-the window.
+**End the window at the first subresource, not at document-created.** The
+`frontend diagnostic phase, phase=document created` line is timestamped when the
+host *receives* the message, and `host/diagnostics.js` sends it over the bridge
+from the injected script, so it lags the event. Against a two-second wait that was
+invisible; at 50 ms it is not, and in all five runs `style.css` was served 3-12 ms
+**before** it. The subresource request is the renderer's own.
 
 **Why that name and not another.** The rule is not "pick a name that will not
 resolve" - that is the version that fails. `.example`, `.test` and `.invalid` are
