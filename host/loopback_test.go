@@ -47,7 +47,7 @@ func TestValidateURLAcceptsOnlyLoopbackHTTP(t *testing.T) {
 func TestStartURLPrefersConfigURL(t *testing.T) {
 	// Empty URL -> the in-process virtual host index, unchanged from before Config.URL.
 	base := Config{}.normalise()
-	if got := base.startURL(); got != "https://mullion.local/index.html" {
+	if got := base.startURL(); got != "https://mullion.localhost/index.html" {
 		t.Fatalf("startURL() with no Config.URL = %q, want the virtual host index", got)
 	}
 	// A set URL is navigated to verbatim - the caller's server owns its own paths.
@@ -59,7 +59,7 @@ func TestStartURLPrefersConfigURL(t *testing.T) {
 
 func TestAssetSourceSummaryStatesTheSourceAndRedactsPath(t *testing.T) {
 	base := Config{}.normalise()
-	if got := assetSourceSummary(base); got != "mullion: asset source=embedded-fs, virtual_host=https://mullion.local" {
+	if got := assetSourceSummary(base); got != "mullion: asset source=embedded-fs, virtual_host=https://mullion.localhost" {
 		t.Fatalf("assetSourceSummary (embedded) = %q", got)
 	}
 	// The path and query are dropped: only scheme://host:port reaches the log, so a
@@ -76,7 +76,7 @@ func TestAssetSourceSummaryStatesTheSourceAndRedactsPath(t *testing.T) {
 // filesystem:/file: document that launders a foreign origin, and about:blank/"" that
 // a script-driven top navigation can reach.
 func TestMessageSourceAllowed(t *testing.T) {
-	asset := Config{}.normalise()                            // virtual host https://mullion.local
+	asset := Config{}.normalise()                            // virtual host https://mullion.localhost
 	loop := Config{URL: "http://127.0.0.1:8080"}.normalise() // caller loopback origin
 
 	allowed := []struct {
@@ -84,10 +84,10 @@ func TestMessageSourceAllowed(t *testing.T) {
 		config Config
 		source string
 	}{
-		{"trusted virtual host", asset, "https://mullion.local/index.html"},
-		{"trusted virtual host root", asset, "https://mullion.local/"},
-		{"trusted host explicit default port", asset, "https://mullion.local:443/x"},
-		{"trusted host case-insensitive", asset, "https://MULLION.LOCAL/x"},
+		{"trusted virtual host", asset, "https://mullion.localhost/index.html"},
+		{"trusted virtual host root", asset, "https://mullion.localhost/"},
+		{"trusted host explicit default port", asset, "https://mullion.localhost:443/x"},
+		{"trusted host case-insensitive", asset, "https://MULLION.LOCALHOST/x"},
 		{"data error page", asset, "data:text/html,%3Chtml%3E"},
 		{"trusted loopback url", loop, "http://127.0.0.1:8080/app"},
 	}
@@ -106,13 +106,13 @@ func TestMessageSourceAllowed(t *testing.T) {
 		{"foreign http origin", asset, "http://evil.example"},
 		{"different loopback port", loop, "http://127.0.0.1:9999/x"},
 		{"remote in url mode", loop, "https://evil.example"},
-		{"scheme downgrade of trusted host", asset, "http://mullion.local"},
+		{"scheme downgrade of trusted host", asset, "http://mullion.localhost"},
 		{"blob laundering a foreign origin", asset, "blob:https://evil.example/uuid"},
 		{"filesystem laundering a foreign origin", asset, "filesystem:https://evil.example/temporary/x"},
 		{"file scheme", asset, "file:///c:/x"},
 		{"about blank inherits the previous origin", asset, "about:blank"},
 		{"empty source", asset, ""},
-		{"userinfo cannot spoof the trusted host", asset, "https://mullion.local@evil.example/x"},
+		{"userinfo cannot spoof the trusted host", asset, "https://mullion.localhost@evil.example/x"},
 	}
 	for _, c := range rejected {
 		if c.config.messageSourceAllowed(c.source) {
@@ -131,7 +131,7 @@ func TestMessageSourceAllowed(t *testing.T) {
 // like harmless dedup) would make a data: iframe trusted - the exact hole 0014 closes
 // - and every other test would still pass.
 func TestMessageSourceTrusted(t *testing.T) {
-	asset := Config{}.normalise()                            // virtual host https://mullion.local
+	asset := Config{}.normalise()                            // virtual host https://mullion.localhost
 	loop := Config{URL: "http://127.0.0.1:8080"}.normalise() // caller loopback origin
 
 	trusted := []struct {
@@ -139,9 +139,9 @@ func TestMessageSourceTrusted(t *testing.T) {
 		config Config
 		source string
 	}{
-		{"trusted virtual host", asset, "https://mullion.local/index.html"},
-		{"trusted host explicit default port", asset, "https://mullion.local:443/x"},
-		{"trusted host case-insensitive", asset, "https://MULLION.LOCAL/x"},
+		{"trusted virtual host", asset, "https://mullion.localhost/index.html"},
+		{"trusted host explicit default port", asset, "https://mullion.localhost:443/x"},
+		{"trusted host case-insensitive", asset, "https://MULLION.LOCALHOST/x"},
 		{"trusted loopback url", loop, "http://127.0.0.1:8080/app"},
 	}
 	for _, c := range trusted {
@@ -159,12 +159,12 @@ func TestMessageSourceTrusted(t *testing.T) {
 		{"data error surface is allowed but not trusted", asset, "data:text/html,%3Chtml%3E"},
 		{"foreign https origin", asset, "https://evil.example/x"},
 		{"different loopback port", loop, "http://127.0.0.1:9999/x"},
-		{"scheme downgrade of trusted host", asset, "http://mullion.local"},
+		{"scheme downgrade of trusted host", asset, "http://mullion.localhost"},
 		{"blob laundering a foreign origin", asset, "blob:https://evil.example/uuid"},
 		{"file scheme", asset, "file:///c:/x"},
 		{"about blank inherits the previous origin", asset, "about:blank"},
 		{"empty source", asset, ""},
-		{"userinfo cannot spoof the trusted host", asset, "https://mullion.local@evil.example/x"},
+		{"userinfo cannot spoof the trusted host", asset, "https://mullion.localhost@evil.example/x"},
 	}
 	for _, c := range untrusted {
 		if c.config.messageSourceTrusted(c.source) {
@@ -184,7 +184,7 @@ func TestNavigationOffOrigin(t *testing.T) {
 	onURL := Config{URL: "http://127.0.0.1:8080", PinNavigationToOrigin: true}.normalise()
 
 	// Gate off: nothing is off-origin, whatever the URI - existing behaviour.
-	for _, uri := range []string{"https://evil.example/", "https://mullion.local/x", "about:blank", "data:text/html,x"} {
+	for _, uri := range []string{"https://evil.example/", "https://mullion.localhost/x", "about:blank", "data:text/html,x"} {
 		if off.navigationOffOrigin(uri) {
 			t.Errorf("gate off: navigationOffOrigin(%q) = true, want false (never cancels)", uri)
 		}
@@ -195,10 +195,10 @@ func TestNavigationOffOrigin(t *testing.T) {
 		config Config
 		uri    string
 	}{
-		{"trusted virtual host root", on, "https://mullion.local/"},
-		{"trusted host any path", on, "https://mullion.local/app/route?q=1"},
-		{"trusted host explicit default port", on, "https://mullion.local:443/x"},
-		{"trusted host case-insensitive", on, "https://MULLION.LOCAL/x"},
+		{"trusted virtual host root", on, "https://mullion.localhost/"},
+		{"trusted host any path", on, "https://mullion.localhost/app/route?q=1"},
+		{"trusted host explicit default port", on, "https://mullion.localhost:443/x"},
+		{"trusted host case-insensitive", on, "https://MULLION.LOCALHOST/x"},
 		{"the error surface (data:)", on, "data:text/html,%3Chtml%3E"},
 		{"trusted loopback url", onURL, "http://127.0.0.1:8080/app"},
 	}
@@ -214,8 +214,8 @@ func TestNavigationOffOrigin(t *testing.T) {
 		uri    string
 	}{
 		{"foreign https origin", on, "https://evil.example/"},
-		{"scheme downgrade of trusted host", on, "http://mullion.local/x"},
-		{"userinfo cannot spoof the trusted host", on, "https://mullion.local@evil.example/x"},
+		{"scheme downgrade of trusted host", on, "http://mullion.localhost/x"},
+		{"userinfo cannot spoof the trusted host", on, "https://mullion.localhost@evil.example/x"},
 		{"blob laundering a foreign origin", on, "blob:https://evil.example/uuid"},
 		{"file scheme", on, "file:///c:/x"},
 		{"about blank inherits the previous origin", on, "about:blank"},

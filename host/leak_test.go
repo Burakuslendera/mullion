@@ -82,6 +82,52 @@ func TestNoUpstreamBrandLeak(t *testing.T) {
 	}
 }
 
+// stripExemptName removes the one host name TestNoNetworkListener exempts, so the
+// scan below does not read the "localhost" inside it as an address.
+//
+// The name is exempt only where it stands alone. A label character in front of it
+// means it is the tail of a different host: preview.mullion.localhost is a name
+// WebResourceRequested never sees, because the filter is registered for this
+// origin exactly (origin()+"/*"), so the request goes to the network stack and
+// RFC 6761 sends it to the loopback interface. Anything behind it that continues
+// a name or turns one into an address has the same effect - another label, the
+// trailing dot of an FQDN, a port, userinfo, a percent escape. In those cases the
+// name is left in the text and the file fails. See docs/decisions/0030.
+func stripExemptName(source, name string) string {
+	label := func(c byte) bool {
+		return c == '.' || c == '-' || c == '_' ||
+			('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+	}
+	address := func(c byte) bool { return label(c) || c == ':' || c == '@' || c == '%' }
+
+	var kept strings.Builder
+	rest, previous := source, byte(0)
+	for {
+		at := strings.Index(rest, name)
+		if at < 0 {
+			kept.WriteString(rest)
+			return kept.String()
+		}
+		kept.WriteString(rest[:at])
+		before := previous
+		if at > 0 {
+			before = rest[at-1]
+		}
+		end := at + len(name)
+		var after byte
+		if end < len(rest) {
+			after = rest[end]
+		}
+		if label(before) || address(after) {
+			kept.WriteString(name)
+			previous = name[len(name)-1]
+		} else {
+			previous = before
+		}
+		rest = rest[end:]
+	}
+}
+
 // TestNoNetworkListener enforces the promise the README makes on the first
 // screen: no local port is ever opened.
 //
@@ -116,6 +162,23 @@ func TestNoNetworkListener(t *testing.T) {
 		"loopback_test.go": true,
 	}
 
+	// One exemption, and it is a name rather than a file. mullion.localhost is
+	// answered in this process by WebResourceRequested: the runtime resolves the
+	// name like any other, but nothing connects to it, so the "localhost" inside
+	// it is a name and not an address. A port after the name is an address, and
+	// that form stays visible to the scan below. See docs/decisions/0030.
+	//
+	// Spelled out here rather than read from defaultVirtualHost, because
+	// deriving it would exempt whatever the default became - "localhost"
+	// included - and the guard would become a mirror of the code it checks.
+	virtualHost := "mullion." + "local" + "host"
+	if defaultVirtualHost != virtualHost {
+		t.Fatalf("defaultVirtualHost is %q but this guard exempts %q: that name carries a measured two seconds per navigation (issues #85, #77), so changing it is a decision rather than a rename - see docs/decisions/0030", defaultVirtualHost, virtualHost)
+	}
+	// The exemption is the name standing alone: see stripExemptName for what
+	// disqualifies an occurrence, and 0030 for why each case is an address rather
+	// than a name.
+
 	err := filepath.WalkDir(moduleRoot(t), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -140,9 +203,10 @@ func TestNoNetworkListener(t *testing.T) {
 			}
 		}
 		if !loopbackAllowed[filepath.Base(path)] {
+			scanned := stripExemptName(source, virtualHost)
 			for _, needle := range loopbackLiterals {
-				if strings.Contains(source, needle) {
-					t.Errorf("%s contains %q: only loopback.go may name a loopback host, and only to reject a non-loopback Config.URL", path, needle)
+				if strings.Contains(scanned, needle) {
+					t.Errorf("%s contains %q: only loopback.go may name a loopback host, and only to reject a non-loopback Config.URL - the sole exception is the bare virtual host name %q (docs/decisions/0030)", path, needle, virtualHost)
 				}
 			}
 		}

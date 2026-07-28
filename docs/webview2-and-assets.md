@@ -127,7 +127,7 @@ origin's, and a failed id read arrives as `0`, which no real navigation uses.
 ## Asset serving without a port
 
 Assets come from an `fs.FS` — typically a `go:embed` FS — served on a synthetic origin
-derived from `Config.VirtualHost` (`https://mullion.local` by default). The host registers
+derived from `Config.VirtualHost` (`https://mullion.localhost` by default). The host registers
 `AddWebResourceRequestedFilter(origin+"/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)`
 and answers every request inside `WebResourceRequestedCallback`. Nothing binds a
 socket; the request never leaves the process. Because that callback is the only
@@ -258,7 +258,8 @@ is read across two logs, because the capture holds neither end of the window -
 WebView2 answers both documents from the virtual-host callback, so they never
 reach the URLRequest path. The job spans 23:28:47.238 to 49.245; mullion's own
 log for that run served `index.html` at 47.245 and `style.css` at 49.257.
-Changing the virtual host to a name reserved for loopback collapses it.
+Moving the virtual host to a name reserved for loopback collapsed it, and that
+name is the default as of [decisions/0030](./decisions/0030-guard-exempts-the-virtual-host-name.md).
 
 What the capture records there is a duration, not an outcome. The job ends with
 its last request detaching and a `CANCELLED` event, carrying no `net_error` and
@@ -280,20 +281,41 @@ the mechanism inside it is still open.
 | virtual host | document to first subresource | in-origin navigations |
 | --- | --- | --- |
 | `mullion.local` | 2.012 - 2.041 s, seven runs | 45 consecutive aborts, none committed |
-| `mullion.localhost` | **11 - 79 ms** | **16 of 16 committed, none aborted** |
+| `mullion.localhost` | **47 - 141 ms**, five runs | **31 of 31 clicked, all committed** |
 
-`LaunchToWindowVisibleMs` went from 2419-2543 to **495-508** on the same machine
-and frontend. Issue #77 - an in-origin navigation that aborts and often never
-commits - disappeared with it: the two-second window was where that race lived,
-and at 11-79 ms there is nothing left to lose it in.
+`LaunchToWindowVisibleMs` went from 2419-2543 to **448 - 630 ms** on the same
+machine and frontend. **Not on the same runtime, though:** the old numbers are
+from 150.0.4078.83 and the new ones from 150.0.4078.99, and `mullion.local` was
+never re-measured on .99. The comparison is therefore not single-variable, and
+nothing here rules out the update having contributed. Issue #77 - an in-origin
+navigation that aborts and often never commits - disappeared with it: the
+two-second window was where that race lived, and there is nothing left to lose
+it in.
 
-One number in that table is not settled. The same row was written into issue #77
-as **11-22 ms** within a minute of being written into #85 as 11-79 ms, from the
-same run, and the raw logs were not kept. The lower bound agrees; only the upper
-one does not, so this is two readings rather than a typo. It does not affect
-anything above - both ranges are two orders of magnitude below the wait they
-replaced - but the figure repeated across this repository is 11-79, and the live
-run that applies the fix should settle it rather than copy it forward.
+**The post-fix row settles an older disagreement by replacing it.** Two readings
+had been recorded from an earlier run whose raw logs were not kept - 11-79 ms in
+#85 and 11-22 ms in #77, a minute apart. Neither reproduces. Five runs on
+2026-07-28, runtime 150.0.4078.99, measured 47, 48, 57, 64 and 141 ms, the 141 on
+the session's first run and the rest inside 47-64, and those logs are kept. What
+the older readings supported is untouched: two orders of magnitude below the wait.
+
+**Measure the second run from a given launcher.** This package points WebView2 at
+`%LOCALAPPDATA%\<executable name>\WebView2` (`internal/webview2/browser_windows.go`;
+the runtime's own fallback is a folder beside the executable, which is why that
+default exists), so a different launcher is a different profile. Run from an IDE,
+which builds under its own long name, the same commit created a profile at the
+second the run started and its first navigation took **1633 ms**, against **15 ms**
+on the second run of that configuration. Only the first paid it. That the 1.6 s is
+profile creation is the obvious reading rather than a measured one, and that
+console log was not kept; what is kept is the folder, stamped at the run's own
+second. `go run .` keeps one profile, which is what makes the five runs comparable.
+
+**End the window at the first subresource, not at document-created.** The
+`frontend diagnostic phase, phase=document created` line is timestamped when the
+host *receives* the message, and `host/diagnostics.js` sends it over the bridge
+from the injected script, so it lags the event. Against a two-second wait that was
+invisible; at 50 ms it is not, and in all five runs `style.css` was served 3-12 ms
+**before** it. The subresource request is the renderer's own.
 
 **Why that name and not another.** The rule is not "pick a name that will not
 resolve" - that is the version that fails. `.example`, `.test` and `.invalid` are
@@ -301,7 +323,7 @@ reserved by RFC 2606 so that nobody registers them, which says nothing about wha
 a resolver does when it is asked for one. `.localhost` is different in kind: RFC
 6761 reserves it as *always loopback* and requires resolvers to answer it without
 querying the network. That requirement is the RFC's. No capture was taken on the
-new name, so what is measured here is the 11-79 ms that replaced the wait, not
+new name, so what is measured here is the 47-141 ms that replaced the wait, not
 the absence of a lookup. Renaming `mullion.local` to `mullion.test` was measured
 first and changed nothing (2.027 s), which is the same result three other people
 have reported for `.example` on the upstream issue.
@@ -359,13 +381,20 @@ machine. Note that the Microsoft engineer's advice on that issue - use
 `*.example` - does not work, and has now been contradicted four times including
 by the `.test` measurement above.
 
-**The fix is not applied yet, and the obstacle is worth stating.** Changing
-`defaultVirtualHost` to `mullion.localhost` fails `TestNoNetworkListener`: that
-test is the no-port promise's guard (decisions/0002), it greps the tree for
-loopback literals, and it reads the "localhost" inside the new default as one.
-Six tests fail in total; the other five pin the current default and are ordinary
-updates. So the change is not a one-line default swap - it needs the guard taught
-to tell a virtual host name from a loopback URL, without weakening what it
-catches. That is a decision record's worth of work, not a rename.
+**The fix is applied, and what it cost is worth stating.** `defaultVirtualHost` is
+now `mullion.localhost`. The swap failed six tests: five pinned the old default and
+were ordinary updates, and the sixth was `TestNoNetworkListener`, the no-port
+promise's guard (decisions/0002), which greps the tree for loopback literals and
+read the "localhost" inside the new default as one. Teaching it the difference is
+[decisions/0030](./decisions/0030-guard-exempts-the-virtual-host-name.md): the scan
+drops the exact token `mullion.localhost` before matching, and only where the name
+stands alone, so a bare `localhost` still fails and so do `mullion.localhost:443`,
+`preview.mullion.localhost` and the trailing-dot FQDN form. The first version of
+that rule keyed on a following port alone, and an adversarial pass refuted it
+before it shipped: the request filter is registered for this origin exactly, so a
+subdomain of the virtual host is never intercepted and goes to the network stack.
+Twelve mutants were run against the shipped rule. The guard is now strict enough
+that a comment naming the reserved TLD on its own fails the scan, which is why the
+prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: the two-second gap is resolved - a NetLog capture named it as a HOST_RESOLVER_MANAGER_JOB for the virtual host running 2.007 s, and moving the host to a .localhost name (RFC 6761) collapses it to 11-79 ms and takes issue #77's aborts with it (16 of 16 in-origin navigations commit where 45 consecutive ones had aborted). Records the six negatives, that the --host-resolver-rules rule never reached the browser, and why the default cannot simply be renamed: TestNoNetworkListener reads the "localhost" in it as a loopback literal. Then an audit re-read the captures and withdrew four claims this section had stated as its own measurements - the resolver job ends CANCELLED with no net_error rather than timing out (the timeout is the upstream issue's attribution, and the wpad jobs answered NXDOMAIN in 1-3 ms in the same capture), the --host-resolver-rules value was cut at its first space before the browser recorded its command line and where it was cut is not in the capture, RFC 6761's no-network requirement is the RFC's rather than an observation here, and "covering exactly" is gone because the capture holds neither end of the window and the fit is read across two logs. It also notes that .test's 2.027 s rules out .local-specific resolver routing as the mechanism, so the span is named but what fills it is open; the root cause, the negatives and the obstacle are unchanged. Also records that the 11-79 ms figure is unsettled - issue #77 has 11-22 ms for the same row from the same run - and drops the "15 ms" shorthand that had been carried over from the narrower reading. Adds the contents list the 250-line rule requires.
+> Last updated: 2026-07-28 | Editor: Claude (Opus 5) | Change: the fix is applied. `defaultVirtualHost` is `mullion.localhost`, and the paragraph that stated the obstacle now states what clearing it cost: decisions/0030 drops the exact token from the loopback scan, and only where the name stands alone, so a bare `localhost`, `mullion.localhost:443`, `preview.mullion.localhost` and the trailing-dot form all still fail anywhere but `loopback.go`. A port-only version of that rule was written first and refuted before it shipped, by the two graft forms; twelve mutants were run against the shipped one. The live run that applies the fix was taken and settles the post-fix figure by replacing it: five runs on 2026-07-28, runtime 150.0.4078.99, measured 47-141 ms document-to-first-subresource and LaunchToWindowVisibleMs 448-630, and neither of the two earlier readings (11-79 in #85, 11-22 in #77, raw logs not kept) reproduced. That run also showed the window has to end at the first subresource rather than at phase=document created, which is stamped when the host receives a bridge message and now lands after it. Previously: the two-second gap is resolved - a NetLog capture named it as a HOST_RESOLVER_MANAGER_JOB for the virtual host running 2.007 s, and moving the host to a .localhost name (RFC 6761) collapses it to 11-79 ms and takes issue #77's aborts with it (16 of 16 in-origin navigations commit where 45 consecutive ones had aborted). Records the six negatives, that the --host-resolver-rules rule never reached the browser, and why the default cannot simply be renamed: TestNoNetworkListener reads the "localhost" in it as a loopback literal. Then an audit re-read the captures and withdrew four claims this section had stated as its own measurements - the resolver job ends CANCELLED with no net_error rather than timing out (the timeout is the upstream issue's attribution, and the wpad jobs answered NXDOMAIN in 1-3 ms in the same capture), the --host-resolver-rules value was cut at its first space before the browser recorded its command line and where it was cut is not in the capture, RFC 6761's no-network requirement is the RFC's rather than an observation here, and "covering exactly" is gone because the capture holds neither end of the window and the fit is read across two logs. It also notes that .test's 2.027 s rules out .local-specific resolver routing as the mechanism, so the span is named but what fills it is open; the root cause, the negatives and the obstacle are unchanged. Also records that the 11-79 ms figure is unsettled - issue #77 has 11-22 ms for the same row from the same run - and drops the "15 ms" shorthand that had been carried over from the narrower reading. Adds the contents list the 250-line rule requires.

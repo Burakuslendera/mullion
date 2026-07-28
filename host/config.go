@@ -60,30 +60,34 @@ type Config struct {
 	ClassName string
 	// VirtualHost is the synthetic host that serves Assets. It is the single
 	// source for both the request filter and the origin allow-list.
-	// Default "mullion.local", which yields the origin https://mullion.local.
+	// Default "mullion.localhost", so the origin is https://mullion.localhost and
+	// the request filter is registered for that origin exactly.
 	//
 	// Nothing mullion does resolves this name - WebResourceRequested intercepts
 	// the request and Assets answers it in process - so it need not exist
-	// anywhere. The runtime resolves it anyway, and the current default makes
-	// that expensive: a NetLog capture on WebView2 150.0.4078.83 shows a
+	// anywhere. The runtime resolves it anyway, and the name decides what that
+	// costs. The previous default, mullion.local, cost about two seconds on every
+	// navigation: a NetLog capture on WebView2 150.0.4078.83 shows a
 	// HOST_RESOLVER_MANAGER_JOB for "mullion.local:443" running 2.007 s, spanning
 	// the gap between the document being served and the first subresource being
 	// requested. Seven runs measured 2.012 to 2.041 s.
 	//
-	// The name is what decides it, and the rule is not "pick something that will
-	// not resolve" - that is the version that fails. mullion.test was measured
-	// and cost the same 2.027 s, because .test (RFC 2606) only means nobody may
-	// register it, which says nothing about what a resolver does when asked for
-	// one. The TLD RFC 6761 pins to the loopback address is different in kind:
-	// the RFC requires resolvers to answer it without going to the network. A
-	// VirtualHost under it measured 11-79 ms with LaunchToWindowVisibleMs falling
-	// from ~2500 to ~500. That is the workaround available today; it is spelled
-	// out in docs/webview2-and-assets.md rather than here, because this package's
-	// no-port guard (decisions/0002, TestNoNetworkListener) refuses to let any
-	// file but loopback.go name a loopback host - which is also why the default
-	// cannot simply be renamed.
+	// The rule is not "pick something that will not resolve" - that is the
+	// version that fails. mullion.test was measured and cost the same 2.027 s,
+	// because .test (RFC 2606) only means nobody may register it, which says
+	// nothing about what a resolver does when asked for one. The TLD RFC 6761
+	// pins to the loopback address is different in kind: the RFC requires
+	// resolvers to answer it without going to the network. The default moved
+	// under it and measured 47-141 ms over five runs, with LaunchToWindowVisibleMs
+	// falling from ~2500 to 448-630. decisions/0030 carries that change, including
+	// how the no-port guard (decisions/0002, TestNoNetworkListener) was taught to
+	// tell this name from an address.
 	//
-	// This wait is known, measured and tracked. It does not need re-reporting:
+	// A caller that overrides this field takes the cost back on itself: a name
+	// outside the TLD that RFC reserves is resolved like any other and the wait
+	// returns, quietly. Nothing here checks for that.
+	//
+	// The measurement, its captures and the upstream report:
 	//
 	//	https://github.com/Burakuslendera/mullion/issues/85  the wait itself
 	//	https://github.com/Burakuslendera/mullion/issues/77  the aborts it caused
@@ -193,7 +197,7 @@ type Config struct {
 const (
 	defaultTitle                = "Mullion"
 	defaultClassName            = "MullionWindow"
-	defaultVirtualHost          = "mullion.local"
+	defaultVirtualHost          = "mullion.localhost"
 	defaultJSNamespace          = "mullion"
 	defaultWidth                = 1024
 	defaultHeight               = 768
