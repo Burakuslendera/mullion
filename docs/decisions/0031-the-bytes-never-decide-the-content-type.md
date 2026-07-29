@@ -1,6 +1,13 @@
 # 0031. The bytes never decide the content type, and the boundary decides the name
 
-**Status:** Accepted
+**Status:** Accepted; the reparse-point consequence below is answered by
+[0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)
+
+The body is unchanged. Where *Consequences* says reparse points are not covered
+and that the floor of 1.22 keeps `os.OpenRoot` out of reach, read 0033: the floor
+moved to 1.24 and `os.OpenRoot(dir).FS()` is now the documented way to serve a
+directory. Everything this record decides about content types and names still
+stands.
 
 ## Context
 

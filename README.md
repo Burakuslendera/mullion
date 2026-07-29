@@ -39,16 +39,18 @@ single Go method.
 go get github.com/Burakuslendera/mullion/host
 ```
 
-Requires Go 1.22 or newer, Windows, and the [WebView2 Runtime][runtime] (shipped
+Requires Go 1.24 or newer, Windows, and the [WebView2 Runtime][runtime] (shipped
 with Windows 11 and current Windows 10). Non-Windows builds compile — `Run`
 returns `ErrUnsupportedPlatform` — so a cross-platform program does not need build
 tags to depend on this package.
 
-Go 1.22 is a floor this library holds to deliberately, not the version it happened
-to be written on: it uses no standard-library symbol newer than 1.22, and CI
-builds and tests against 1.22 on every run.
-[decisions/0032](docs/decisions/0032-the-supported-go-floor-is-1-22.md) has the
-reasoning and what would move it.
+Go 1.24 is a floor this library holds to deliberately: it uses no standard-library
+symbol newer than 1.24, and CI builds and tests both 1.24 and the current release
+on every run. The version is 1.24 rather than something older because that is
+where `os.OpenRoot` arrives, and serving assets from a directory through an
+`os.Root` is what keeps a reparse point inside that directory from leaving it.
+[decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)
+has the reasoning and what would move it.
 
 [runtime]: https://developer.microsoft.com/microsoft-edge/webview2/
 

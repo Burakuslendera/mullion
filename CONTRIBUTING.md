@@ -9,10 +9,11 @@ points back here for the mechanics.
 
 ## Prerequisites
 
-- Go 1.22 or newer, and a Windows 10/11 machine for the full flow. 1.22 is the
+- Go 1.24 or newer, and a Windows 10/11 machine for the full flow. 1.24 is the
   supported floor and an invariant, not an accident: nothing here may use a
   standard-library symbol or language feature newer than it, whatever you have
-  installed. [decisions/0032](docs/decisions/0032-the-supported-go-floor-is-1-22.md).
+  installed. It is 1.24 because that is where `os.OpenRoot` arrives.
+  [decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md).
 - The WebView2 Runtime — needed only to run the demo, never to run the tests.
 - No C compiler. If a change requires CGo, it is the wrong change.
 

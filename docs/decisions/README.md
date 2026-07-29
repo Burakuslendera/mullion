@@ -51,8 +51,9 @@ These files are that record.
 | [0028](./0028-message-keeps-the-urls-inside-it.md) | A message keeps the http(s) URLs inside it | Accepted |
 | [0029](./0029-system-browser-launch-off-the-ui-thread.md) | The system-browser launch runs off the UI thread, bounded | Accepted |
 | [0030](./0030-guard-exempts-the-virtual-host-name.md) | The no-port guard exempts one virtual host name, not a file | Accepted |
-| [0031](./0031-the-bytes-never-decide-the-content-type.md) | The bytes never decide the content type, and the boundary decides the name | Accepted |
-| [0032](./0032-the-supported-go-floor-is-1-22.md) | The supported Go floor is 1.22, and it is a promise rather than a default | Accepted |
+| [0031](./0031-the-bytes-never-decide-the-content-type.md) | The bytes never decide the content type, and the boundary decides the name | Accepted; reparse-point consequence answered by 0033 |
+| [0032](./0032-the-supported-go-floor-is-1-22.md) | The supported Go floor is 1.22, and it is a promise rather than a default | Superseded by 0033 |
+| [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) | The Go floor is 1.24, so that an asset directory can be an `os.Root` | Accepted |
 
 ## When to write one
 

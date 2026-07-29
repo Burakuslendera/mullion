@@ -1,6 +1,13 @@
 # 0032. The supported Go floor is 1.22, and it is a promise rather than a default
 
-**Status:** Accepted
+**Status:** Superseded by [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)
+
+The body below is left exactly as it was written, including the claim in *What
+would change our mind* that moving to 1.24 "is the only thing that would" close
+the reparse-point gap. 0033 measured that to be false and moved the floor anyway,
+for different reasons. Per the rule in this directory's README, a record is never
+edited to change its meaning — the reasoning that turned out to be wrong is the
+most useful part of it.
 
 ## Context
 

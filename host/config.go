@@ -29,14 +29,21 @@ type Config struct {
 	// only for an fs.FS backed by the real filesystem. An embed.FS is immune to
 	// both: nothing in it reaches the OS.
 	//
-	// A reparse point inside the root leaves the root. Measured: a directory
-	// junction made with mklink /J inside the asset directory, then
-	// os.DirFS(root).ReadFile("junction/secret.txt"), returned a file from
-	// outside it. Neither mullion nor os.DirFS refuses to follow one; os.OpenRoot
-	// does, and needs Go 1.24 against this module's floor of 1.22 (issue #103,
-	// decisions/0032). Reaching it needs something that can write into the asset
-	// directory, so serve from a directory your application controls - an
-	// embed.FS, or a directory no other process writes to.
+	// Serving from a directory, use os.OpenRoot rather than os.DirFS:
+	//
+	//	root, err := os.OpenRoot(dir)  // then Config{Assets: root.FS()}
+	//
+	// A reparse point inside the directory leaves it, and no name check can see
+	// that: the name is ordinary and the redirection lives in the filesystem, so
+	// mullion cannot refuse it for you. Measured - a directory junction made with
+	// mklink /J inside the asset directory, then
+	// os.DirFS(dir).ReadFile("junction/secret.txt"), returned a file from outside
+	// it, while os.OpenRoot(dir).FS() answered "path escapes from parent" for the
+	// same name. That difference is why this module's Go floor is 1.24 (issue
+	// #103, decisions/0033) and it is pinned by
+	// TestAssetRootRefusesAReparsePointAndOSDirFSDoesNot. os.DirFS still works and
+	// is still safe against every *name* mullion accepts; it is the filesystem
+	// redirection it does not cover.
 	//
 	// Windows device names are passed through, not filtered. os.DirFS refuses
 	// them itself on every supported Go version, so an os.DirFS caller is

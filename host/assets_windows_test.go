@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -207,13 +208,9 @@ func TestResolveAssetRequestServesNonASCIIName(t *testing.T) {
 //
 // The name says "dot or space forms" because issue #103 caught an earlier one,
 // TestAssetBoundaryOSDirFSDoesNotEscape, claiming the whole escape class while
-// proving one member of it. What is proved is the *lexical* forms only, and the
-// name now says so. A directory junction inside the root is a
-// different mechanism - a reparse point, not a name - and neither this test, the
-// boundary, nor os.DirFS refuses to follow one. os.OpenRoot would, but it needs
-// Go 1.24 and the supported floor is 1.22. Reaching it needs a separate primitive
-// that can write into the asset directory, which makes it defence-in-depth rather
-// than an exploit; it is recorded in docs/webview2-and-assets.md and left open.
+// proving one member of it. What is proved here is the *lexical* forms only. The
+// other member of the class, a reparse point, is a different mechanism and has
+// its own test below.
 func TestAssetBoundaryOSDirFSDoesNotEscapeViaDotOrSpaceForms(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "webroot")
@@ -236,6 +233,80 @@ func TestAssetBoundaryOSDirFSDoesNotEscapeViaDotOrSpaceForms(t *testing.T) {
 		if data, err := fs.ReadFile(dirFS, escape); err == nil {
 			t.Fatalf("os.DirFS escaped the web root via %q: read %q", escape, data)
 		}
+	}
+}
+
+// TestAssetRootRefusesAReparsePointAndOSDirFSDoesNot is the second half of issue
+// #103, and it pins a difference between two standard-library file systems rather
+// than anything mullion computes. A directory junction inside the asset root
+// points outside it. No name check can see that - the name is ordinary and the
+// redirection lives in the filesystem - so the boundary cannot help, and this is
+// why decision 0033 moved the supported Go floor to 1.24 and made
+// os.OpenRoot(dir).FS() the documented way to serve assets from a directory.
+//
+// Both halves are asserted, because the recommendation is only worth making while
+// the difference holds: os.DirFS follows the junction and *os.rootFS refuses it.
+// If a future Go hardened os.DirFS the recommendation would be redundant, and if
+// a future Go loosened os.Root it would be wrong. Either way this test says so.
+//
+// mklink /J needs no elevation, unlike a directory symlink. Where it is
+// unavailable anyway - a filesystem without reparse points, a locked-down build
+// agent - the test skips rather than passing vacuously.
+func TestAssetRootRefusesAReparsePointAndOSDirFSDoesNot(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "webroot")
+	outside := filepath.Join(base, "outside")
+	for _, dir := range []string{root, outside} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %q: %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<html>ok</html>"), 0o644); err != nil {
+		t.Fatalf("write index.html: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("SECRET"), 0o644); err != nil {
+		t.Fatalf("write secret: %v", err)
+	}
+	junction := filepath.Join(root, "escape")
+	if output, err := exec.Command("cmd", "/c", "mklink", "/J", junction, outside).CombinedOutput(); err != nil {
+		t.Skipf("mklink /J unavailable, cannot plant a reparse point: %v: %s", err, output)
+	}
+
+	// The gap, still present and asserted so the reason for 0033 stays visible.
+	if data, err := fs.ReadFile(os.DirFS(root), "escape/secret.txt"); err != nil {
+		t.Fatalf("os.DirFS was expected to follow the junction, and did not: %v", err)
+	} else if string(data) != "SECRET" {
+		t.Fatalf("os.DirFS read %q through the junction, want %q", data, "SECRET")
+	}
+
+	// The recommendation, and what it buys.
+	handle, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatalf("os.OpenRoot(%q): %v", root, err)
+	}
+	defer handle.Close()
+	rootFS := handle.FS()
+
+	if data, err := fs.ReadFile(rootFS, "escape/secret.txt"); err == nil {
+		t.Fatalf("os.Root followed the junction and read %q: the floor move bought nothing", data)
+	}
+	if _, err := fs.ReadFile(rootFS, "index.html"); err != nil {
+		t.Fatalf("os.Root refused a legitimate asset inside the root: %v", err)
+	}
+
+	// And the whole boundary over it: an ordinary asset still serves, the escape
+	// does not, and the escape is a read error rather than a traversal reject -
+	// the name was fine, the filesystem said no.
+	provider := newTestAssetProvider(rootFS)
+	if response := provider.resolve(testOrigin + "/index.html"); response.status != http.StatusOK {
+		t.Fatalf("index.html over os.Root = %d, want 200", response.status)
+	}
+	response := provider.resolve(testOrigin + "/escape/secret.txt")
+	if response.status == http.StatusOK {
+		t.Fatalf("escape/secret.txt over os.Root = 200, body %q", response.body)
+	}
+	if response.request.category == "traversal" {
+		t.Fatalf("escape/secret.txt category = %q, want the fs.FS refusal rather than a name reject", response.request.category)
 	}
 }
 
