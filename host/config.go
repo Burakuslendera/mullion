@@ -21,6 +21,29 @@ type Config struct {
 	// Assets is the file system served to the WebView. It must contain
 	// index.html at its root, unless URL is set. Assets are served from an
 	// in-process virtual host; the library never opens a network port.
+	//
+	// The request path is chosen by the page, so every name the fs.FS will
+	// answer is reachable. mullion validates the name - no traversal, no
+	// backslash or colon, no segment ending in a dot or a space, and fs.ValidPath
+	// last - but a name is all it validates. Two things follow, and they matter
+	// only for an fs.FS backed by the real filesystem. An embed.FS is immune to
+	// both: nothing in it reaches the OS.
+	//
+	// A reparse point inside the root leaves the root. Measured: a directory
+	// junction made with mklink /J inside the asset directory, then
+	// os.DirFS(root).ReadFile("junction/secret.txt"), returned a file from
+	// outside it. Neither mullion nor os.DirFS refuses to follow one; os.OpenRoot
+	// does, and needs Go 1.24 against this module's floor of 1.22 (issue #103,
+	// decisions/0032). Reaching it needs something that can write into the asset
+	// directory, so serve from a directory your application controls - an
+	// embed.FS, or a directory no other process writes to.
+	//
+	// Windows device names are passed through, not filtered. os.DirFS refuses
+	// them itself on every supported Go version, so an os.DirFS caller is
+	// unaffected; an fs.FS written by hand over os.Open is not. Measured through
+	// such an fs.FS, ReadFile("nul") returns zero bytes and a nil error, so /nul
+	// answers 200 with an empty body. decisions/0031 records why the filter lives
+	// in the caller's fs.FS rather than here.
 	Assets fs.FS
 
 	// URL, when set, points the WebView at an origin the caller serves itself,

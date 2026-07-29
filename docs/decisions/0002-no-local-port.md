@@ -65,9 +65,11 @@ day a range request has to be honoured, this record is due for review.
 
 - `assets_windows.go`: `resolveAssetRequest` (scheme, host, traversal, index
   rewrite) and the response construction with `Cache-Control: no-store`.
-- `assets_windows_test.go`: the boundary matrix - root maps to `index.html`,
-  wrong host 403, wrong scheme 403, `../` and `%2e%2e/` traversal 403, missing
-  404, read failure 500, `no-store` asserted on every response.
+- `assets_windows_test.go`: the boundary matrix, in `TestResolveAssetRequestDiagnostic`
+  and `TestAssetProviderResolveDiagnosticCategories`. It is not enumerated here on
+  purpose - it has grown twice since this record (issues #66 and #100) and a copy
+  of it in this file would be the stale half. Read the tables; every row carries
+  the URI, the expected path and the expected category.
 - `docs/webview2-and-assets.md`, "Asset serving without a port": the same table,
   plus the COM stream-lifetime rules that make it work.
 - No `net.Listen` and no `http.Server` exists anywhere in the host package; the

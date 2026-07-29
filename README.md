@@ -39,10 +39,16 @@ single Go method.
 go get github.com/Burakuslendera/mullion/host
 ```
 
-Requires Windows and the [WebView2 Runtime][runtime] (shipped with Windows 11 and
-current Windows 10). Non-Windows builds compile — `Run` returns
-`ErrUnsupportedPlatform` — so a cross-platform program does not need build tags to
-depend on this package.
+Requires Go 1.22 or newer, Windows, and the [WebView2 Runtime][runtime] (shipped
+with Windows 11 and current Windows 10). Non-Windows builds compile — `Run`
+returns `ErrUnsupportedPlatform` — so a cross-platform program does not need build
+tags to depend on this package.
+
+Go 1.22 is a floor this library holds to deliberately, not the version it happened
+to be written on: it uses no standard-library symbol newer than 1.22, and CI
+builds and tests against 1.22 on every run.
+[decisions/0032](docs/decisions/0032-the-supported-go-floor-is-1-22.md) has the
+reasoning and what would move it.
 
 [runtime]: https://developer.microsoft.com/microsoft-edge/webview2/
 
@@ -266,6 +272,19 @@ above was taken that way, on the same flat ground.
 
 ## Known limitations
 
+- **An asset whose name carries no type mullion knows is a download, not a
+  document.** The content type comes from the name and never from the bytes, so a
+  file with no extension, or one mullion and the machine's MIME table both fail to
+  place, is served `application/octet-stream` with `nosniff`. An application
+  serving an upload directory or a content-addressed blob store has to name its
+  files. This replaced content sniffing, which typed those same bytes `text/html`
+  and handed them to the engine as a document in the bridge origin
+  ([decisions/0031](docs/decisions/0031-the-bytes-never-decide-the-content-type.md)).
+- **A name ending in a dot or a space is refused, even when it is legitimate.**
+  Windows strips both, so such a name is an alias for a different file and the
+  boundary answers `403`. Windows cannot create one, but an `embed.FS` assembled
+  on another platform can carry one, and a cross-compiled application shipping
+  such a name will not be able to serve it.
 - **Overriding `VirtualHost` can put two seconds back into every navigation.** The
   WebView2 runtime resolves the virtual host name even though
   `WebResourceRequested` answers every request in process and nothing needs the

@@ -51,8 +51,10 @@ Right:
 ```
 The window is blank and the diagnostic payload shows document=1, stylesheet=0,
 script=0 (observed). That shape points at the asset path rather than navigation
-(likely). Not yet confirmed: re-run with the resource-requested log enabled and
-check whether the callback fires and what it returns.
+(likely). Not yet confirmed: re-run with a Debug-level `Logger` and read the
+`asset response served` / `asset response error` lines to see whether the
+stylesheet request arrived at all, remembering that a served asset outside the
+document/stylesheet/script buckets prints nothing (architecture.md).
 ```
 
 The second version costs one extra sentence and tells the next reader exactly what

@@ -9,7 +9,10 @@ points back here for the mechanics.
 
 ## Prerequisites
 
-- A Go toolchain and a Windows 10/11 machine for the full flow.
+- Go 1.22 or newer, and a Windows 10/11 machine for the full flow. 1.22 is the
+  supported floor and an invariant, not an accident: nothing here may use a
+  standard-library symbol or language feature newer than it, whatever you have
+  installed. [decisions/0032](docs/decisions/0032-the-supported-go-floor-is-1-22.md).
 - The WebView2 Runtime — needed only to run the demo, never to run the tests.
 - No C compiler. If a change requires CGo, it is the wrong change.
 

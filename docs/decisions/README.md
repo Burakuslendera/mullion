@@ -51,6 +51,8 @@ These files are that record.
 | [0028](./0028-message-keeps-the-urls-inside-it.md) | A message keeps the http(s) URLs inside it | Accepted |
 | [0029](./0029-system-browser-launch-off-the-ui-thread.md) | The system-browser launch runs off the UI thread, bounded | Accepted |
 | [0030](./0030-guard-exempts-the-virtual-host-name.md) | The no-port guard exempts one virtual host name, not a file | Accepted |
+| [0031](./0031-the-bytes-never-decide-the-content-type.md) | The bytes never decide the content type, and the boundary decides the name | Accepted |
+| [0032](./0032-the-supported-go-floor-is-1-22.md) | The supported Go floor is 1.22, and it is a promise rather than a default | Accepted |
 
 ## When to write one
 
@@ -71,7 +73,7 @@ per commit is a record nobody reads.
 Copy [`template.md`](./template.md). Number the file with the next free integer
 and a short kebab-case slug.
 
-Every record carries the same five sections, and one of them is the point:
+Every record carries the same six sections, and one of them is the point:
 
 **What would change our mind.** A decision without a trip-wire is a dogma. State
 the observation that would make this wrong - a runtime that removes the entry

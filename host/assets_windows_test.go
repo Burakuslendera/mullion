@@ -122,6 +122,12 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 	}{
 		{name: "asset", uri: testOrigin + "/style.css?v=1", wantPath: "style.css", wantCategory: "asset"},
 		{name: "root", uri: testOrigin + "/", wantPath: "index.html", wantCategory: "asset"},
+		// "/." is refused, not folded to the root. resolveAssetRequest used to carry
+		// a cleanPath == "/." arm next to the "/" one; it was unreachable twice over
+		// - hasTraversalSegment refuses a "." segment before Clean runs, and Clean on
+		// a "/"-prefixed input never returns "/." anyway - and a mutant that deleted
+		// it survived the suite. This row records where "/." actually lands.
+		{name: "dot root", uri: testOrigin + "/.", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "wrong host", uri: "https://example.test/index.html", wantPath: "wrong_host", wantCategory: "wrong_host", wantStatus: http.StatusForbidden},
 		{name: "wrong scheme", uri: "http://" + testVirtualHost + "/index.html", wantPath: "wrong_scheme", wantCategory: "wrong_scheme", wantStatus: http.StatusForbidden},
 		{name: "traversal", uri: testOrigin + "/../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
@@ -141,6 +147,28 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 		{name: "trailing-space dotdot (%20)", uri: testOrigin + "/..%20/secret.txt", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "triple-dot segment", uri: testOrigin + "/.../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "colon drive/ADS (%3a)", uri: testOrigin + "/file.txt%3astream", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		// An ordinary name growing a trailing dot or space is an alias for the name
+		// without it, so the file the OS opens is not the name mullion classified:
+		// filepath.Ext("notes.txt.") is ".", the extension switch misses, and the
+		// type came from the fallback (issue #100). #66 covered this normalisation
+		// only for names that could collapse to "..". Measured over os.DirFS before
+		// the fix: "notes.txt" answered text/plain and every row below answered
+		// text/html on byte-identical content.
+		{name: "trailing dot alias", uri: testOrigin + "/notes.txt.", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "trailing dot alias (%2e)", uri: testOrigin + "/notes.txt%2e", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "trailing space alias (%20)", uri: testOrigin + "/notes.txt%20", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "trailing dot on a directory", uri: testOrigin + "/sub./notes.txt", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		// Windows device names pass this boundary and are handed to the caller's
+		// fs.FS. Deliberate, and these rows keep it that way - see decisions/0031
+		// before "hardening" it. os.DirFS refuses them itself (measured on
+		// go1.22.12, go1.23.12 and go1.26.5) and an embed.FS never reaches the OS,
+		// so the only caller a check here would help is one who wrote a
+		// passthrough fs.FS.
+		{name: "device name is not rejected here", uri: testOrigin + "/nul", wantPath: "nul", wantCategory: "asset"},
+		{name: "device name with an extension", uri: testOrigin + "/nul.txt", wantPath: "nul.txt", wantCategory: "asset"},
+		{name: "device name in a subdirectory", uri: testOrigin + "/assets/con", wantPath: "assets/con", wantCategory: "asset"},
+		{name: "device name uppercase", uri: testOrigin + "/COM1", wantPath: "COM1", wantCategory: "asset"},
+		{name: "name beginning with a device name", uri: testOrigin + "/console.js", wantPath: "console.js", wantCategory: "asset"},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
@@ -169,14 +197,24 @@ func TestResolveAssetRequestServesNonASCIIName(t *testing.T) {
 	}
 }
 
-// TestAssetBoundaryOSDirFSDoesNotEscape pins the load-bearing OS assumption behind
+// TestAssetBoundaryOSDirFSDoesNotEscapeViaDotOrSpaceForms pins the load-bearing OS assumption behind
 // the filter (issue #66): even if a trailing-dot/space ".." reached
 // fs.ReadFile(os.DirFS(root), ...) - which resolveAssetRequest now rejects itself
 // - the OS must not normalise ".. ", "...", ".. ." into ".." and walk out of the
 // root. This is the headless equivalent of the issue's live probe; a regression in
 // Go's os.DirFS, or a Windows build that collapses these, fails here rather than
 // silently opening the asset boundary.
-func TestAssetBoundaryOSDirFSDoesNotEscape(t *testing.T) {
+//
+// The name says "dot or space forms" because issue #103 caught an earlier one,
+// TestAssetBoundaryOSDirFSDoesNotEscape, claiming the whole escape class while
+// proving one member of it. What is proved is the *lexical* forms only, and the
+// name now says so. A directory junction inside the root is a
+// different mechanism - a reparse point, not a name - and neither this test, the
+// boundary, nor os.DirFS refuses to follow one. os.OpenRoot would, but it needs
+// Go 1.24 and the supported floor is 1.22. Reaching it needs a separate primitive
+// that can write into the asset directory, which makes it defence-in-depth rather
+// than an exploit; it is recorded in docs/webview2-and-assets.md and left open.
+func TestAssetBoundaryOSDirFSDoesNotEscapeViaDotOrSpaceForms(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "webroot")
 	if err := os.MkdirAll(root, 0o755); err != nil {
@@ -235,6 +273,8 @@ func TestAssetProviderResolveDiagnosticCategories(t *testing.T) {
 		{name: "trailing-space dotdot (%20)", uri: testOrigin + "/..%20/secret.txt", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "triple-dot segment", uri: testOrigin + "/.../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "colon drive/ADS (%3a)", uri: testOrigin + "/file.txt%3astream", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "trailing dot alias", uri: testOrigin + "/style.css.", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "device name reaches the fs.FS", uri: testOrigin + "/nul", wantPath: "nul", wantCategory: "missing", wantStatus: http.StatusNotFound},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
@@ -244,6 +284,106 @@ func TestAssetProviderResolveDiagnosticCategories(t *testing.T) {
 				t.Fatalf("resolve() diagnostic = {%q %q %d}, want {%q %q %d}", response.request.path, response.request.category, response.status, test.wantPath, test.wantCategory, test.wantStatus)
 			}
 		})
+	}
+}
+
+// TestAssetResponseNeverTypesUnclassifiedBytesAsHTML is issue #100's measured
+// table, inverted into a guard. The response carries nosniff, which makes the
+// content type mullion chooses irreversible - so a type mullion guessed from the
+// bytes is worse than no type at all. Two ways it used to guess, both over an
+// fs.FS backed by the real filesystem, both on byte-identical content:
+//
+//	before: uploads/note.txt -> text/plain      notes.txt  -> text/plain
+//	        uploads/abc123   -> text/html       notes.txt. -> text/html
+//	        uploads/x.foobar -> text/html       data.json. -> text/html
+//
+// An application serving an upload directory or a content-addressed blob store
+// got HTML execution in the origin the bridge is injected into. The payload here
+// opens with a script tag, which is what http.DetectContentType keyed on.
+func TestAssetResponseNeverTypesUnclassifiedBytesAsHTML(t *testing.T) {
+	payload := []byte(`<script>window.pwned=1</script>`)
+	dir := t.TempDir()
+	for _, name := range []string{"note.txt", "abc123", "x.foobar", "notes.txt", "data.json"} {
+		if err := os.WriteFile(filepath.Join(dir, name), payload, 0o644); err != nil {
+			t.Fatalf("write %q: %v", name, err)
+		}
+	}
+	provider := newTestAssetProvider(os.DirFS(dir))
+
+	// Served, but never as html: the name carries no extension mullion trusts.
+	for _, name := range []string{"abc123", "x.foobar"} {
+		response := provider.resolve(testOrigin + "/" + name)
+		if response.status != http.StatusOK {
+			t.Fatalf("%q status = %d, want 200", name, response.status)
+		}
+		if response.contentType != "application/octet-stream" {
+			t.Fatalf("%q content type = %q, want application/octet-stream", name, response.contentType)
+		}
+	}
+	// Refused at the boundary: the trailing dot or space is an alias, so the name
+	// mullion classified is not the file the OS would open.
+	for _, name := range []string{"notes.txt.", "notes.txt%20", "notes.txt%2e", "data.json."} {
+		response := provider.resolve(testOrigin + "/" + name)
+		if response.status != http.StatusForbidden {
+			t.Fatalf("%q status = %d, want 403", name, response.status)
+		}
+		if response.contentType == "text/html; charset=utf-8" {
+			t.Fatalf("%q content type = %q, want anything but html", name, response.contentType)
+		}
+	}
+	// The control: a name that does say .txt is still typed from its extension.
+	response := provider.resolve(testOrigin + "/note.txt")
+	if response.status != http.StatusOK || response.contentType != "text/plain; charset=utf-8" {
+		t.Fatalf("note.txt = {%d %q}, want {200 text/plain; charset=utf-8}", response.status, response.contentType)
+	}
+}
+
+// TestAssetBoundaryDoesNotFilterDeviceNames locks a decision, not a defence:
+// Windows device names are handed to the caller's fs.FS rather than refused here
+// (decisions/0031). It is written as a guard because "the asset boundary should
+// reject CON and NUL" is an easy and plausible-sounding change to propose, and
+// this repository had it implemented before it was measured and removed.
+//
+// Why it is not needed, measured: os.DirFS refuses the bare names itself, on
+// go1.22 already - dirFS.join -> safefilepath.FromFS -> IsReservedName, renamed
+// to filepathlite.Localize in 1.23 without a behaviour change, identical on
+// go1.22.12, go1.23.12 and go1.26.5. An embed.FS never reaches the OS at all, so
+// nothing there can resolve to a device. That leaves a caller who wrote their own
+// passthrough fs.FS, whose own code is where the check belongs.
+//
+// What the removal costs, also measured: through a passthrough fs.FS over
+// os.Open, ReadFile("nul") returns 0 bytes and a nil error, so such a caller
+// answers 200 with an empty body for /nul. The request path is chosen by the
+// page, so no application has to "use" a device name for that to be reachable.
+// The cost is accepted; if it ever bites, decisions/0031 says what to change.
+func TestAssetBoundaryDoesNotFilterDeviceNames(t *testing.T) {
+	provider := newTestAssetProvider(fstest.MapFS{
+		"nul":        &fstest.MapFile{Data: []byte("not a device here")},
+		"console.js": &fstest.MapFile{Data: []byte("window.x={}")},
+	})
+	names := []string{
+		"nul", "con", "aux", "prn", "com1", "lpt1", "conin$", "conout$",
+		"NUL", "Con", "AUX", "con/app.js", "nul/style.css",
+		"nul.txt", "CON.TXT", "aux.min.js", "con.json", "prn.woff2", "com1.map",
+		"constants.js", "auxiliary.css", "com.js", "printer.png",
+		"com10", "conin", "clock$", "console.js",
+	}
+	// Superscript COM/LPT are devices on Windows too - syscall.FullPath answers
+	// \\.\com<superscript-one> - and are not filtered here either. Built from
+	// runes because TestNoNonASCIIInSource keeps this source ASCII.
+	for _, superscript := range []rune{0x00b9, 0x00b2, 0x00b3} {
+		names = append(names, "com"+string(superscript), "lpt"+string(superscript))
+	}
+	for _, name := range names {
+		request, status := resolveAssetRequest(testVirtualHost, testOrigin+"/"+name)
+		if status != 0 || request.category != "asset" {
+			t.Fatalf("%q = {%q %q}, %d, want it handed on as an asset", name, request.path, request.category, status)
+		}
+	}
+	// The one served fixture reaches the fs.FS and comes back as content, which
+	// is the whole point: the boundary does not stand between them.
+	if response := provider.resolve(testOrigin + "/nul"); response.status != http.StatusOK {
+		t.Fatalf("nul status = %d, want 200 from the fs.FS", response.status)
 	}
 }
 

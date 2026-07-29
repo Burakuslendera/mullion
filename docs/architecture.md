@@ -261,6 +261,30 @@ Healthy counts with `phase` stuck early is a frontend fault. `last_bridge=unknow
 no bridge call ever arrived — the injected shim never ran. One line separates four root
 causes that all present as the same white rectangle. Both timeouts are configurable; a negative value disables the mechanism.
 
+**Read the counts knowing what they count.** They are bucketed from the
+`Content-Type` mullion answered with, not from the file name and not from
+WebView2's resource context: `text/html` increments `document`, `text/css`
+`stylesheet`, anything containing `javascript` `script`, and **everything else is
+counted nowhere**. The content type in turn comes from the name (decisions/0031),
+so the chain is name → type → bucket, and a name mullion cannot classify breaks
+it at the first link.
+
+Two consequences a reader chasing a blank window needs, and neither is obvious
+from the line itself:
+
+- **Healthy counts do not mean the assets arrived.** Images, fonts, `.json`,
+  `.wasm` and anything served `application/octet-stream` fall in the unbucketed
+  class. A frontend whose real payload is a WebAssembly module reports
+  `script=0` while working perfectly, and reports `script=0` when the module
+  404s too.
+- **A successfully served asset in that class produces no log line at all.**
+  `logAssetResponseDebug` skips it deliberately — one page load can pull dozens
+  of images and fonts, and logging each buries the three lines that say whether
+  the document, its stylesheets and its scripts arrived. The suppression applies
+  only to responses under `400`. A *failed* request is always logged, at `WARN`
+  for `4xx` and `ERROR` for `5xx`, whatever its type, so a missing font is
+  visible even though a present one is not.
+
 ## Known limitations
 
 **WebView2 does not render while hidden.** Under `Config.StartHidden` the WebView is not
