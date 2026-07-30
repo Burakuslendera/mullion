@@ -4,11 +4,16 @@
 
 ## Context
 
-0032 was written one day before this record and set the floor at 1.22. Its
-trip-wire named the observation that would change it:
+0032 was written one day before this record and set the floor at 1.22. The
+observation that would change it was already named — in 0031's *What would change
+our mind*, which 0032 pointed at rather than restating:
 
 > Moving the supported Go floor to 1.24 would make `os.OpenRoot` available, close
 > the reparse-point gap, and is the only thing that would.
+>
+> — [0031](./0031-the-bytes-never-decide-the-content-type.md), *What would change
+> our mind*. 0032 carried the same claim in its *Consequences*: "`os.OpenRoot` is
+> the only thing that closes it and needs 1.24."
 
 Two measurements fired it, and the second corrects the first.
 
@@ -59,7 +64,11 @@ which it was not while the floor forbade it.
 three counts. It is new permanent public API for a window host, which is the
 wrong place for a filesystem primitive. It is weaker: the attribute check and the
 open are two syscalls, so a junction planted between them still wins, while
-`os.Root` holds a handle and cannot be raced that way. And it would have to be
+`os.Root` opens handle-relative — `os/root_windows.go` sets
+`objAttrs.RootDirectory` to the directory descriptor and passes
+`FILE_FLAG_OPEN_REPARSE_POINT`, which is read from Go's source rather than raced
+here, though the measurement below plants a junction after the `os.Root` is open
+and it is still refused. And it would have to be
 maintained against the platform forever, whereas `os.Root` is maintained by the
 Go team. The cost of choosing it would have been paid by every future reader of
 this repository; the cost of the floor move is paid once, by consumers, at
@@ -85,17 +94,41 @@ same benefit for callers who take it, without taking the choice away.
 ## Consequences
 
 **Consumers must be on Go 1.24 or newer.** This is the real price, and it is
-charged to somebody else's build rather than to this repository. It is the second
-floor change in as many days: 0032 stated 1.22 as a promise, and this record
-breaks that promise before anybody could have depended on it. That is only
-defensible because 0032 was never released; if it had been, this would need a
-deprecation window instead.
+charged to somebody else's build rather than to this repository. The floor itself
+moves only once — `go.mod` said `go 1.22` from the start and 0032 changed no
+number, it only wrote the existing number down as a promise. What this record
+breaks is that promise, one day old. That is defensible only because it was never
+released; if it had been, this would need a deprecation window instead. There is
+no tag or changelog in the tree to check that against, so "never released" is
+read from the absence of one rather than measured.
 
 **The reparse-point gap is closed for callers who follow the recommendation, and
 unchanged for those who do not.** `os.DirFS` still follows a junction. mullion
 cannot detect which was passed, so this is a documentation guarantee rather than
 an enforced one, and the honest statement of the fix is "the safe path exists and
 is named", not "the boundary now refuses reparse points".
+
+**What `os.Root` buys is narrower and blunter than "it keeps you inside the
+directory", and an audit of this record measured both halves.** Neither changes
+the decision; both change what may be claimed for it.
+
+- *Narrower.* `os.Root` refuses reparse points whose tag is a **name surrogate** —
+  junctions and symlinks. A hard link is not one. Measured: `mklink /H` inside the
+  root, pointing at a file outside it, read `"OUTSIDE-VIA-HARDLINK"` through
+  `os.Root` exactly as through `os.DirFS`. `mklink /H` needs no elevation, so an
+  asset directory that arbitrary code can write into is not made safe by an
+  `os.Root`. The remedy for that is an `embed.FS` or a directory nothing else
+  writes to, and it always was.
+- *Blunter.* It refuses those tags wherever they point, **including a target
+  inside the root**. Measured: `dir/alias -> dir/real` served under `os.DirFS` and
+  answered `path escapes from parent` under `os.Root`, so a build step that plants
+  an internal junction for convenience turns a working asset into a `500`. It is a
+  tag check rather than a containment check, and the cost lands on a legitimate
+  layout.
+
+The earlier draft of this record said `os.Root` answers "filesystem redirection".
+It does not; it answers two tags. The distinction is written here because the
+wider sentence is the one a reader would carry away and act on.
 
 **Anything newer than 1.24 in the standard library is now available**, and the
 invariant 0032 imposed loosens accordingly. The rule is unchanged in kind: no
@@ -144,5 +177,18 @@ an assumption, which 0032 called for and did not apply.
   `inside.txt` and `sub/deep.txt` on go1.22.12.
 - `.github/workflows/ci.yml` — both jobs carry
   `strategy.matrix.go: ["1.24", "stable"]` and reference it from `setup-go`.
+- **The two limits in *Consequences*, measured on one fixture.** `mklink /H` from
+  inside the root to a file outside it: `os.DirFS` and `os.Root` both read
+  `"OUTSIDE-VIA-HARDLINK"`. `mklink /J dir/alias dir/real`, target inside the
+  root: `os.DirFS` read `"INSIDE-VIA-ALIAS"`, `os.Root` answered `openat
+  alias/in.txt: path escapes from parent`. The control, an ordinary
+  `index.html`, and the same file reached directly as `real/in.txt`, both served
+  under both. Go's rule is in `os/root_windows.go` — the reject keys on
+  `IO_REPARSE_TAG_SYMLINK` and `IO_REPARSE_TAG_MOUNT_POINT` being name
+  surrogates, not on where the link points.
+- **Not measured.** NTFS volume mount points, and directory or file symlinks:
+  `mklink /D` and `mklink` both answered "You do not have sufficient privilege"
+  on the audit machine. Junctions and hard links need none, which is why they are
+  the two that could be established here.
 
 > Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: new record, superseding 0032 one day after it. The floor moves to 1.24 so os.OpenRoot(dir).FS() can be the documented way to serve a directory, which closes the reparse-point half of issue #103 for callers who take it. Measured: os.DirFS reads through an mklink /J junction, os.Root answers "path escapes from parent", and (*os.Root).FS() is in api/go1.24.txt rather than 1.25. Also records that 0032's "moving to 1.24 is the only thing that would close it" was wrong - a hardened fs.FS over GetFileAttributes was built and measured working on go1.22.12 - and rejects that alternative on API surface, on the TOCTOU race it leaves open, and on maintenance, rather than on capability.

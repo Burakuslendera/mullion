@@ -195,6 +195,16 @@ That is why the module's Go floor is 1.24 and why `Config.Assets` recommends
 `os.OpenRoot(dir).FS()` for a directory (decisions/0033). It is a recommendation
 and not an enforcement: `Config.Assets` is an `fs.FS`, mullion cannot tell which
 one it was handed, and a caller who passes `os.DirFS` keeps the old behaviour.
+
+Two limits, both measured, because "`os.Root` keeps you inside the directory" is
+the sentence a reader would carry away and it is wrong in both directions.
+`os.Root` refuses reparse points whose tag is a **name surrogate** — junctions and
+symlinks — so a **hard link** out of the root is served exactly as `os.DirFS`
+serves it, and `mklink /H` needs no elevation. And it refuses those tags wherever
+they point, so a junction whose target is **inside** the root (`dir/alias ->
+dir/real`, a build-step convenience) answers `500` where `os.DirFS` answers `200`.
+An asset directory that other code can write into is not contained by any of
+this; the remedy there is an `embed.FS` or a directory nothing else writes to.
 `embed.FS` is unaffected either way — nothing in it reaches the OS.
 `TestAssetRootRefusesAReparsePointAndOSDirFSDoesNot` pins both halves, so the
 recommendation fails loudly if either file system changes;

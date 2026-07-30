@@ -2,12 +2,16 @@
 
 **Status:** Superseded by [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)
 
-The body below is left exactly as it was written, including the claim in *What
-would change our mind* that moving to 1.24 "is the only thing that would" close
-the reparse-point gap. 0033 measured that to be false and moved the floor anyway,
-for different reasons. Per the rule in this directory's README, a record is never
-edited to change its meaning — the reasoning that turned out to be wrong is the
-most useful part of it.
+The body below is left exactly as it was written, including two claims 0033
+measured to be false. *Consequences* says "`os.OpenRoot` is the only thing that
+closes it"; *Alternatives rejected* says the 1.24 move buys something "which
+nothing else can". A hardened `fs.FS` over `GetFileAttributes` closed the same gap
+on go1.22.12, measured. (An earlier version of this note named *What would change
+our mind* as the location; that was wrong, and the claim in that section of
+[0031](./0031-the-bytes-never-decide-the-content-type.md) is marked there.) 0033
+moved the floor anyway, for reasons of its own. Per the rule in this directory's
+README, a record is never edited to change its meaning — the reasoning that turned
+out to be wrong is the most useful part of it.
 
 ## Context
 
@@ -161,3 +165,5 @@ under *Evidence*, which no future run repeats.
   Nothing in this record depends on it beyond the paragraph that names it.
 
 > Last updated: 2026-07-29 | Editor: Claude (Opus 5) | Change: new record - the Go 1.22 floor moves out of go.mod and into a stated promise, because it was already deciding an open security gap (os.OpenRoot, issue #103) and serving as 0031's trip-wire while living only in a build file. Measured on go1.22.12 with GOTOOLCHAIN: build, vet and test all pass, and the floor is load-bearing rather than nominal - render_watchdog_windows_test.go uses range-over-int. Records the honest gap too: CI verifies the floor on every run and has never verified the ceiling.
+
+> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: status line set to Superseded by 0033 and a note added at the top naming the two claims 0033 measured false ("the only thing that closes it" in Consequences, "which nothing else can" in Alternatives rejected). An audit corrected that note once: it first named What would change our mind as the location, which is where 0031 carries the same claim, not this record. The body is untouched.

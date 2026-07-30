@@ -3,11 +3,15 @@
 **Status:** Accepted; the reparse-point consequence below is answered by
 [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)
 
-The body is unchanged. Where *Consequences* says reparse points are not covered
-and that the floor of 1.22 keeps `os.OpenRoot` out of reach, read 0033: the floor
-moved to 1.24 and `os.OpenRoot(dir).FS()` is now the documented way to serve a
-directory. Everything this record decides about content types and names still
-stands.
+The body is unchanged, and two places in it are overtaken. Where *Consequences*
+says reparse points are not covered and that the floor of 1.22 keeps
+`os.OpenRoot` out of reach, read 0033: the floor moved to 1.24 and
+`os.OpenRoot(dir).FS()` is now the documented way to serve a directory. And the
+last bullet of *What would change our mind* — that moving to 1.24 "is the only
+thing that would" close the gap — is a fired trip-wire and was also wrong on its
+own terms: 0033 measured a hardened `fs.FS` closing the same gap on go1.22.12.
+Neither correction touches what this record decides about content types and
+names, which still stands.
 
 ## Context
 
@@ -288,9 +292,18 @@ Go 1.24 against a supported floor of 1.22. Issue #103 stays open for it.
   The rest of the run was ordinary — `index.html` `text/html`, `style.css`
   `text/css`, `app.js` `text/javascript`, `LaunchToFrontendReadyMs=696` — and
   ended `SessionWarnCount=2, SessionErrorCount=0`. Both warnings are the probe's
-  own: the `403` for `/style.css.` and the `404` for `/nul`. That a page can raise
-  that count at all is issue #105's complaint; it is unchanged by this record and
-  reachable from any `fetch` of a missing asset.
+  own: the `403` for `/style.css.` and the `404` for `/nul`. A page can raise that
+  count from any `fetch` of a missing asset, and this record adds one new way to
+  do it — `/notes.txt.` answered `200` before and answers `403` now.
+
+  An audit caught this paragraph citing issue #105 for that, which is backwards
+  and is corrected here rather than left to mislead. #105 is about
+  `SessionErrorCount`, not `SessionWarnCount`: it measures a directory request
+  answered `500 read_error`, 1000 renderer-chosen requests giving
+  `warns=0 errors=1000`. Logging at warn instead of error is #105's *proposed
+  remedy*, so the count this run raised is the side #105 wants things moved to.
+  Whether a page-drivable warn count is itself a problem is a separate question
+  and no issue states it.
 
   **What the live run did not prove.** It read the type the WebView was served,
   not execution. `fetch` never parses a body as HTML, so no `pwned` flag could
@@ -329,3 +342,5 @@ Go 1.24 against a supported floor of 1.22. Issue #103 stays open for it.
   not on a run that tried to execute something.
 
 > Last updated: 2026-07-29 | Editor: Claude (Opus 5) | Change: new record - the content type is decided from the name and never from the bytes, and the boundary refuses a segment ending in a dot or a space. A Windows device-name filter was written first, mutation-tested, then removed and written up as a rejected alternative: os.DirFS refuses the bare names on go1.22 already (measured, not the 1.23 story the issue assumed) and an embed.FS never reaches the OS, so only a caller's hand-written fs.FS is exposed. The CON hang that justified the filter was measured rather than inherited - it blocks a console-subsystem build and cannot even open the handle in a GUI-subsystem one. Live run on WebView2 150.0.4078.105 confirmed /blob served application/octet-stream where it used to be text/html, with SessionWarnCount=2 accounted for.
+
+> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: status line extended after 0033 moved the Go floor to 1.24 - the reparse-point consequence and the "moving to 1.24 is the only thing that would" trip-wire are both overtaken, and the note at the top says so rather than the body being edited. An audit also corrected two things this record asserted: the mime.TypeByExtension exposure is Go's compiled-in table rather than machine state, so eight of the ten switch rows are redundant and only .woff/.woff2 are load-bearing; and the issue #105 citation was backwards, since #105 is about SessionErrorCount and logging at warn is its proposed remedy rather than its complaint.
