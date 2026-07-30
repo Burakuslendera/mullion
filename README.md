@@ -39,10 +39,20 @@ single Go method.
 go get github.com/Burakuslendera/mullion/host
 ```
 
-Requires Windows and the [WebView2 Runtime][runtime] (shipped with Windows 11 and
-current Windows 10). Non-Windows builds compile — `Run` returns
-`ErrUnsupportedPlatform` — so a cross-platform program does not need build tags to
-depend on this package.
+Requires Go 1.24 or newer, Windows, and the [WebView2 Runtime][runtime] (shipped
+with Windows 11 and current Windows 10). Non-Windows builds compile — `Run`
+returns `ErrUnsupportedPlatform` — so a cross-platform program does not need build
+tags to depend on this package.
+
+Go 1.24 is a floor this library holds to deliberately: it uses no standard-library
+symbol newer than 1.24, and CI builds and tests both 1.24 and the current release
+on every run. The version is 1.24 rather than something older because that is
+where `os.OpenRoot` arrives, and serving assets from a directory through an
+`os.Root` is what keeps a *junction or symlink* inside that directory from
+reaching outside it. It is not a general containment: a hard link is not a
+reparse point and is not refused.
+[decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)
+has the reasoning and what would move it.
 
 [runtime]: https://developer.microsoft.com/microsoft-edge/webview2/
 
@@ -266,6 +276,27 @@ above was taken that way, on the same flat ground.
 
 ## Known limitations
 
+- **An asset whose name carries no type mullion knows is a download, not a
+  document.** The content type comes from the name and never from the bytes, so a
+  file with no extension, or one mullion and the machine's MIME table both fail to
+  place, is served `application/octet-stream` with `nosniff`. An application
+  serving an upload directory or a content-addressed blob store has to name its
+  files. This replaced content sniffing, which typed those same bytes `text/html`
+  and handed them to the engine as a document in the bridge origin
+  ([decisions/0031](docs/decisions/0031-the-bytes-never-decide-the-content-type.md)).
+- **A name ending in a dot or a space is refused, even when it is legitimate.**
+  Windows strips both, so such a name is an alias for a different file and the
+  boundary answers `403`. Windows cannot create one, but an `embed.FS` assembled
+  on another platform can carry one, and a cross-compiled application shipping
+  such a name will not be able to serve it.
+- **An asset directory that other code can write into is not contained, and
+  mullion cannot enforce the remedy.** Serving from `os.OpenRoot(dir).FS()`
+  refuses a junction or symlink planted inside `dir`; serving from `os.DirFS(dir)`
+  follows one straight out of the directory, and `Config.Assets` is an `fs.FS`, so
+  mullion cannot tell which it was handed. Neither refuses a *hard link*, which
+  needs no elevation to create. Serve from an `embed.FS`, or from a directory
+  nothing else writes to
+  ([decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)).
 - **Overriding `VirtualHost` can put two seconds back into every navigation.** The
   WebView2 runtime resolves the virtual host name even though
   `WebResourceRequested` answers every request in process and nothing needs the

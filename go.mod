@@ -1,6 +1,6 @@
 module github.com/Burakuslendera/mullion
 
-go 1.22
+go 1.24
 
 // The only dependency. Everything WebView2-related - locating the runtime,
 // creating the environment, the COM interfaces, the event handlers - is

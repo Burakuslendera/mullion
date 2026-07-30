@@ -21,6 +21,58 @@ type Config struct {
 	// Assets is the file system served to the WebView. It must contain
 	// index.html at its root, unless URL is set. Assets are served from an
 	// in-process virtual host; the library never opens a network port.
+	//
+	// The request path is chosen by the page, so every name the fs.FS will
+	// answer is reachable. mullion validates the name - no traversal, no
+	// backslash or colon, no segment ending in a dot or a space, and fs.ValidPath
+	// last - but a name is all it validates. Two things follow, and they matter
+	// only for an fs.FS backed by the real filesystem. An embed.FS is immune to
+	// both: nothing in it reaches the OS.
+	//
+	// Serving from a directory, use os.OpenRoot rather than os.DirFS:
+	//
+	//	root, err := os.OpenRoot(dir)  // then Config{Assets: root.FS()}
+	//
+	// A reparse point inside the directory leaves it, and no name check can see
+	// that: the name is ordinary and the redirection lives in the filesystem, so
+	// mullion cannot refuse it for you. Measured - a directory junction made with
+	// mklink /J inside the asset directory, then
+	// os.DirFS(dir).ReadFile("junction/secret.txt"), returned a file from outside
+	// it, while os.OpenRoot(dir).FS() answered "path escapes from parent" for the
+	// same name. That difference is why this module's Go floor is 1.24 (issue
+	// #103, decisions/0033) and it is pinned by
+	// TestAssetRootRefusesAReparsePointAndOSDirFSDoesNot.
+	//
+	// Know the shape of what os.Root does, because it is narrower and blunter
+	// than "it keeps you inside the directory", and both halves were measured:
+	//
+	//   - Narrower. It refuses reparse points whose tag is a name surrogate,
+	//     which is junctions and symlinks. A hard link is not one. A hard link
+	//     inside the directory to a file outside it reads normally through
+	//     os.Root, exactly as it does through os.DirFS, and mklink /H needs no
+	//     elevation. If arbitrary code can write into the asset directory, an
+	//     os.Root does not make that safe.
+	//   - Blunter. It refuses those tags wherever they point, including at a
+	//     target inside the directory. A junction placed as a convenience by a
+	//     build step - dir/alias -> dir/real - serves under os.DirFS and answers
+	//     500 under os.Root. That is the price of the guarantee, not a bug.
+	//
+	// os.DirFS remains safe against every *name* mullion accepts; what it does
+	// not cover is the filesystem redirection above.
+	//
+	// Windows device names are passed through, not filtered. os.DirFS refuses them
+	// itself - measured on go1.22.12, go1.23.12, go1.24.6 and go1.26.5 - so an
+	// os.DirFS caller is unaffected, and an embed.FS never reaches the OS. An
+	// fs.FS written by hand over os.Open is the exposed case, and it is worth
+	// knowing what it costs. Measured through such an fs.FS, ReadFile("nul")
+	// returns zero bytes and a nil error, so /nul answers 200 with an empty body.
+	// /con is worse and depends on how the application was linked: built for the
+	// console subsystem, which plain `go build` produces, os.Open("CON") succeeds
+	// and the first Read had not returned after three seconds - on the UI thread,
+	// with the request path chosen by the page. Built for the GUI subsystem
+	// (-ldflags "-H=windowsgui") the open fails outright and the request answers
+	// 500. If you write your own fs.FS over os.Open, filter the device names in
+	// it. decisions/0031 records why that filter is not here.
 	Assets fs.FS
 
 	// URL, when set, points the WebView at an origin the caller serves itself,

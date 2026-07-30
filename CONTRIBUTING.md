@@ -9,7 +9,11 @@ points back here for the mechanics.
 
 ## Prerequisites
 
-- A Go toolchain and a Windows 10/11 machine for the full flow.
+- Go 1.24 or newer, and a Windows 10/11 machine for the full flow. 1.24 is the
+  supported floor and an invariant, not an accident: nothing here may use a
+  standard-library symbol or language feature newer than it, whatever you have
+  installed. It is 1.24 because that is where `os.OpenRoot` arrives.
+  [decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md).
 - The WebView2 Runtime — needed only to run the demo, never to run the tests.
 - No C compiler. If a change requires CGo, it is the wrong change.
 
@@ -163,3 +167,5 @@ The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
 > Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the logsafe rule was rewritten — it justified itself with the bug issue #80 fixed, so it told a contributor the right thing for a reason that had stopped being true; a URI takes `logsafe.URL` because URL bounds the value, and a sentence containing one takes `logsafe.Message` (decisions/0028).
+
+> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: the prerequisite states a Go version for the first time. 1.24 is the supported floor and an invariant on the library, not the version this happened to be written on, and it is 1.24 because that is where os.OpenRoot arrives (decisions/0033).

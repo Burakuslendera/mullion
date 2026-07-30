@@ -20,6 +20,14 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    # Both ends of the supported range, not just the floor. Until decision 0033
+    # this job pinned "1.22" alone, so the "and newer" half of the promise in
+    # README.md was never verified by anything. "stable" is the current release,
+    # whatever it is on the day the job runs.
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.24", "stable"]
     # The windows-latest runner ships the Evergreen WebView2 runtime (measured
     # via the doctor probe: v149.0.4022.98), so the two machine tests in
     # internal/webview2 must run, not skip. This turns their "no runtime" skip
@@ -36,7 +44,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.22"
+          go-version: ${{ matrix.go }}
 
       - name: gofmt
         shell: bash
@@ -67,11 +75,16 @@ jobs:
     # The non-Windows stub exists so that `go get` and a cross-platform build
     # work. This job is what keeps it honest.
     runs-on: ubuntu-latest
+    # Same two-ended range as the windows job, for the same reason (0033).
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.24", "stable"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.22"
+          go-version: ${{ matrix.go }}
 
       - run: go build ./...
       - run: go vet ./...

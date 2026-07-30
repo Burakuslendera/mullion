@@ -138,12 +138,13 @@ authority, it is also the only place the boundary can be enforced:
 | URI does not parse | `400` |
 | scheme is not `https` | `403` |
 | host is not the configured virtual host | `403` |
-| path contains a `.` or `..` segment — or one made only of dots and spaces (`.. `, `...`), which Windows' DOS-to-NT conversion can strip to one | `403` |
+| path has a `.` or `..` segment, **or any segment ending in a dot or a space** (`notes.txt.`, `sub./x`) — Windows' DOS-to-NT conversion strips those, so the name would not be the file | `403` |
 | path contains a backslash, a colon or a control byte (incl. `%5c`, `%00`) | `403` |
 | path is not a valid `fs.FS` name (`fs.ValidPath` — raw invalid UTF-8 among others) | `403` |
 | path is `favicon.ico` | `204`, answered before any file lookup |
 | path is `/` | rewritten to `index.html` |
-| file exists | `200`, `Content-Type` from the extension |
+| file exists, name carries a type mullion knows | `200`, `Content-Type` from the **name**, never from the bytes (0031) |
+| file exists, name carries none | `200`, `application/octet-stream` — with `nosniff`, a download rather than a document |
 | file missing | `404` |
 | read fails otherwise | `500` |
 
@@ -158,17 +159,80 @@ selects a drive letter or an NTFS alternate data stream. The final gate asserts
 `fs.ValidPath`, the canonical rule for a name an `fs.FS` will accept; its UTF-8
 requirement is load-bearing, rejecting a raw invalid byte the rune-level checks
 decode to U+FFFD and would otherwise pass. The boundary rejects all of this itself
-rather than leaning on the caller's `fs.FS` or the OS to (issue #66). The
+rather than leaning on the caller's `fs.FS` or the OS to (issue #66).
+
+One further class is rejected for the same reason (issue #100). Any segment
+ending in a dot or a space is refused, not only a segment made entirely of them:
+Windows strips those, so `notes.txt.` is an alias for `notes.txt`, and the name
+mullion classified would not be the file the OS opens.
+
+**Windows device names are not filtered here** — `/nul`, `/con`, `/com1` reach
+the caller's `fs.FS` like any other name. That is a decision (`decisions/0031`),
+and it rests on measurement rather than on oversight: `os.DirFS` refuses the bare
+names itself on go1.22 already (`dirFS.join` → `safefilepath.FromFS` →
+`IsReservedName`, renamed to `filepathlite.Localize` in 1.23 without a behaviour
+change; identical on go1.22.12, go1.23.12 and go1.26.5), and an `embed.FS` never
+reaches the OS at all. The only caller a filter would help is one who wrote an
+`fs.FS` that hands names to `os.Open`, and that is their own code to guard.
+
+The price is recorded rather than hidden: through such a passthrough `fs.FS`,
+`ReadFile("nul")` returns zero bytes and a nil error, so `/nul` answers `200` with
+an empty body, and the request path is chosen by the page rather than by the
+application. `TestAssetBoundaryDoesNotFilterDeviceNames` locks the decision, so a
+later "hardening" that adds the filter back goes red and points at the record.
+
+**Reparse points are not a name problem, and the boundary cannot see them.** A
+directory junction inside the asset root points outside it, and
+`junction/secret.txt` is an ordinary name that passes every check above — the
+redirection lives in the filesystem, not in the string (issue #103). So this one
+is answered by the `fs.FS` the caller supplies rather than by the boundary, and
+the two standard ones differ. Measured on go1.24.6 and go1.26.5 against the same
+`mklink /J` fixture: `os.DirFS(dir)` read the file from outside the root, while
+`os.OpenRoot(dir).FS()` answered `path escapes from parent` and served the
+legitimate assets normally.
+
+That is why the module's Go floor is 1.24 and why `Config.Assets` recommends
+`os.OpenRoot(dir).FS()` for a directory (decisions/0033). It is a recommendation
+and not an enforcement: `Config.Assets` is an `fs.FS`, mullion cannot tell which
+one it was handed, and a caller who passes `os.DirFS` keeps the old behaviour.
+
+Two limits, both measured, because "`os.Root` keeps you inside the directory" is
+the sentence a reader would carry away and it is wrong in both directions.
+`os.Root` refuses reparse points whose tag is a **name surrogate** — junctions and
+symlinks — so a **hard link** out of the root is served exactly as `os.DirFS`
+serves it, and `mklink /H` needs no elevation. And it refuses those tags wherever
+they point, so a junction whose target is **inside** the root (`dir/alias ->
+dir/real`, a build-step convenience) answers `500` where `os.DirFS` answers `200`.
+An asset directory that other code can write into is not contained by any of
+this; the remedy there is an `embed.FS` or a directory nothing else writes to.
+`embed.FS` is unaffected either way — nothing in it reaches the OS.
+`TestAssetRootRefusesAReparsePointAndOSDirFSDoesNot` pins both halves, so the
+recommendation fails loudly if either file system changes;
+`TestAssetBoundaryOSDirFSDoesNotEscapeViaDotOrSpaceForms` covers the lexical
+forms next to it.
+
+Back to the table. The
 `favicon.ico` row is a convenience, not a boundary: the browser probes for it on every
 navigation, and answering `204` keeps that probe from surfacing as a resource-load
 failure in the diagnostics of every run. Responses carry `Cache-Control:
 no-store`: the origin is identical across builds, so without it the WebView could
 replay a cached asset from an older build into a new one. They also carry
-`X-Content-Type-Options: nosniff` — every response names an explicit
-`Content-Type`, so the header is inert except for the sniffable `text/plain` case,
-where it stops bytes an app serves as plain text from being content-sniffed into
-executable HTML on the bridge origin (issue #13). Bodies are wrapped in a COM
-`IStream` built with `SHCreateMemStream`.
+`X-Content-Type-Options: nosniff` — it stops bytes an app serves as plain text
+from being content-sniffed into executable HTML on the bridge origin (issue #13).
+
+That header only protects what mullion labelled correctly, and until issue #100
+mullion did the sniffing itself: `contentTypeForAsset` fell back to
+`http.DetectContentType` for any name whose extension it did not recognise, and
+`DetectContentType` answers `text/html` for anything opening with a tag. Measured
+over `os.DirFS` on byte-identical content, `note.txt` was typed `text/plain`
+while `abc123` and `x.foobar` were typed `text/html` — so an application serving
+an upload directory or a content-addressed blob store got HTML execution in its
+own origin, and `nosniff` then made the wrong label irreversible. The fallback is
+now `application/octet-stream`: the function takes no content and never inspects
+the bytes. `mime.TypeByExtension` remains in the middle, unpinned — it is still a
+decision about the name, which is the model, not about the bytes.
+
+Bodies are wrapped in a COM `IStream` built with `SHCreateMemStream`.
 
 ### Serving from a caller URL instead (`Config.URL`)
 
@@ -398,3 +462,7 @@ that a comment naming the reserved TLD on its own fails the scan, which is why t
 prose here and in `config.go` names it rather than spells it.
 
 > Last updated: 2026-07-28 | Editor: Claude (Opus 5) | Change: the fix is applied. `defaultVirtualHost` is `mullion.localhost`, and the paragraph that stated the obstacle now states what clearing it cost: decisions/0030 drops the exact token from the loopback scan, and only where the name stands alone, so a bare `localhost`, `mullion.localhost:443`, `preview.mullion.localhost` and the trailing-dot form all still fail anywhere but `loopback.go`. A port-only version of that rule was written first and refuted before it shipped, by the two graft forms; twelve mutants were run against the shipped one. The live run that applies the fix was taken and settles the post-fix figure by replacing it: five runs on 2026-07-28, runtime 150.0.4078.99, measured 47-141 ms document-to-first-subresource and LaunchToWindowVisibleMs 448-630, and neither of the two earlier readings (11-79 in #85, 11-22 in #77, raw logs not kept) reproduced. That run also showed the window has to end at the first subresource rather than at phase=document created, which is stamped when the host receives a bridge message and now lands after it. Previously: the two-second gap is resolved - a NetLog capture named it as a HOST_RESOLVER_MANAGER_JOB for the virtual host running 2.007 s, and moving the host to a .localhost name (RFC 6761) collapses it to 11-79 ms and takes issue #77's aborts with it (16 of 16 in-origin navigations commit where 45 consecutive ones had aborted). Records the six negatives, that the --host-resolver-rules rule never reached the browser, and why the default cannot simply be renamed: TestNoNetworkListener reads the "localhost" in it as a loopback literal. Then an audit re-read the captures and withdrew four claims this section had stated as its own measurements - the resolver job ends CANCELLED with no net_error rather than timing out (the timeout is the upstream issue's attribution, and the wpad jobs answered NXDOMAIN in 1-3 ms in the same capture), the --host-resolver-rules value was cut at its first space before the browser recorded its command line and where it was cut is not in the capture, RFC 6761's no-network requirement is the RFC's rather than an observation here, and "covering exactly" is gone because the capture holds neither end of the window and the fit is read across two logs. It also notes that .test's 2.027 s rules out .local-specific resolver routing as the mechanism, so the span is named but what fills it is open; the root cause, the negatives and the obstacle are unchanged. Also records that the 11-79 ms figure is unsettled - issue #77 has 11-22 ms for the same row from the same run - and drops the "15 ms" shorthand that had been carried over from the narrower reading. Adds the contents list the 250-line rule requires.
+
+> Last updated: 2026-07-29 | Editor: Claude (Opus 5) | Change: the content type is decided from the name alone and the sniffer is gone (decisions/0031), so the boundary table's content-type rows are rewritten and its traversal row now states the rule that shipped - any segment ending in a dot or a space is refused, not only one made entirely of them. A Windows device-name filter was written and then removed; the prose says why it is not there and what it would have bought, so it is not proposed again. The reparse-point gap is stated as a gap rather than implied by a test name, and the Go 1.24 floor that would close it is now a record of its own (decisions/0032). Note for whoever edits next: this file is 446 lines against the 400-line hard cap in agents/notes.md and needs splitting - the natural cut is before "Serving from a caller URL instead", which is a separate subject with its own decision record.
+
+> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: the reparse-point paragraph is rewritten from "not covered" to "not a name problem", because that is what it is: `junction/secret.txt` passes every check the boundary makes and the redirection is in the filesystem. Measured on go1.24.6 and go1.26.5 against one mklink /J fixture - os.DirFS read the file from outside the root, os.OpenRoot(dir).FS() answered "path escapes from parent" - so the answer is the caller's fs.FS, the Go floor moved to 1.24 to make os.OpenRoot sayable, and decisions/0033 supersedes 0032. The recommendation is not enforcement: mullion cannot tell which fs.FS it was handed.

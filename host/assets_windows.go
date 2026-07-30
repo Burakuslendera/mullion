@@ -138,7 +138,7 @@ func (provider *assetProvider) resolve(rawURI string) assetResponse {
 		request.category = "read_error"
 		return errorAssetResponse(http.StatusInternalServerError, request)
 	}
-	contentType := contentTypeForAsset(assetPath, content)
+	contentType := contentTypeForAsset(assetPath)
 	return assetResponse{
 		status:      http.StatusOK,
 		reason:      http.StatusText(http.StatusOK),
@@ -167,8 +167,20 @@ func resolveAssetRequest(virtualHost, rawURI string) (assetRequest, int) {
 	if containsBackslashColonOrControl(parsed.Path) || hasTraversalSegment(parsed.Path) {
 		return assetRequest{path: "traversal", category: "traversal"}, http.StatusForbidden
 	}
+	// Windows device names - "nul", "con", "com1" - are deliberately NOT rejected
+	// here. See decisions/0031: os.DirFS and embed.FS are both already safe, so
+	// the only caller who needs the check is one who wrote a passthrough fs.FS,
+	// and mullion does not pay for that on every request. Do not add it back
+	// without reading that record.
+
+	// Only "/" needs folding: path.Clean on a "/"-prefixed input never returns
+	// "/.", and "/." and "/./" both clean to "/" - brute-forced over every string
+	// of '.', '/', ' ' and 'a' up to length six, 5460 inputs, no counterexample.
+	// An unreachable "/." arm sat here until a mutant that deleted it survived
+	// the whole suite. The input cannot reach this line anyway: hasTraversalSegment
+	// refuses a "." segment above.
 	cleanPath := path.Clean("/" + strings.TrimPrefix(parsed.Path, "/"))
-	if cleanPath == "/" || cleanPath == "/." {
+	if cleanPath == "/" {
 		cleanPath = "/index.html"
 	}
 	assetPath := strings.TrimPrefix(cleanPath, "/")
@@ -185,17 +197,41 @@ func resolveAssetRequest(virtualHost, rawURI string) (assetRequest, int) {
 	return assetRequest{path: assetPath, category: "asset"}, 0
 }
 
-// hasTraversalSegment rejects a path segment that is - or that Windows' DOS-to-NT
-// path conversion would collapse to - a "." or ".." traversal element. That
-// conversion strips trailing dots and spaces (the "MagicDot" behaviour), so
-// ".. ", "...", ".. ." can normalise to ".." or "." on some Windows builds, while
-// path.Clean is lexical and folds only an exact "..". A segment made of nothing
-// but dots and spaces is therefore rejected here rather than trusting the OS or
-// the caller's fs.FS not to normalise it into an escape. No legitimate asset name
-// is only dots and spaces, so this never rejects a real file.
+// hasTraversalSegment rejects a path segment that Windows' DOS-to-NT path
+// conversion would turn into a name other than the one mullion decided about.
+// That conversion strips trailing dots and spaces (the "MagicDot" behaviour),
+// while path.Clean is lexical and folds only an exact "..". Two consequences,
+// and the rule below covers both:
+//
+//   - A segment made of nothing but dots and spaces - ".. ", "...", ".. ." -
+//     can normalise to ".." or "." on some Windows builds, which is an escape.
+//   - Any other segment ending in a dot or a space is an alias for the name
+//     without it, so "notes.txt." opens "notes.txt". Mullion then types the
+//     response from the name it was given rather than the file it gets:
+//     filepath.Ext("notes.txt.") is ".", the extension switch misses, and the
+//     answer comes from the fallback instead of from ".txt" (issue #100).
+//     Rejecting the alias removes that one class of alias. It does not make the
+//     mapping one-to-one, and the comment here used to claim it did. Windows
+//     also matches a name case-insensitively and, where 8.3 generation is on,
+//     under a short name: measured, "averylongname.html", "AVERYLONGNAME.HTML"
+//     and "AVERYL~1.HTM" all open the same file. Those two are left alone
+//     because they cannot raise the type - the extension switch lower-cases, and
+//     a truncated 8.3 extension can only fall out of the switch into
+//     application/octet-stream, never into html.
+//
+// The second rule subsumes the first, since a segment of only dots and spaces
+// necessarily ends in one; both are written out because they answer different
+// questions and a later reader will ask both. Windows cannot create a file whose
+// name ends in a dot or a space, so this never rejects a real file there. A
+// caller whose fs.FS was built elsewhere - an embed.FS assembled on Linux - can
+// hold such a name, and it is refused deliberately: the boundary decides on the
+// name it was handed, not on which platform produced the bytes.
 func hasTraversalSegment(value string) bool {
 	for _, segment := range strings.Split(value, "/") {
-		if segment != "" && strings.Trim(segment, ". ") == "" {
+		if segment == "" {
+			continue
+		}
+		if strings.HasSuffix(segment, ".") || strings.HasSuffix(segment, " ") {
 			return true
 		}
 	}
