@@ -268,7 +268,11 @@ func TestAssetRootRefusesAReparsePointAndOSDirFSDoesNot(t *testing.T) {
 		t.Fatalf("write secret: %v", err)
 	}
 	junction := filepath.Join(root, "escape")
-	if output, err := exec.Command("cmd", "/c", "mklink", "/J", junction, outside).CombinedOutput(); err != nil {
+	mklink := exec.Command("cmd", "/c", "mklink", "/J", junction, outside)
+	// Without this the console flashes on the developer's desktop once per run,
+	// which is the seam issue #76 added and every other exec here already uses.
+	hideChildConsole(mklink)
+	if output, err := mklink.CombinedOutput(); err != nil {
 		t.Skipf("mklink /J unavailable, cannot plant a reparse point: %v: %s", err, output)
 	}
 

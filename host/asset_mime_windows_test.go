@@ -53,6 +53,14 @@ func TestContentTypeForAsset(t *testing.T) {
 		// ".woff" was locked by nothing.
 		{"woff", "font.woff", "font/woff"},
 		{"woff2", "font.woff2", "font/woff2"},
+		// The uppercase rows further up do not lock strings.ToLower: measured,
+		// mime.TypeByExtension answers ".HTML" and ".Css" case-insensitively, so
+		// deleting the fold left them passing. It answers "" for every spelling of
+		// ".woff" and ".woff2", so these two are the only names whose type depends
+		// on the fold, and a mutant that removed it survived the whole suite until
+		// they were added.
+		{"uppercase woff", "FONT.WOFF", "font/woff"},
+		{"mixed case woff2", "Font.Woff2", "font/woff2"},
 		{"wasm", "app.wasm", "application/wasm"},
 		{"no extension", "README", "application/octet-stream"},
 		{"unknown extension", "upload.foobar", "application/octet-stream"},

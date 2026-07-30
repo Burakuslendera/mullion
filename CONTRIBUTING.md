@@ -167,3 +167,5 @@ The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
 > Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the logsafe rule was rewritten — it justified itself with the bug issue #80 fixed, so it told a contributor the right thing for a reason that had stopped being true; a URI takes `logsafe.URL` because URL bounds the value, and a sentence containing one takes `logsafe.Message` (decisions/0028).
+
+> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: the prerequisite states a Go version for the first time. 1.24 is the supported floor and an invariant on the library, not the version this happened to be written on, and it is 1.24 because that is where os.OpenRoot arrives (decisions/0033).
