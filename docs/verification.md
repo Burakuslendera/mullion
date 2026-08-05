@@ -218,16 +218,16 @@ a pass/fail with an observable result — "looks fine" is not a result.
       with the host intact; `httpmain.js` is issue #80, the shape three releases
       of live verification were read past without anyone noticing
       (decisions/0028). A query in that URL must still be reduced to a bare `?`.
-      This is the one part of #80 no headless test can reach: everything from the
-      reducer down is pinned, but that a real `window.onerror` string arrives at
-      that line unclamped and unmangled is only observable live.
-- [ ] **Second `Run` in the same process after a pre-loop failure.** With a
-      driver that runs the host twice in one process, make the first `Run`
-      fail before the message loop (e.g. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
-      pointed at an empty folder so the embed fails, cleared again before the
-      retry). The second `Run` must reach a live, painted window: no
-      "Class already exists" from `RegisterClassEx` and no instant exit from
-      a stale `WM_QUIT` (issue #48).
+      Headless tests pin the reducer and its 2,000-byte bound, including a first
+      URL after long context; only delivery of a real `window.onerror` string to
+      this line is observable live (decisions/0035).
+- [ ] **Window lifecycle reuse after failure and success.** First run a Host
+      whose embed fails before loop entry, clear the cause, and call `Run` again
+      on that same Host; close its painted window normally and call `Run` a
+      third time on the same Host. Separately, reject a NUL-bearing title, then
+      create a fresh Host with the corrected title and the same class name.
+      Every supported retry must paint, with no stale `WM_QUIT`, "Class already
+      exists", stale browser, or already-destroyed refusal (issues #48, #97).
 - [ ] **`StartHidden` → first `Show`.** With `Config.StartHidden` set, no
       window may appear until `Show()` is called; the first `Show` embeds the
       WebView and the frontend paints. Quitting without ever showing must
@@ -397,4 +397,4 @@ gathers it, and the rest of the reporting contract moved verbatim to
 [bug-reports.md](./bug-reports.md) when this file reached the 400-line
 reference-doc limit.
 
-> Last updated: 2026-07-28 | Editor: Claude (Opus 5) | Change: the virtual-host fix landed, so the startup-gap item inverts - it now checks the gap is absent on the new default, ends the window at the first subresource rather than at phase=document created (a bridge message, stamped on receipt, which now lands after it), and carries the settled figure: 47-141 ms over five runs on 2026-07-28, runtime 150.0.4078.99, superseding the 11-79 and 11-22 ms readings that did not reproduce. TestNoNetworkListener's row states its one exemption (the default virtual host name, only where it stands alone; a subdomain, a port or the trailing-dot form still fail - decisions/0030), and the log lines the checklist greps for now read mullion.localhost. Previously: two checklist items - what a cancelled navigation must log once the cancel is committed only after the runtime performs it, including the four WARN lines that say it did not (issue #73, decisions/0027), and that a frontend error keeps the URL it names, which is the one part of issue #80 no headless test can reach (decisions/0028); section 6 moved verbatim to bug-reports.md to stay inside the 400-line reference-doc limit. Then one more: that the window still answers while a cold system browser starts, which is the check that would establish the symptom issue #74 was fixed against (decisions/0029). And one more: how to time the startup navigation gap from the debug log, with the five measurements taken on this machine and why only the startup navigation is worth timing (issue #85).
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: define issue #97's live lifecycle retries after bad-title, pre-loop-failure and normal-destruction paths; and update the frontend-error item for issue #88's 2,000-byte diagnostic bound, whose first-complete-URL behavior is headless-tested while real window.onerror delivery remains live-only (decision 0035).

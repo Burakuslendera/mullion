@@ -23,16 +23,16 @@ func FileName(path string) string {
 }
 
 func sanitizeToken(token string) string {
-	core := token
-	suffix := ""
-	for len(core) > 0 {
-		last := core[len(core)-1]
+	suffixStart := len(token)
+	for suffixStart > 0 {
+		last := token[suffixStart-1]
 		if last != ':' && last != ';' && last != ',' && last != '.' {
 			break
 		}
-		suffix = string(last) + suffix
-		core = core[:len(core)-1]
+		suffixStart--
 	}
+	core := token[:suffixStart]
+	suffix := token[suffixStart:]
 	if strings.ContainsAny(core, `/\`) {
 		core = FileName(core)
 	}

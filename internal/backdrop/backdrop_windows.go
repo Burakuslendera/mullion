@@ -29,6 +29,7 @@ var (
 	procDestroyWindow                 = user32.NewProc("DestroyWindow")
 	procDefWindowProc                 = user32.NewProc("DefWindowProcW")
 	procGetMessage                    = user32.NewProc("GetMessageW")
+	procPeekMessage                   = user32.NewProc("PeekMessageW")
 	procTranslateMessage              = user32.NewProc("TranslateMessage")
 	procDispatchMessage               = user32.NewProc("DispatchMessageW")
 	procPostQuitMessage               = user32.NewProc("PostQuitMessage")
@@ -44,9 +45,11 @@ const (
 
 	wmDestroy = 0x0002
 	wmClose   = 0x0010
+	wmQuit    = 0x0012
 	wmKeyDown = 0x0100
 	wmTimer   = 0x0113
 	vkEscape  = 0x1B
+	pmRemove  = 0x0001
 
 	// watchTimerID drives the target watch below: 200ms is far under what a
 	// human reads as "instant" and costs three cheap USER calls a tick.
@@ -98,10 +101,14 @@ type message struct {
 // follow).
 var wndProcCallback = windows.NewCallback(backdropWndProc)
 
-// watchedTarget is the window the backdrop lifted at startup, or 0. The
-// command runs exactly one backdrop per process, so a package variable is the
-// whole state the window procedure needs.
-var watchedTarget uintptr
+// watchedTarget is the window the backdrop lifted at startup, or 0.
+// activeBackdrop is its owned HWND until WM_DESTROY. The command runs exactly
+// one backdrop at a time, so package variables are the whole state the window
+// procedure and Show's loop-exit cleanup share.
+var (
+	watchedTarget  uintptr
+	activeBackdrop uintptr
+)
 
 // backdropWndProc closes on Esc and on WM_CLOSE (Alt+F4, the taskbar button's
 // close) - and, when a target was lifted at startup, closes with that target:
@@ -125,12 +132,40 @@ func backdropWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		_, _, _ = procDestroyWindow.Call(hwnd)
 		return 0
 	case wmDestroy:
+		if activeBackdrop == hwnd {
+			activeBackdrop = 0
+		}
+		watchedTarget = 0
 		_, _, _ = procKillTimer.Call(hwnd, watchTimerID)
 		_, _, _ = procPostQuitMessage.Call(0)
 		return 0
 	}
 	ret, _, _ := procDefWindowProc.Call(hwnd, msg, wParam, lParam)
 	return ret
+}
+
+// cleanupBackdropWindow closes only the HWND this Show call still owns. Clearing
+// activeBackdrop in WM_DESTROY makes the normal WM_QUIT exit a no-op here,
+// rather than feeding a stale, potentially recycled value to DestroyWindow.
+// The injected operations keep the ownership and ordering contract headless
+// testable.
+func cleanupBackdropWindow(hwnd uintptr, active *uintptr, destroy func(uintptr), drain func()) {
+	if *active != hwnd {
+		return
+	}
+	destroy(hwnd)
+	*active = 0
+	drain()
+}
+
+func drainBackdropQuitMessage() {
+	var msg message
+	for {
+		got, _, _ := procPeekMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, wmQuit, wmQuit, pmRemove)
+		if got == 0 {
+			return
+		}
+	}
 }
 
 // targetStillUp reports whether the lifted window still exists on screen,
@@ -207,7 +242,12 @@ func Show(colour Colour, targetClass string) error {
 	if atom == 0 {
 		return fmt.Errorf("RegisterClassEx: %w", err)
 	}
-	defer procUnregisterClass.Call(uintptr(unsafe.Pointer(className)), instance)
+	defer func() {
+		_, _, _ = procUnregisterClass.Call(uintptr(unsafe.Pointer(className)), instance)
+		// A LazyProc defer freezes only the uintptr; retaining the Go pointer
+		// here keeps the UTF-16 allocation alive through UnregisterClassW.
+		runtime.KeepAlive(className)
+	}()
 
 	x, _, _ := procGetSystemMetrics.Call(smXVirtualScreen)
 	y, _, _ := procGetSystemMetrics.Call(smYVirtualScreen)
@@ -228,6 +268,10 @@ func Show(colour Colour, targetClass string) error {
 	if hwnd == 0 {
 		return fmt.Errorf("CreateWindowEx: %w", err)
 	}
+	activeBackdrop = hwnd
+	defer cleanupBackdropWindow(hwnd, &activeBackdrop, func(hwnd uintptr) {
+		_, _, _ = procDestroyWindow.Call(hwnd)
+	}, drainBackdropQuitMessage)
 
 	if target := raiseTargetAbove(hwnd, targetClass); target != 0 {
 		watchedTarget = target

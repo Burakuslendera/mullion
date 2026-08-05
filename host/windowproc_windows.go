@@ -41,10 +41,10 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		}
 		host.log.Debug("mullion: close allowed")
 	case wmDestroy:
-		// Recorded before the teardown so an embed whose pump dispatched this
-		// message can see, once Embed returns, that its window is gone and the
-		// browser must be torn down instead of committed (decision 0016).
-		host.windowDestroyed = true
+		// Clear the exported-call target before any teardown work: a concurrent
+		// call must fail its zero-handle guard as soon as WM_DESTROY begins, and
+		// an embed pump must observe that the window was destroyed.
+		host.beginWindowDestroy(hwnd)
 		host.log.Debug("mullion: destroy requested")
 		// PostQuitMessage must run even if teardown panics. The window procedure
 		// is panic-guarded (win32_call_windows.go), so a panic in ShuttingDown
@@ -124,22 +124,30 @@ func runWindowDestroy(teardown, quit func()) {
 	defer quit()
 	teardown()
 }
+func (host *Host) beginWindowDestroy(hwnd windowHandle) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	if host.hwnd != hwnd {
+		return
+	}
+	host.windowDestroyed = true
+	host.quitPending = true
+	host.hwnd = 0
+}
 
 // windowDestroyTeardown is the WM_DESTROY teardown, extracted so its contract is
-// headless-testable. Both timers die with the window: the render watchdog, and
-// the startup show gate - left pending, the gate would fire once after
-// Config.ShowTimeout and post wmNativeShow to the dead HWND, up to two warn
-// lines with nothing to act on (issue #54's companion observation). The WebView
-// is then shut down while the HWND is still alive.
+// headless-testable. Both timers die with the window and the committed browser
+// is shut down while the HWND is still in its destruction callback. The browser
+// reference is cleared only after a successful shutdown; if shutdown panics,
+// beginRun sees it and refuses to reuse an incompletely torn-down Host.
 func (host *Host) windowDestroyTeardown() {
 	host.stopRenderWatchdog()
 	host.stopStartupShowGate()
 	if host.browser != nil {
-		// Tear the control down while the HWND is still alive. Closing the
-		// controller after its parent window is gone orphans the runtime's
-		// own child windows, and the teardown then reports failures nobody
-		// can act on.
+		// Tear the control down while the native parent is in WM_DESTROY.
+		// Closing the controller later orphans the runtime's child windows.
 		host.log.Debug("mullion: webview2 shutdown requested")
 		host.browser.ShuttingDown()
+		host.browser = nil
 	}
 }

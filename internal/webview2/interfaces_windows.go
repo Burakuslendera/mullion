@@ -41,7 +41,11 @@
 // unsafe.Offsetof, and runs without a WebView2 runtime. Re-run it after any
 // edit here; a passing build proves nothing about a vtable.
 //
-// # Win64 argument-passing rules that matter here
+// # Windows/amd64 argument-passing rules that matter here
+//
+// WebView2 hosting is rejected on every other Windows architecture before a
+// runtime DLL is loaded. The encodings below are deliberately not guesses at
+// the x86 or ARM64 COM ABIs.
 //
 // From the x64 calling convention (learn.microsoft.com/cpp/build/x64-calling-convention):
 // "Structs and unions of size 8, 16, 32, or 64 bits ... are passed as if they

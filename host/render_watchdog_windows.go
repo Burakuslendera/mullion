@@ -24,18 +24,25 @@ func (host *Host) startRenderWatchdog() {
 	host.frontendShellReady = false
 	if host.renderTimer != nil {
 		host.renderTimer.Stop()
+		host.renderTimer = nil
 	}
 	if host.config.RenderTimeout < 0 {
 		return
 	}
-	host.renderTimer = time.AfterFunc(host.config.RenderTimeout, func() {
+	var timer *time.Timer
+	timer = time.AfterFunc(host.config.RenderTimeout, func() {
 		host.renderMu.Lock()
 		defer host.renderMu.Unlock()
+		if host.renderTimer != timer {
+			return
+		}
+		host.renderTimer = nil
 		if host.frontendReady {
 			return
 		}
 		host.log.Error("mullion: frontend render timeout, " + host.diagnostics.timeoutSummary())
 	})
+	host.renderTimer = timer
 }
 
 func (host *Host) stopRenderWatchdog() {
@@ -44,6 +51,7 @@ func (host *Host) stopRenderWatchdog() {
 
 	if host.renderTimer != nil {
 		host.renderTimer.Stop()
+		host.renderTimer = nil
 	}
 }
 
@@ -65,6 +73,7 @@ func (host *Host) MarkFrontendReady() {
 	host.frontendReady = true
 	if host.renderTimer != nil {
 		host.renderTimer.Stop()
+		host.renderTimer = nil
 	}
 	host.renderMu.Unlock()
 
@@ -82,9 +91,8 @@ func (host *Host) MarkFrontendReady() {
 // Idempotent, exactly as MarkFrontendReady: shellReady() is a reserved bridge
 // method reachable from any page the bridge trusts, so a frontend calling it
 // in a loop must not spam the log and the message queue (issue #47). The flag
-// shares frontendReady's lifecycle - startRenderWatchdog resets both - and the
-// once-per-host effects behind it (the startup timing record, the show gate)
-// keep their own guards.
+// shares frontendReady's lifecycle - startRenderWatchdog resets both - while
+// the startup timing record and show gate keep their own per-Run guards.
 func (host *Host) MarkFrontendShellReady() {
 	host.renderMu.Lock()
 	if host.frontendShellReady {
@@ -103,8 +111,9 @@ func (host *Host) MarkFrontendShellReady() {
 // MarkFrontendPhase records a free-form progress marker from the frontend. It
 // appears in the render-watchdog summary as the last phase reached.
 func (host *Host) MarkFrontendPhase(phase string) {
+	phase = logsafe.Diagnostic(phase)
 	host.diagnostics.recordFrontendPhase(phase)
-	host.log.Debug("mullion: frontend phase, phase=" + logsafe.Message(phase))
+	host.log.Debug("mullion: frontend phase, phase=" + phase)
 }
 
 // MarkFrontendDiagnostic records a frontend diagnostic event (a script error, a

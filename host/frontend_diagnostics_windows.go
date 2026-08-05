@@ -3,31 +3,30 @@
 package host
 
 import (
-	"net/url"
 	"strings"
 
 	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
 func (host *Host) recordFrontendDiagnostic(kind string, detail string) {
-	kind = logsafe.Message(kind)
+	kind = logsafe.Diagnostic(kind)
 	switch kind {
 	case "phase":
-		phase := logsafe.Message(detail)
+		phase := logsafe.Diagnostic(detail)
 		host.diagnostics.recordFrontendPhase(phase)
 		host.log.Debug("mullion: frontend diagnostic phase, phase=" + phase)
 	case "dom":
-		host.log.Debug("mullion: frontend dom snapshot, detail=" + logsafe.Message(detail))
+		host.log.Debug("mullion: frontend dom snapshot, detail=" + logsafe.Diagnostic(detail))
 	case "resize-edge":
-		host.log.Debug("mullion: frontend resize edge, edge=" + logsafe.Message(detail))
+		host.log.Debug("mullion: frontend resize edge, edge=" + logsafe.Diagnostic(detail))
 	case "resize-cursor":
-		host.log.Debug("mullion: frontend resize cursor, state=" + logsafe.Message(detail))
+		host.log.Debug("mullion: frontend resize cursor, state=" + logsafe.Diagnostic(detail))
 	case "error":
 		host.diagnostics.recordFrontendPhase("mullion: frontend window error")
-		host.log.Error("mullion: frontend diagnostic error, message=" + logsafe.Message(detail))
+		host.log.Error("mullion: frontend diagnostic error, message=" + logsafe.Diagnostic(detail))
 	case "unhandledrejection":
 		host.diagnostics.recordFrontendPhase("mullion: frontend unhandled rejection")
-		host.log.Error("mullion: frontend diagnostic unhandled rejection, message=" + logsafe.Message(detail))
+		host.log.Error("mullion: frontend diagnostic unhandled rejection, message=" + logsafe.Diagnostic(detail))
 	default:
 		if strings.HasPrefix(kind, "resource-") {
 			host.diagnostics.recordFrontendPhase("mullion: frontend resource load failed")
@@ -37,9 +36,8 @@ func (host *Host) recordFrontendDiagnostic(kind string, detail string) {
 }
 
 func frontendDiagnosticAsset(raw string) string {
-	parsed, err := url.Parse(raw)
-	if err == nil && parsed.Path != "" {
-		return logsafe.FileName(parsed.Path)
+	if index := strings.IndexAny(raw, "?#"); index >= 0 {
+		raw = raw[:index]
 	}
-	return logsafe.FileName(raw)
+	return logsafe.DiagnosticFileName(raw)
 }

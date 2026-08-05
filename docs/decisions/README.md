@@ -54,6 +54,8 @@ These files are that record.
 | [0031](./0031-the-bytes-never-decide-the-content-type.md) | The bytes never decide the content type, and the boundary decides the name | Accepted; reparse-point consequence answered by 0033 |
 | [0032](./0032-the-supported-go-floor-is-1-22.md) | The supported Go floor is 1.22, and it is a promise rather than a default | Superseded by 0033 |
 | [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) | The Go floor is 1.24, so that an asset directory can be an `os.Root` | Accepted |
+| [0034](./0034-webview2-hosting-is-windows-amd64-only.md) | WebView2 hosting is supported only on Windows/amd64 | Accepted |
+| [0035](./0035-frontend-diagnostics-are-bounded.md) | Frontend-controlled diagnostics are bounded before reduction and retention | Accepted |
 
 ## When to write one
 
@@ -95,3 +97,5 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
+
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: indexed decisions 0034 and 0035 for the Windows/amd64 support boundary and the finite frontend diagnostic boundary.

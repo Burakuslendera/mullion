@@ -49,7 +49,7 @@
     shellReady: () => notify("__M_SHELLREADY__"),
     ready: () => notify("__M_READY__"),
     phase: (name) => notify("__M_PHASE__", String(name || "unknown")),
-    diagnostic: (kind, detail) => notify("__M_DIAG__", String(kind || "unknown"), String(detail || "unknown").slice(0, 240)),
+    diagnostic: (kind, detail) => notify("__M_DIAG__", String(kind || "unknown"), String(detail || "unknown")),
     startup: { startHidden: __START_HIDDEN__ },
     tabTitlebar: false,
   };

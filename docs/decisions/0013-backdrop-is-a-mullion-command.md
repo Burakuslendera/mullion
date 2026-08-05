@@ -87,10 +87,10 @@ cannot.
   recorded here and in the usage text, and every future "should this be a
   mullion command?" starts from this precedent — the bar stays: no checkout
   assumed, no state written, Windows-gated behind the 0007 stub pattern.
-- The window half is not covered by tests — no test may create a window
-  (0006) — so any change to `backdrop_windows.go` owes a live check: raised,
-  covered every monitor, dismissed by all three exits. The colour parse is the
-  tested half.
+- No test may create a window (0006), so geometry, z-order and real dismissal
+  still owe a live check. The post-create ownership decision is headless-tested:
+  both `GetMessage` error and a bare `WM_QUIT` destroy then drain, while normal
+  `WM_DESTROY` clears ownership and cannot double-destroy a recycled HWND.
 - The not-topmost choice means the backdrop does not guarantee it covers
   everything at all times: whatever the user raises is above it. That is the
   point, and it is documented behaviour, not a bug to fix.
@@ -107,9 +107,9 @@ cannot.
 
 ## Evidence
 
-- `internal/backdrop`: `ParseColour` with `TestParseColourAcceptsOnlySixHexDigits`
-  and `TestDefaultHexParses` (headless); `backdrop_windows.go` (window half);
-  `backdrop_other.go` (0007-pattern stub).
+- `internal/backdrop`: colour parsing plus
+  `TestCleanupBackdropWindowOwnsEveryLoopExitWithoutDoubleDestroy` (headless);
+  `backdrop_windows.go` (live window half); `backdrop_other.go` (0007 stub).
 - Live check on this machine, 2026-07-16: raised over a real two-monitor
   desktop (one window spanning the 3840x1080 virtual screen), the covered
   screen captured and 500 sampled pixels all measured as the configured
@@ -123,3 +123,5 @@ cannot.
 - The scripted sibling and the need that produced it: `a7c689c`
   (`screenshot.ps1 -Backdrop`), and the maintainer's request for the same
   ground under a hand-driven capture tool.
+
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: pin backdrop loop-exit ownership headlessly: zero and minus-one exits destroy and drain a still-owned HWND, while normal WM_DESTROY cannot double-destroy (issue #97).

@@ -24,10 +24,15 @@ func (host *Host) startStartupShowGate() {
 		return
 	}
 	host.startupMu.Lock()
-	host.startupShowTimer = time.AfterFunc(host.config.ShowTimeout, func() {
-		host.log.Warn("mullion: initial show fallback, reason=frontend_shell_timeout")
-		host.requestStartupShow("frontend_shell_timeout")
+	if host.startupShowReleased || host.startupShowTimer != nil {
+		host.startupMu.Unlock()
+		return
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(host.config.ShowTimeout, func() {
+		host.fireStartupShowGate(timer)
 	})
+	host.startupShowTimer = timer
 	host.startupMu.Unlock()
 	host.log.Debug("mullion: initial show gated")
 }
@@ -36,18 +41,53 @@ func (host *Host) requestStartupShow(reason string) {
 	if host.config.StartHidden {
 		return
 	}
-	host.startupShowOnce.Do(func() {
-		host.stopStartupShowGate()
-		host.log.Debug("mullion: initial show gate released, reason=" + logsafe.Message(reason))
-		host.warnIf("initial show post", postWindowMessage(host.window(), wmNativeShow))
-	})
+	host.releaseStartupShowGate(nil, reason, false)
+}
+
+// fireStartupShowGate receives the timer identity so a callback from an older
+// Run cannot release a newer run's gate. It detaches the fired timer before
+// posting, so Host never retains a timer that can no longer be stopped.
+func (host *Host) fireStartupShowGate(timer *time.Timer) {
+	host.releaseStartupShowGate(timer, "frontend_shell_timeout", true)
+}
+
+func (host *Host) releaseStartupShowGate(expected *time.Timer, reason string, timedOut bool) {
+	host.startupMu.Lock()
+	if expected != nil && host.startupShowTimer != expected {
+		host.startupMu.Unlock()
+		return
+	}
+	if host.startupShowReleased {
+		host.startupMu.Unlock()
+		return
+	}
+	host.startupShowReleased = true
+	timer := host.startupShowTimer
+	host.startupShowTimer = nil
+	// Bind the release to the HWND that owns this gate. A timer callback from an
+	// ending Run must never look the handle up later and post to a newer Run's
+	// recycled window.
+	hwnd := host.window()
+	host.startupMu.Unlock()
+
+	if timer != nil {
+		timer.Stop()
+	}
+	postErr := postWindowMessage(hwnd, wmNativeShow)
+	if timedOut {
+		host.log.Warn("mullion: initial show fallback, reason=frontend_shell_timeout")
+	}
+	host.log.Debug("mullion: initial show gate released, reason=" + logsafe.Message(reason))
+	host.warnIf("initial show post", postErr)
 }
 
 func (host *Host) stopStartupShowGate() {
 	host.startupMu.Lock()
-	defer host.startupMu.Unlock()
-	if host.startupShowTimer != nil {
-		host.startupShowTimer.Stop()
-		host.startupShowTimer = nil
+	timer := host.startupShowTimer
+	host.startupShowTimer = nil
+	host.startupShowReleased = true
+	host.startupMu.Unlock()
+	if timer != nil {
+		timer.Stop()
 	}
 }

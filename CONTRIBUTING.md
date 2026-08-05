@@ -1,16 +1,16 @@
 # Contributing
 
-`mullion` is a Windows-only, CGo-free Win32 + WebView2 window host. Everything in
-this file exists to keep two properties true: the test suite runs anywhere, and a
-window change is never accepted on the strength of "it compiles".
+`mullion` is a Windows/amd64-only, CGo-free Win32 + WebView2 window host. Everything
+in this file exists to keep two properties true: the test suite runs anywhere, and
+a window change is never accepted on the strength of "it compiles".
 
 AI agents working in this repository read [AGENTS.md](./AGENTS.md) first; it
 points back here for the mechanics.
 
 ## Prerequisites
 
-- Go 1.24 or newer, and a Windows 10/11 machine for the full flow. 1.24 is the
-  supported floor and an invariant, not an accident: nothing here may use a
+- Go 1.24 or newer, and a Windows 10/11 amd64 machine for the full flow. 1.24 is
+  the supported floor and an invariant, not an accident: nothing here may use a
   standard-library symbol or language feature newer than it, whatever you have
   installed. It is 1.24 because that is where `os.OpenRoot` arrives.
   [decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md).
@@ -33,6 +33,9 @@ go test -tags mullion_dwm_caption_diag ./...  # ... and its gated tests still pa
 go build -tags mullion_caption_passthrough_diag ./... # ... and the other one
 go test -tags mullion_caption_passthrough_diag ./...
 GOOS=linux go build ./...                     # build-tag hygiene: no Win32 leak
+GOOS=windows GOARCH=amd64 go build ./...           # supported WebView2 target
+GOOS=windows GOARCH=386 go build ./...             # compile portability only
+GOOS=windows GOARCH=arm64 go build ./...           # compile portability only
 pwsh scripts/leak-scan.ps1                    # nothing private is published
 cd examples/basic && go run .                 # live demo
 ```
@@ -41,6 +44,12 @@ cd examples/basic && go run .                 # live demo
 that a Win32 symbol has not leaked out of a `_windows.go` file into a portable
 one. It fails loudly and early; treat a failure as a build-tag bug, not as a
 platform complaint.
+
+The three Windows cross-builds prove different contracts. `windows/amd64` is the
+only supported WebView2 hosting target. Windows/386 and Windows/ARM64 compile so
+cross-platform dependency graphs stay portable, but a green build is not a
+runtime-support claim: both targets return an unsupported-architecture error
+before loading WebView2 (decision 0034).
 
 `go test -race ./...` is the one step that wants a C toolchain: on Windows the
 race detector links through a mingw-w64 gcc at test time. That does not soften
@@ -169,3 +178,5 @@ The full taxonomy and the triage rules are in
 > Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the logsafe rule was rewritten — it justified itself with the bug issue #80 fixed, so it told a contributor the right thing for a reason that had stopped being true; a URI takes `logsafe.URL` because URL bounds the value, and a sentence containing one takes `logsafe.Message` (decisions/0028).
 
 > Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: the prerequisite states a Go version for the first time. 1.24 is the supported floor and an invariant on the library, not the version this happened to be written on, and it is 1.24 because that is where os.OpenRoot arrives (decisions/0033).
+
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: distinguish the supported Windows/amd64 WebView2 target from compile-only Windows/386 and Windows/ARM64 portability gates (decision 0034).

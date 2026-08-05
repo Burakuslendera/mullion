@@ -2,10 +2,66 @@
 
 package host
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/Burakuslendera/mullion/internal/webview2"
+)
 
 // Locks for small pure helpers an audit found untested. Each is a genuine
 // fails-before: reverting the helper's guarantee fails the corresponding case.
+
+func TestRuntimeArchitectureGatePrecedesNativeStartupAndReleasesRunGuard(t *testing.T) {
+	host := &Host{}
+	unsupported := fmt.Errorf("discovery failed: %w", webview2.ErrUnsupportedArchitecture)
+	var steps []string
+
+	err := host.withRunGuard(func() error {
+		return continueAfterRuntimeDiscovery(
+			func() (string, string, error) {
+				steps = append(steps, "discovery")
+				return "", "", unsupported
+			},
+			func(string) { steps = append(steps, "version observed") },
+			func() error {
+				steps = append(steps, "COM", "class", "HWND")
+				return nil
+			},
+		)
+	})
+	if err != unsupported {
+		t.Fatalf("unsupported attempt error = %v, want original %v", err, unsupported)
+	}
+	if got := strings.Join(steps, ","); got != "discovery,version observed" {
+		t.Fatalf("unsupported attempt steps = %q; native startup must not run", got)
+	}
+
+	// A second sequential attempt proves the first error released beginRun's
+	// guard. An ordinary missing runtime is not fatal here: the embed path owns
+	// that error, so native startup must continue.
+	steps = nil
+	err = host.withRunGuard(func() error {
+		return continueAfterRuntimeDiscovery(
+			func() (string, string, error) {
+				steps = append(steps, "discovery")
+				return "", "", fmt.Errorf("runtime missing")
+			},
+			func(string) { steps = append(steps, "version observed") },
+			func() error {
+				steps = append(steps, "COM", "class", "HWND")
+				return nil
+			},
+		)
+	})
+	if err != nil {
+		t.Fatalf("second sequential attempt: %v", err)
+	}
+	if got := strings.Join(steps, ","); got != "discovery,version observed,COM,class,HWND" {
+		t.Fatalf("missing-runtime attempt steps = %q, want native startup to continue", got)
+	}
+}
 
 // isHotBoundsSyncSource gates both the deferred-webview early return in
 // syncWebViewBounds and the log dedup, so which sources are "hot" (the

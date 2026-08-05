@@ -4,6 +4,28 @@ package host
 
 import "testing"
 
+// Every fallible UTF-16 conversion must finish before RegisterClassEx acquires
+// the class. This headless preflight is the ownership boundary: an embedded NUL
+// in caller-controlled Title fails without creating a class or allocating an
+// HWND, so a corrected retry can reuse the same class name.
+func TestPrepareWindowStringsRejectsInvalidTitleBeforeClassOwnership(t *testing.T) {
+	class, title, err := prepareWindowStrings("MullionWindow", "bad\x00title")
+	if err == nil {
+		t.Fatal("prepareWindowStrings accepted a title containing NUL")
+	}
+	if class != nil || title != nil {
+		t.Fatalf("failed preflight returned class=%p title=%p, want no native pointers", class, title)
+	}
+
+	class, title, err = prepareWindowStrings("MullionWindow", "corrected title")
+	if err != nil {
+		t.Fatalf("corrected retry preflight = %v", err)
+	}
+	if class == nil || title == nil {
+		t.Fatal("corrected retry did not produce both native strings")
+	}
+}
+
 // TestGuardedWindowProcContainsPanic locks the invariant that a Go panic in the
 // window procedure is recovered rather than allowed to unwind into the native
 // DispatchMessage frame (which aborts the process). guardedWindowProc must call

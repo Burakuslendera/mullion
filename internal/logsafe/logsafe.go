@@ -2,6 +2,7 @@ package logsafe
 
 import (
 	"strings"
+	"unicode/utf8"
 )
 
 func Reason(err error) string {
@@ -34,6 +35,262 @@ func Reason(err error) string {
 // path is still a local filesystem path and still collapses to its file name.
 func Message(message string) string {
 	return reduceAroundURLs(message)
+}
+
+// DiagnosticLimit is the maximum number of bytes retained or logged for one
+// frontend-controlled diagnostic value. Diagnostic applies the bound before the
+// path and URL reducers run, then enforces it again on their output.
+const DiagnosticLimit = 2000
+
+const diagnosticInputLimit = DiagnosticLimit - 64
+
+// Diagnostic reduces an untrusted diagnostic value with bounded work and
+// bounded output. It keeps the first http(s) URL whose complete authority fits
+// the URL reducer's budget, even when a long plain-text prefix would otherwise
+// push that URL beyond the input bound. A URL authority is never cut: an
+// overlong authority is omitted instead of being printed as a believable host
+// prefix.
+//
+// The clone is intentional. Several diagnostic values live for the lifetime of
+// a Host; a short reduction must not retain a large frontend-owned backing
+// string.
+func Diagnostic(message string) string {
+	message = boundDiagnosticInput(message)
+	reduced := Message(message)
+	if len(reduced) > DiagnosticLimit {
+		reduced = strings.TrimSpace(boundForScanAt(reduced, DiagnosticLimit-len(truncationMarker))) + truncationMarker
+	}
+	return strings.Clone(reduced)
+}
+
+// DiagnosticFileName bounds a path from the tail before reducing it, because
+// the final component is the useful part. The marker makes a cut inside an
+// exceptionally long final component visible, and the clone prevents the
+// returned name from retaining the input's backing storage.
+func DiagnosticFileName(path string) string {
+	truncated := len(path) > diagnosticInputLimit
+	if truncated {
+		start := len(path) - diagnosticInputLimit
+		for start < len(path) && !utf8.RuneStart(path[start]) {
+			start++
+		}
+		path = path[start:]
+	}
+	name := FileName(path)
+	if truncated && !strings.ContainsAny(path, `/\`) {
+		name = truncationMarker + name
+	}
+	if len(name) > DiagnosticLimit {
+		start := len(name) - (DiagnosticLimit - len(truncationMarker))
+		for start < len(name) && !utf8.RuneStart(name[start]) {
+			start++
+		}
+		name = truncationMarker + name[start:]
+	}
+	return strings.Clone(name)
+}
+
+// boundDiagnosticInput caps the bytes that reach Message while reserving the
+// first meaningful URL. Screening is one linear, allocation-free pass; only the
+// first structurally valid, fixed-size candidate is copied for reduction.
+func boundDiagnosticInput(message string) string {
+	if len(message) <= diagnosticInputLimit {
+		return message
+	}
+	urlStart, urlValue := firstDiagnosticURL(message)
+	if urlValue == "" {
+		return boundForScanAt(message, diagnosticInputLimit)
+	}
+	plainLimit := diagnosticInputLimit - len(urlValue)
+	if plainLimit > 0 {
+		plainLimit--
+	}
+	if plainLimit > urlStart {
+		plainLimit = urlStart
+	}
+	plain := strings.TrimSpace(boundForScanAt(message[:urlStart], plainLimit))
+	if plain == "" {
+		return urlValue
+	}
+	return plain + " " + urlValue
+}
+
+// firstDiagnosticURL returns the first run that URL can reduce while keeping a
+// complete host. Candidate screening covers the parser's rejection conditions,
+// so malformed runs allocate nothing and cannot displace a later valid URL.
+func firstDiagnosticURL(message string) (int, string) {
+	for index := 0; index < len(message); {
+		offset := strings.IndexAny(message[index:], "hH")
+		if offset < 0 {
+			return 0, ""
+		}
+		index += offset
+		if !hasHTTPPrefix(message[index:]) {
+			index++
+			continue
+		}
+		end := urlRunEnd(message, index)
+		candidate, ok := diagnosticURLCandidate(message[index:end], terminatorAt(message, end))
+		if !ok {
+			index = end
+			continue
+		}
+		return index, candidate
+	}
+	return 0, ""
+}
+
+// diagnosticURLCandidate makes a fixed-size, parser-ready projection of one URL
+// run. It keeps the authority whole, validates path escapes before any parse,
+// completes the rune or %XX escape crossing the path budget, and carries query
+// and fragment presence without their values.
+func diagnosticURLCandidate(run string, terminator byte) (string, bool) {
+	schemeEnd := len("http://")
+	if len(run) >= len("https://") && strings.EqualFold(run[:len("https://")], "https://") {
+		schemeEnd = len("https://")
+	}
+
+	fragment := strings.IndexByte(run, '#')
+	headEnd := len(run)
+	hasFragment := fragment >= 0
+	if hasFragment {
+		headEnd = fragment
+	}
+	query := strings.IndexByte(run[:headEnd], '?')
+	hasQuery := query >= 0
+	if hasQuery {
+		headEnd = query
+	}
+
+	authorityEnd := headEnd
+	authorityComplete := headEnd < len(run)
+	if slash := strings.IndexByte(run[schemeEnd:headEnd], '/'); slash >= 0 {
+		authorityEnd = schemeEnd + slash
+		authorityComplete = true
+	}
+	if !isDiagnosticAuthorityShaped(run[schemeEnd:authorityEnd]) {
+		return "", false
+	}
+	if terminator != 0 && terminator != ' ' && !authorityComplete {
+		return "", false
+	}
+
+	head := run[:headEnd]
+	for index := schemeEnd; index < len(head); index++ {
+		value := head[index]
+		if value < ' ' || value == 0x7f {
+			return "", false
+		}
+		if value == '%' {
+			if index+2 >= len(head) || !isHexByte(head[index+1]) || !isHexByte(head[index+2]) {
+				return "", false
+			}
+			index += 2
+		}
+	}
+
+	candidateEnd := len(head)
+	if candidateEnd > URLLimit+1 {
+		candidateEnd = URLLimit + 1
+		if percent := strings.LastIndexByte(head[:candidateEnd], '%'); percent >= 0 && percent+3 > candidateEnd {
+			candidateEnd = percent + 3
+		}
+		runeEnd := candidateEnd
+		for runeEnd < len(head) && !utf8.RuneStart(head[runeEnd]) && runeEnd-candidateEnd < utf8.UTFMax {
+			runeEnd++
+		}
+		if runeEnd < len(head) && !utf8.RuneStart(head[runeEnd]) {
+			return "", false
+		}
+		candidateEnd = runeEnd
+	}
+
+	var candidate strings.Builder
+	candidate.Grow(candidateEnd + 2)
+	candidate.WriteString(head[:candidateEnd])
+	if hasQuery {
+		candidate.WriteByte('?')
+	}
+	if hasFragment {
+		candidate.WriteByte('#')
+	}
+	return candidate.String(), true
+}
+
+func isDiagnosticAuthorityShaped(authority string) bool {
+	if !isHostnameShaped(authority) {
+		return false
+	}
+	if authority[0] == '[' {
+		close := strings.IndexByte(authority, ']')
+		if close < 0 || strings.ContainsAny(authority[1:close], "[]") {
+			return false
+		}
+		remainder := authority[close+1:]
+		if remainder == "" {
+			return true
+		}
+		if remainder[0] != ':' {
+			return false
+		}
+		return isDecimal(remainder[1:])
+	}
+	if strings.ContainsAny(authority, "[]") || strings.Count(authority, ":") > 1 {
+		return false
+	}
+	if colon := strings.LastIndexByte(authority, ':'); colon >= 0 {
+		return isDecimal(authority[colon+1:])
+	}
+	return true
+}
+
+func isDecimal(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index := range len(value) {
+		if value[index] < '0' || value[index] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isHexByte(value byte) bool {
+	return value >= '0' && value <= '9' ||
+		value >= 'a' && value <= 'f' ||
+		value >= 'A' && value <= 'F'
+}
+
+// boundForScanAt is the fixed-limit form of boundForScan. If the cut interrupts
+// a URL run, it drops that run rather than manufacturing a shortened host.
+func boundForScanAt(raw string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if len(raw) <= limit {
+		return raw
+	}
+	bounded := prefixAtRuneBoundary(raw, limit)
+	for index := len(bounded) - 1; index >= 0; index-- {
+		if isASCIISpace(bounded[index]) {
+			break
+		}
+		if hasHTTPPrefix(bounded[index:]) {
+			return bounded[:index]
+		}
+	}
+	return bounded
+}
+
+func prefixAtRuneBoundary(raw string, limit int) string {
+	if len(raw) <= limit {
+		return raw
+	}
+	for limit > 0 && !utf8.RuneStart(raw[limit]) {
+		limit--
+	}
+	return raw[:limit]
 }
 
 // messagePlain is Message without the URL protection: the reduction every value

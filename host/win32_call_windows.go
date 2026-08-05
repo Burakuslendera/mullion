@@ -65,6 +65,22 @@ func unregisterWindowClass(className string, instance windowHandle) {
 	procUnregisterClass.Call(uintptr(unsafe.Pointer(name)), uintptr(instance))
 }
 
+// prepareWindowStrings performs every fallible string conversion before
+// createWin32Window acquires ownership of a registered class. In particular, a
+// caller-supplied title containing NUL must fail here: returning after
+// RegisterClassEx would strand that class for the rest of the process.
+func prepareWindowStrings(className, title string) (*uint16, *uint16, error) {
+	class, err := windows.UTF16PtrFromString(className)
+	if err != nil {
+		return nil, nil, err
+	}
+	windowTitle, err := windows.UTF16PtrFromString(title)
+	if err != nil {
+		return nil, nil, err
+	}
+	return class, windowTitle, nil
+}
+
 // createWin32Window registers the class and creates the HWND. It is named apart
 // from (*Host).createWindow, which is the caller: the two would otherwise shadow
 // each other confusingly on the same receiver.
@@ -73,17 +89,13 @@ func unregisterWindowClass(className string, instance windowHandle) {
 // CW_USEDEFAULT (0x80000000) - the fallback when placement could not be
 // resolved - and that constant does not fit an int32.
 func (host *Host) createWin32Window(className, title string, instance windowHandle, wndProc uintptr, x, y uintptr, width, height int32) (windowHandle, error) {
+	class, windowTitle, err := prepareWindowStrings(className, title)
+	if err != nil {
+		return 0, err
+	}
 	cursor, _, _ := procLoadCursor.Call(0, 32512)
 	if err := registerWindowClass(className, instance, windowHandle(cursor), wndProc); err != nil {
 		return 0, fmt.Errorf("RegisterClassEx: %w", err)
-	}
-	class, err := windows.UTF16PtrFromString(className)
-	if err != nil {
-		return 0, err
-	}
-	windowTitle, err := windows.UTF16PtrFromString(title)
-	if err != nil {
-		return 0, err
 	}
 	result, _, callErr := procCreateWindowEx.Call(
 		0,

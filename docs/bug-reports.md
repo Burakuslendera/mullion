@@ -16,11 +16,14 @@ go install ./cmd/mullion                                             # keep it: 
 ```
 
 It prints a paste-ready block: Windows build (corrected — the registry still says
-"Windows 10" on Windows 11), GPUs, every monitor with its **physical** resolution,
-scaling and work area, and the WebView2 runtime — not the one the registry
-advertises, but **the one mullion would actually load**, together with whether it
-still exports the entry point the host calls. Exit code 0 means mullion can start
-on that machine. See [decisions/0008](./decisions/0008-doctor-is-a-go-command.md).
+"Windows 10" on Windows 11), process architecture, GPUs, every monitor with its
+**physical** resolution, scaling and work area, and the WebView2 runtime — not
+the one the registry advertises, but **the one mullion would actually load**,
+together with whether it still exports the entry point the host calls. Exit code
+0 means mullion can start on that process architecture; unsupported Windows/386
+and Windows/ARM64 targets exit 1 with the reason. See
+[decisions/0008](./decisions/0008-doctor-is-a-go-command.md) and
+[decisions/0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md).
 
 The monitor section is why this is a command rather than a checklist. Windows
 reports a *virtualised* resolution to a process that is not DPI-aware, so a
@@ -75,3 +78,5 @@ A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
 > Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new file - the bug-report contract moved verbatim out of verification.md at the 400-line reference-doc limit, so the cancel-gate checklist item could take what decisions/0027 added to it.
+
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: make doctor reports distinguish the supported Windows/amd64 runtime target from unsupported Windows architectures (decision 0034).

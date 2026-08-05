@@ -39,10 +39,12 @@ single Go method.
 go get github.com/Burakuslendera/mullion/host
 ```
 
-Requires Go 1.24 or newer, Windows, and the [WebView2 Runtime][runtime] (shipped
-with Windows 11 and current Windows 10). Non-Windows builds compile — `Run`
-returns `ErrUnsupportedPlatform` — so a cross-platform program does not need build
-tags to depend on this package.
+Requires Go 1.24 or newer, Windows on amd64, and the [WebView2 Runtime][runtime]
+(shipped with Windows 11 and current Windows 10). Windows/386 and Windows/ARM64
+builds remain source-portability checks only: at runtime they return a clear
+unsupported-architecture error before loading WebView2. Non-Windows builds also
+compile — `Run` returns `ErrUnsupportedPlatform` — so a cross-platform program
+does not need build tags to depend on this package.
 
 Go 1.24 is a floor this library holds to deliberately: it uses no standard-library
 symbol newer than 1.24, and CI builds and tests both 1.24 and the current release
@@ -260,6 +262,10 @@ the entry point mullion calls.** It starts no browser and opens no window. Exit
 code `0` means mullion can start here; `1` means it cannot, and the block says
 why.
 
+On Windows/386 or Windows/ARM64, that block reports the unsupported process
+architecture without probing or loading a WebView2 DLL; a cross-build alone
+does not make the COM ABI usable.
+
 Monitors are measured with per-monitor DPI awareness declared first. Windows
 reports a *virtualised* resolution to a process that has not asked, so a
 hand-written "1536x864" for a 1920x1080 monitor at 125% is the one number a DPI
@@ -328,9 +334,11 @@ above was taken that way, on the same flat ground.
   through the SDK loader (which the Evergreen runtime does not even ship).
   Microsoft documents that entry point as subject to change. If it ever does, the
   failure is a clean error at startup, not a crash — a test asserts the export
-  still exists, and `mullion doctor` answers the same question on any machine, in
-  one command, without a checkout.
-- **Windows only**, by construction.
+  still exists, and `mullion doctor` answers the same question in one command,
+  without a checkout.
+- **WebView2 hosting is Windows/amd64 only**, by construction. Windows/386 and
+  Windows/ARM64 remain compile-portable, but `Run` returns the explicit
+  unsupported-architecture error before COM initialization or window creation.
 
 ## Status
 

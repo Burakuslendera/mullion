@@ -52,10 +52,10 @@ func (host *Host) StartDrag() {
 func (host *Host) StartResize(edge string) {
 	hit, ok := resizeHitTestForEdge(edge)
 	if !ok {
-		host.log.Warn("mullion: resize requested with unknown edge, edge=" + logsafe.Message(edge))
+		host.log.Warn("mullion: resize requested with unknown edge, edge=" + logsafe.Diagnostic(edge))
 		return
 	}
-	host.log.Debug("mullion: resize requested, edge=" + logsafe.Message(edge))
+	host.log.Debug("mullion: resize requested, edge=" + logsafe.Diagnostic(edge))
 	host.warnIf("resize post", postWindowMessageArgs(host.window(), wmNativeStartResize, uintptr(hit), 0))
 }
 

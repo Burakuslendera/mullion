@@ -58,12 +58,12 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 		// letting a hostile data: iframe confirm it holds the restricted admission.
 		// The error surface only ever calls reserved methods, so it never awaits a
 		// reply this withholds (issue #70).
-		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Message(request.Method))
+		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Diagnostic(request.Method))
 		return ""
 	}
 
 	if host.config.Bridge == nil {
-		host.log.Warn("mullion: bridge method unhandled, no bridge configured, method=" + logsafe.Message(request.Method))
+		host.log.Warn("mullion: bridge method unhandled, no bridge configured, method=" + logsafe.Diagnostic(request.Method))
 		return bridgeError(request.ID, "no bridge configured")
 	}
 	host.recordBridgeCall(request.Method, "received")
@@ -148,6 +148,7 @@ func bridgeError(id string, reason string) string {
 // recordBridgeCall feeds the diagnostics that the render watchdog reports when
 // the frontend never signals readiness.
 func (host *Host) recordBridgeCall(method string, status string) {
+	method = logsafe.Diagnostic(method)
 	host.diagnostics.recordBridge(method, status)
-	host.log.Debug("mullion: bridge method " + logsafe.Message(status) + ", method=" + logsafe.Message(method))
+	host.log.Debug("mullion: bridge method " + logsafe.Message(status) + ", method=" + method)
 }

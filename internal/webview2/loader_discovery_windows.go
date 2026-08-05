@@ -33,6 +33,11 @@ const (
 // need to reproduce a bug against an exact browser build.
 const BrowserExecutableFolderEnv = "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER"
 
+// ErrUnsupportedArchitecture reports a Windows target whose COM ABI this
+// package does not implement. Source builds remain portable, but hosting cannot
+// proceed.
+var ErrUnsupportedArchitecture = errors.New("webview2: unsupported Windows architecture")
+
 // runtimeSource records how a runtime was found, so a failure to start can name
 // the thing that was wrong rather than "WebView2 not found".
 type runtimeSource string
@@ -103,11 +108,28 @@ func RuntimeClientPath() (string, error) {
 }
 
 func findRuntime() (resolved, error) {
-	arch, err := archFolder(runtime.GOARCH)
+	return findRuntimeForArchitecture(
+		runtime.GOARCH,
+		discoverCandidates,
+		fileExists,
+		versionOfRuntime,
+	)
+}
+
+// findRuntimeForArchitecture keeps the architecture rejection ahead of every
+// discovery, disk, and DLL-facing dependency. The injected functions make that
+// ordering observable without a registry, runtime DLL, or window.
+func findRuntimeForArchitecture(
+	goarch string,
+	discover func() []candidate,
+	exists func(string) bool,
+	version func(clientDLL, folder string) string,
+) (resolved, error) {
+	arch, err := archFolder(goarch)
 	if err != nil {
 		return resolved{}, err
 	}
-	found, err := selectRuntime(discoverCandidates(), arch, fileExists)
+	found, err := selectRuntime(discover(), arch, exists)
 	if err != nil {
 		return resolved{}, err
 	}
@@ -116,7 +138,7 @@ func findRuntime() (resolved, error) {
 		// from the runtime itself. This is not merely cosmetic: the version is
 		// sent back to the runtime as the target compatible browser version, and
 		// an absent one is an E_INVALIDARG.
-		found.Version = versionOfRuntime(found.ClientDLL, found.Folder)
+		found.Version = version(found.ClientDLL, found.Folder)
 	}
 	return found, nil
 }
@@ -249,20 +271,16 @@ func selectRuntime(candidates []candidate, arch string, exists func(string) bool
 
 // --- pure helpers (unit-tested without a runtime present) -------------------
 
-// archFolder maps a Go architecture to the runtime's per-architecture folder.
-// The client DLL is native code: a 386 process cannot load the x64 build, so
-// this must follow the process, not the machine.
+// archFolder is the single runtime-architecture gate. The COM call encodings
+// used by this package follow the Windows x64 ABI, so finding a native client
+// DLL for another process architecture would not make that architecture safe to
+// host. Keep non-amd64 source builds portable, but reject them before discovery
+// touches the registry or disk and before a client DLL can be loaded.
 func archFolder(goarch string) (string, error) {
-	switch goarch {
-	case "amd64":
+	if goarch == "amd64" {
 		return "x64", nil
-	case "386":
-		return "x86", nil
-	case "arm64":
-		return "arm64", nil
-	default:
-		return "", fmt.Errorf("webview2: no WebView2 runtime exists for GOARCH=%s", goarch)
 	}
+	return "", fmt.Errorf("%w: GOARCH=%s; WebView2 hosting is supported only on windows/amd64", ErrUnsupportedArchitecture, goarch)
 }
 
 // clientPaths lists where the client DLL may sit inside a runtime folder, most

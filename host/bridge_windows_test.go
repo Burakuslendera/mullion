@@ -3,8 +3,11 @@
 package host
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
 // TestBridgeHandlesWindowControlsWithoutAConfiguredBridge is the whole point of
@@ -52,6 +55,34 @@ func TestBridgeForwardsUnknownMethodsVerbatim(t *testing.T) {
 	}
 	if reply != `{"id":"9","ok":true,"result":["a"]}` {
 		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestBridgeBoundsDiagnosticsButForwardsLargeRawRequestVerbatim(t *testing.T) {
+	method := "Call" + strings.Repeat(".:;,", logsafe.DiagnosticLimit*2)
+	raw := `{"id":"large","method":` + strconv.Quote(method) + `,"args":[{"opaque":"unchanged"}]}`
+	var seen string
+	host, logger := newTestHost(t, Config{
+		StartHidden: true,
+		Bridge: func(message string) string {
+			seen = message
+			return ""
+		},
+	})
+
+	host.handleWebMessage(raw, true)
+
+	if seen != raw {
+		t.Fatalf("Bridge received a rewritten request: got len %d, want len %d", len(seen), len(raw))
+	}
+	host.diagnostics.mu.Lock()
+	lastBridge := host.diagnostics.lastBridge
+	host.diagnostics.mu.Unlock()
+	if len(lastBridge) > logsafe.DiagnosticLimit {
+		t.Fatalf("retained lastBridge len = %d, limit = %d", len(lastBridge), logsafe.DiagnosticLimit)
+	}
+	if strings.Contains(logger.String(), method) {
+		t.Fatal("logger received the unbounded frontend method")
 	}
 }
 
@@ -152,5 +183,32 @@ func TestBridgeRestrictedSourceReachesOnlyReservedMethods(t *testing.T) {
 	host.handleWebMessage(`{"id":"3","method":"GetSecret","args":[]}`, true)
 	if !called {
 		t.Fatal("a trusted source did not reach Config.Bridge")
+	}
+}
+
+func TestRestrictedSourceDiagnosticsUseTheSameBoundedBoundary(t *testing.T) {
+	host, logger := newTestHost(t, Config{StartHidden: true})
+	phase := strings.Repeat(".:;,", logsafe.DiagnosticLimit*2)
+	phaseRaw := `{"id":"phase","method":"` + methodPhase + `","args":[` + strconv.Quote(phase) + `]}`
+	if reply := host.handleWebMessage(phaseRaw, false); !strings.Contains(reply, `"ok":true`) {
+		t.Fatalf("restricted phase was not handled: %q", reply)
+	}
+
+	host.diagnostics.mu.Lock()
+	retainedPhase := host.diagnostics.lastFrontendPhase
+	host.diagnostics.mu.Unlock()
+	if len(retainedPhase) > logsafe.DiagnosticLimit {
+		t.Fatalf("restricted retained phase len = %d, limit = %d", len(retainedPhase), logsafe.DiagnosticLimit)
+	}
+
+	detail := strings.Repeat("context ", logsafe.DiagnosticLimit) +
+		"https://mullion.localhost/app/main.js?secret=value"
+	diagnosticRaw := `{"id":"diagnostic","method":"` + methodDiagnostic +
+		`","args":["error",` + strconv.Quote(detail) + `]}`
+	if reply := host.handleWebMessage(diagnosticRaw, false); !strings.Contains(reply, `"ok":true`) {
+		t.Fatalf("restricted diagnostic was not handled: %q", reply)
+	}
+	if !strings.Contains(logger.String(), "https://mullion.localhost/app/main.js?") {
+		t.Fatalf("restricted diagnostic lost its first URL:\n%s", logger.String())
 	}
 }
