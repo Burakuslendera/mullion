@@ -130,6 +130,21 @@ func TestFormatOnAPlatformThatCannotRunTheWindow(t *testing.T) {
 	}
 }
 
+func TestFormatExplainsUnsupportedWindowsArchitecture(t *testing.T) {
+	report := Report{Mullion: "v0.1.0", OS: "Windows 11", Arch: "arm64", Go: "go1.24.0"}
+	report.WebView2.Problem = "webview2: unsupported Windows architecture: GOARCH=arm64; WebView2 hosting is supported only on windows/amd64"
+
+	if report.Usable() {
+		t.Fatal("an unsupported Windows architecture cannot be reported as usable")
+	}
+	out := Format(report)
+	for _, want := range []string{"none usable", "GOARCH=arm64", "windows/amd64"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report does not explain the unsupported architecture; missing %q:\n%s", want, out)
+		}
+	}
+}
+
 // The version line exists to name the code that was running. "go run" stamps no
 // VCS information, so from a checkout it names nothing - and a report that
 // quietly prints "devel" has spent its most important line saying nothing at

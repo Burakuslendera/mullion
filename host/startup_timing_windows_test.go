@@ -82,3 +82,25 @@ func TestStartupTimingCountsWarnings(t *testing.T) {
 		t.Fatalf("counters are not per-host:\n%s", logText)
 	}
 }
+
+func TestStartupTimingCountsOnlyCurrentReusableHostRun(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	host.log.Warn("mullion: previous run warning")
+	host.log.Warn("mullion: current run warning")
+
+	base := time.Unix(100, 0)
+	host.startupTiming = &startupTiming{
+		enabled:       true,
+		startedAt:     base,
+		windowVisible: base.Add(10 * time.Millisecond),
+		frontendReady: base.Add(20 * time.Millisecond),
+		warnBase:      1,
+		errorBase:     0,
+	}
+	host.logStartupTimingSummary()
+
+	logText := logger.String()
+	if !strings.Contains(logText, "SessionWarnCount=1") || !strings.Contains(logText, "SessionErrorCount=0") {
+		t.Fatalf("summary included a previous Run's counters:\n%s", logText)
+	}
+}

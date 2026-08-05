@@ -157,16 +157,38 @@ func shouldNotifyBoundsSource(source string) bool {
 }
 
 // requestDeferredBoundsSync posts a second bounds sync 16ms after a window
-// action whose final bounds may not have settled when the immediate sync ran
-// (restore, maximize, exit-size-move). source is a wParam code, not a string:
-// the deferred post used to drop its label and always log as the generic
-// deferred resync, so a bounds regression after a restore could not be told
-// from one after an exit-size-move (issue #46). Carrying the code keeps them
-// distinct, and distinct from the immediate sync of the same event.
+// action whose final bounds may not have settled. The scheduled Run generation
+// and HWND are both required at fire time: a timer from an ending session must
+// neither look up nor post to a newer session's recycled handle.
 func (host *Host) requestDeferredBoundsSync(source uintptr) {
+	host.runMu.Lock()
+	generation := host.runGeneration
+	running := host.running
+	host.mu.RLock()
+	hwnd := host.hwnd
+	host.mu.RUnlock()
+	host.runMu.Unlock()
+	if !running || hwnd == 0 {
+		return
+	}
 	time.AfterFunc(16*time.Millisecond, func() {
-		host.postBoundsSync("deferred bounds sync post", source)
+		host.runMu.Lock()
+		host.mu.RLock()
+		currentHWND := host.hwnd
+		if !deferredBoundsSyncBelongsToRun(generation, host.runGeneration, host.running, hwnd, currentHWND) {
+			host.mu.RUnlock()
+			host.runMu.Unlock()
+			return
+		}
+		err := postWindowMessageArgs(hwnd, wmNativeSyncBounds, source, 0)
+		host.mu.RUnlock()
+		host.runMu.Unlock()
+		host.warnIf("deferred bounds sync post", err)
 	})
+}
+
+func deferredBoundsSyncBelongsToRun(scheduledGeneration, currentGeneration uint64, running bool, scheduledHWND, currentHWND windowHandle) bool {
+	return running && scheduledGeneration == currentGeneration && scheduledHWND != 0 && scheduledHWND == currentHWND
 }
 
 // A wmNativeSyncBounds message carries the origin of the sync request in

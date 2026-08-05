@@ -8,32 +8,102 @@ package webview2
 // The tests that do look at this machine live in loader_machine_windows_test.go.
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestArchFolder(t *testing.T) {
-	cases := []struct {
-		goarch string
-		want   string
-	}{
-		{"amd64", "x64"},
-		{"386", "x86"},
-		{"arm64", "arm64"},
+func TestArchFolderSelectsAMD64Runtime(t *testing.T) {
+	got, err := archFolder("amd64")
+	if err != nil {
+		t.Fatalf("archFolder(amd64): %v", err)
 	}
-	for _, testCase := range cases {
-		got, err := archFolder(testCase.goarch)
-		if err != nil {
-			t.Errorf("archFolder(%q): %v", testCase.goarch, err)
+	if got != "x64" {
+		t.Fatalf("archFolder(amd64) = %q, want x64", got)
+	}
+}
+
+func TestArchFolderRejectsUnsupportedWindowsArchitectures(t *testing.T) {
+	for _, goarch := range []string{"386", "arm64", "riscv64"} {
+		folder, err := archFolder(goarch)
+		if err == nil {
+			t.Errorf("archFolder(%q) = %q, nil; want an unsupported-architecture error", goarch, folder)
 			continue
 		}
-		if got != testCase.want {
-			t.Errorf("archFolder(%q) = %q, want %q", testCase.goarch, got, testCase.want)
+		if folder != "" {
+			t.Errorf("archFolder(%q) folder = %q, want empty", goarch, folder)
+		}
+		if !errors.Is(err, ErrUnsupportedArchitecture) {
+			t.Errorf("archFolder(%q) error = %v, want ErrUnsupportedArchitecture", goarch, err)
+		}
+		for _, want := range []string{"unsupported Windows architecture", "GOARCH=" + goarch, "windows/amd64"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("archFolder(%q) error = %q, want %q", goarch, err, want)
+			}
 		}
 	}
-	if _, err := archFolder("riscv64"); err == nil {
-		t.Fatal("archFolder(riscv64) must fail: loading an x64 DLL into a riscv64 process is a crash, not a fallback")
+}
+
+func TestFindRuntimeRejectsUnsupportedArchitectureBeforeDiscovery(t *testing.T) {
+	for _, goarch := range []string{"386", "arm64"} {
+		var calls []string
+		found, err := findRuntimeForArchitecture(
+			goarch,
+			func() []candidate {
+				calls = append(calls, "discovery")
+				return nil
+			},
+			func(string) bool {
+				calls = append(calls, "disk")
+				return false
+			},
+			func(string, string) string {
+				calls = append(calls, "DLL version")
+				return ""
+			},
+		)
+		if !errors.Is(err, ErrUnsupportedArchitecture) {
+			t.Errorf("findRuntimeForArchitecture(%q) error = %v, want ErrUnsupportedArchitecture", goarch, err)
+		}
+		if found != (resolved{}) {
+			t.Errorf("findRuntimeForArchitecture(%q) = %+v, want zero result", goarch, found)
+		}
+		if len(calls) != 0 {
+			t.Errorf("findRuntimeForArchitecture(%q) called %v before rejecting the architecture", goarch, calls)
+		}
+	}
+}
+
+func TestFindRuntimeAMD64ProceedsThroughDiscovery(t *testing.T) {
+	const folder = `C:\runtime`
+	var calls []string
+	found, err := findRuntimeForArchitecture(
+		"amd64",
+		func() []candidate {
+			calls = append(calls, "discovery")
+			return []candidate{{source: sourceEnvOverride, folders: []string{folder}, pinned: true}}
+		},
+		func(string) bool {
+			calls = append(calls, "disk")
+			return true
+		},
+		func(clientDLL, gotFolder string) string {
+			calls = append(calls, "DLL version")
+			if gotFolder != folder || clientDLL == "" {
+				t.Errorf("version probe received client=%q folder=%q", clientDLL, gotFolder)
+			}
+			return "150.0.4078.65"
+		},
+	)
+	if err != nil {
+		t.Fatalf("findRuntimeForArchitecture(amd64): %v", err)
+	}
+	if found.Folder != folder || found.Version != "150.0.4078.65" || !found.Fixed {
+		t.Fatalf("findRuntimeForArchitecture(amd64) = %+v, want selected fixed runtime", found)
+	}
+	if got := strings.Join(calls, ","); got != "discovery,disk,DLL version" {
+		t.Fatalf("amd64 calls = %q, want discovery,disk,DLL version", got)
 	}
 }
 

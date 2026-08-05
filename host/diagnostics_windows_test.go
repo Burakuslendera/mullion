@@ -5,6 +5,9 @@ package host
 import (
 	"strings"
 	"testing"
+	"unsafe"
+
+	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
 func TestNativeDiagnosticsTimeoutSummary(t *testing.T) {
@@ -72,5 +75,35 @@ func TestFrontendDiagnosticAssetSanitizesPath(t *testing.T) {
 	got := frontendDiagnosticAsset(`C:\Users\Example User\AppData\Acme\src\secret.js`)
 	if got != "secret.js" {
 		t.Fatalf("frontendDiagnosticAsset() = %q, want secret.js", got)
+	}
+}
+
+func TestNativeDiagnosticsBoundsAndDetachesFrontendControlledState(t *testing.T) {
+	diagnostics := newNativeDiagnostics()
+	path := strings.Repeat("x", logsafe.DiagnosticLimit*4) + `/tiny.js`
+	large := strings.Repeat(".:;,", logsafe.DiagnosticLimit*2)
+	diagnostics.recordAsset(assetResponse{
+		status:      200,
+		contentType: "text/javascript",
+		request:     assetRequest{path: path, category: large},
+	}, large)
+
+	diagnostics.mu.Lock()
+	asset := diagnostics.lastAsset
+	diagnostics.mu.Unlock()
+	if asset.name != "tiny.js" {
+		t.Fatalf("retained asset name = %q, want tiny.js", asset.name)
+	}
+	for name, value := range map[string]string{
+		"name": asset.name, "category": asset.category, "method": asset.method,
+	} {
+		if len(value) > logsafe.DiagnosticLimit {
+			t.Fatalf("retained asset %s len = %d, limit = %d", name, len(value), logsafe.DiagnosticLimit)
+		}
+	}
+	pathStart := uintptr(unsafe.Pointer(unsafe.StringData(path)))
+	nameStart := uintptr(unsafe.Pointer(unsafe.StringData(asset.name)))
+	if nameStart >= pathStart && nameStart < pathStart+uintptr(len(path)) {
+		t.Fatal("retained asset name shares the large request path's backing storage")
 	}
 }

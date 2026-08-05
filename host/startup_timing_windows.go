@@ -21,6 +21,8 @@ type startupTiming struct {
 	frontendShellReady time.Time
 	frontendReady      time.Time
 	logged             bool
+	warnBase           int64
+	errorBase          int64
 }
 
 func newStartupTiming(startHidden bool) *startupTiming {
@@ -80,8 +82,8 @@ func (host *Host) logStartupTimingSummary() {
 		", LaunchToFrontendShellReadyMs=" + formatTimingMs(timing.startedAt, timing.frontendShellReady) +
 		", LaunchToFrontendReadyMs=" + formatTimingMs(timing.startedAt, timing.frontendReady) +
 		", WindowVisibleToFrontendReadyMs=" + formatTimingMs(timing.windowVisible, timing.frontendReady) +
-		", SessionWarnCount=" + strconv.FormatInt(host.log.WarnCount(), 10) +
-		", SessionErrorCount=" + strconv.FormatInt(host.log.ErrorCount(), 10))
+		", SessionWarnCount=" + strconv.FormatInt(host.log.WarnCount()-timing.warnBase, 10) +
+		", SessionErrorCount=" + strconv.FormatInt(host.log.ErrorCount()-timing.errorBase, 10))
 }
 
 func formatTimingMs(start time.Time, end time.Time) string {

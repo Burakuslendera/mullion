@@ -131,6 +131,21 @@ printing what precedes it prints a prefix of the real host. Neither is a
 truncation, and both print a shortened host as a whole one. A rule of the form
 "this is safe because X holds" is owed a re-check by whoever changes X.
 
+**A finite frontend boundary is the deliberate exception, not a blind input
+cut.** Issue #88 made the work and retained-state problem concrete: bridge
+methods, phases and diagnostic details could be arbitrarily long, and one 64 KiB
+punctuation suffix made the old reducer copy about 2 GiB. Frontend-controlled
+diagnostics now select at most 1,936 bytes before reduction and emit at most
+2,000. The selector reserves the first http(s) run only when its authority fits
+whole and no ASCII control whitespace cut that authority open. A long path is
+cut only after the authority, with a crossing `%XX`/UTF-8 unit completed and
+query/fragment presence retained; an authority that cannot fit is omitted. This
+is why the bound does not use a fixed prefix or `boundForScan`'s
+safe-but-destructive rule of deleting the URL that a cut interrupts. The
+resulting string is cloned before retention.
+Application bridge payloads are outside this diagnostic limit and still pass to
+`Config.Bridge` unchanged ([0035](decisions/0035-frontend-diagnostics-are-bounded.md)).
+
 The decisions are [0025](decisions/0025-urls-are-logged-as-urls.md) and
 [0028](decisions/0028-message-keeps-the-urls-inside-it.md).
 
@@ -139,6 +154,6 @@ The decisions are [0025](decisions/0025-urls-are-logged-as-urls.md) and
 1. **A data: document reports no source.** Identify your own surfaces from navigation state you already hold, not by parsing the source harder. (§1)
 2. **An ambiguous status code is not a diagnosis.** The same failure status meant two different things; the state that told them apart was already recorded at the navigation's start. (§1)
 3. **A sanitiser can remove the wrong half.** Reducing more than intended is not automatically safe: the URL reducer deleted the host and kept the query, which is the identifying half gone and the disclosing half kept. (§2)
-4. **Bound the output, not the input.** Truncating before parsing produces a well-formed value that names something else; a well-formed lie beats visible garbage past every reader. (§2)
+4. **Never use a blind input prefix.** Bound the parsed output, or select bounded input only after proving a URL authority stays whole; a well-formed lie beats visible garbage past every reader. (§2)
 
-> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: new file - the data: source and sanitiser dead ends moved verbatim out of lessons-and-dead-ends.md, which had reached 384 of its 400 lines with a further dead end waiting to be written. Their four short-version items came with them. The bodies are unchanged; only the section numbers are, and decisions/0017's two references to "§14" now point here.
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: recorded the issue #88 exception to the output-only rule: frontend diagnostics select bounded input while preserving one complete, control-safe URL authority, completing split escapes and markers, then enforce a 2,000-byte output and detach retained values (decision 0035).

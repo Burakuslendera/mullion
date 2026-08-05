@@ -40,13 +40,26 @@ type assetDiagnostic struct {
 func newNativeDiagnostics() *nativeDiagnostics {
 	return &nativeDiagnostics{lastFrontendPhase: "startup"}
 }
+func (diagnostics *nativeDiagnostics) reset() {
+	if diagnostics == nil {
+		return
+	}
+	diagnostics.mu.Lock()
+	diagnostics.lastFrontendPhase = "startup"
+	diagnostics.lastAsset = assetDiagnostic{}
+	diagnostics.documentCount = 0
+	diagnostics.stylesheetCount = 0
+	diagnostics.scriptCount = 0
+	diagnostics.lastBridge = ""
+	diagnostics.mu.Unlock()
+}
 
 func (diagnostics *nativeDiagnostics) recordAsset(response assetResponse, method string) {
 	if diagnostics == nil {
 		return
 	}
 	item := assetDiagnostic{
-		name:        logsafe.FileName(response.request.path),
+		name:        logsafe.DiagnosticFileName(response.request.path),
 		category:    safeDiagnosticValue(response.request.category),
 		method:      safeDiagnosticValue(method),
 		contentType: safeDiagnosticValue(response.contentType),
@@ -82,8 +95,10 @@ func (diagnostics *nativeDiagnostics) recordBridge(method string, status string)
 	if diagnostics == nil {
 		return
 	}
+	method = safeDiagnosticValue(method)
+	status = safeDiagnosticValue(status)
 	diagnostics.mu.Lock()
-	diagnostics.lastBridge = safeDiagnosticValue(method) + ":" + safeDiagnosticValue(status)
+	diagnostics.lastBridge = logsafe.Diagnostic(method + ":" + status)
 	diagnostics.mu.Unlock()
 }
 
@@ -128,14 +143,14 @@ func (provider *assetProvider) logAssetResponseDebug(response assetResponse, met
 		return
 	}
 	provider.log.Debug("mullion: asset response served, status=" + strconv.Itoa(response.status) +
-		", category=" + logsafe.Message(response.request.category) +
-		", asset=" + logsafe.FileName(response.request.path) +
-		", method=" + logsafe.Message(method) +
+		", category=" + logsafe.Diagnostic(response.request.category) +
+		", asset=" + logsafe.DiagnosticFileName(response.request.path) +
+		", method=" + logsafe.Diagnostic(method) +
 		", content_type=" + safeContentTypeForLog(response.contentType))
 }
 
 func safeDiagnosticValue(value string) string {
-	return defaultDiagnosticValue(logsafe.Message(value))
+	return defaultDiagnosticValue(logsafe.Diagnostic(value))
 }
 
 func defaultDiagnosticValue(value string) string {
@@ -153,5 +168,5 @@ func safeContentTypeForLog(contentType string) string {
 	if contentType == "" {
 		return "unknown"
 	}
-	return logsafe.Message(contentType)
+	return logsafe.Diagnostic(contentType)
 }

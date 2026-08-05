@@ -63,6 +63,164 @@ func TestDestroyWindowOutsideLoopIsANoOpWithoutAWindow(t *testing.T) {
 		t.Fatalf("teardown ran without a window:\n%s", logger.String())
 	}
 }
+func TestDestroyWindowOutsideLoopDrainsQuitAfterHandleClear(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.windowDestroyed = true
+	host.quitPending = true
+
+	host.destroyWindowOutsideLoop("mid_embed_destroy")
+
+	if host.quitPending {
+		t.Fatal("post-create cleanup returned on a zero HWND without discharging pending WM_QUIT ownership")
+	}
+}
+
+func TestMessageLoopExitTeardownDecisionCoversZeroAndMinusOne(t *testing.T) {
+	for _, test := range []struct {
+		result int32
+		want   bool
+	}{
+		{result: -1, want: true},
+		{result: 0, want: true},
+		{result: 1, want: false},
+	} {
+		if got := messageLoopExitNeedsTeardown(test.result); got != test.want {
+			t.Errorf("messageLoopExitNeedsTeardown(%d) = %v, want %v", test.result, got, test.want)
+		}
+	}
+}
+func TestWindowExitCleanupDecisionOwnsLiveWindowAndPendingQuit(t *testing.T) {
+	tests := []struct {
+		name                   string
+		hwnd                   windowHandle
+		destroyed              bool
+		quitPending            bool
+		wantDestroy, wantDrain bool
+	}{
+		{name: "no window", hwnd: 0},
+		{name: "mid-embed destroy with cleared handle", quitPending: true, wantDrain: true},
+		{name: "pre-loop or loop exit with live window", hwnd: 0x1234, wantDestroy: true, wantDrain: true},
+		{name: "destroy already dispatched", hwnd: 0x1234, destroyed: true, quitPending: true, wantDrain: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			destroy, drain := windowExitCleanupDecision(test.hwnd, test.destroyed, test.quitPending)
+			if destroy != test.wantDestroy || drain != test.wantDrain {
+				t.Fatalf("decision = (destroy=%v, drain=%v), want (%v, %v)", destroy, drain, test.wantDestroy, test.wantDrain)
+			}
+		})
+	}
+}
+
+// Shell readiness may arrive while WebView2's embed pump is still inside Run,
+// before Run reaches startStartupShowGate. Once released, the gate must never
+// arm a timer afterward.
+func TestStartupShowGateCannotArmAfterEarlyRelease(t *testing.T) {
+	host, logger := newTestHost(t, Config{ShowTimeout: time.Hour})
+	host.requestStartupShow("frontend_shell_ready")
+	host.startStartupShowGate()
+
+	host.startupMu.Lock()
+	timer := host.startupShowTimer
+	released := host.startupShowReleased
+	host.startupMu.Unlock()
+	if timer != nil {
+		t.Fatal("startup show gate armed after its once-only release")
+	}
+	if !released {
+		t.Fatal("startup show gate did not remember its once-only release")
+	}
+	if strings.Contains(logger.String(), "frontend_shell_timeout") {
+		t.Fatal("early shell readiness emitted a false timeout warning")
+	}
+}
+
+func TestFiredStartupShowTimerIsDetached(t *testing.T) {
+	host, _ := newTestHost(t, Config{ShowTimeout: time.Hour})
+	host.startStartupShowGate()
+	host.startupMu.Lock()
+	timer := host.startupShowTimer
+	host.startupMu.Unlock()
+	if timer == nil {
+		t.Fatal("startup show gate did not arm")
+	}
+	timer.Stop()
+	host.fireStartupShowGate(timer)
+	host.startupMu.Lock()
+	retained := host.startupShowTimer
+	host.startupMu.Unlock()
+	if retained != nil {
+		t.Fatal("startup show gate retained its fired timer")
+	}
+}
+
+// A Host supports sequential Run sessions. beginRun is the headless boundary
+// that restores per-window state; the callback itself is process-lifetime and
+// must be retained rather than consuming another callback-table slot.
+func TestBeginRunResetsReusableHostSessionState(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.windowDestroyed = true
+	host.startupShowReleased = true
+	host.wndProc = 0x1234
+	host.log.Warn("previous session")
+	host.frontendReady = true
+	host.frontendShellReady = true
+	oldTiming := host.startupTiming
+	oldDiagnostics := host.diagnostics
+	oldLog := host.log
+	oldDiagnostics.recordFrontendPhase("previous")
+
+	if err := host.beginRun(); err != nil {
+		t.Fatalf("beginRun after a completed session = %v", err)
+	}
+	if host.windowDestroyed {
+		t.Fatal("a new Run inherited the previous window's destruction state")
+	}
+	if host.startupShowReleased {
+		t.Fatal("a new Run inherited the previous startup show release")
+	}
+	if host.wndProc != 0x1234 {
+		t.Fatal("a new Run discarded the reusable process-lifetime window callback")
+	}
+	if host.log != oldLog || host.log.WarnCount() != 1 {
+		t.Fatal("a new Run replaced the Logger sink while an older worker could still be using it")
+	}
+	if host.frontendReady || host.frontendShellReady {
+		t.Fatal("a new Run inherited frontend readiness from the previous browser")
+	}
+	if host.startupTiming == oldTiming {
+		t.Fatal("a new Run reused previous-session startup timing")
+	}
+	if host.diagnostics != oldDiagnostics || !strings.Contains(host.diagnostics.timeoutSummary(), "phase=startup") {
+		t.Fatal("a new Run replaced the shared diagnostics pointer or retained its previous state")
+	}
+	if err := host.beginRun(); err == nil {
+		t.Fatal("a concurrent Run on the same Host was accepted")
+	}
+	host.endRun()
+
+	host.windowDestroyed = true
+	host.startupShowReleased = true
+	if err := host.beginRun(); err != nil {
+		t.Fatalf("second sequential beginRun = %v", err)
+	}
+	host.endRun()
+}
+func TestBeginRunRejectsIncompleteBrowserTeardown(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.browser = webview2.New()
+	if err := host.beginRun(); err == nil {
+		t.Fatal("beginRun accepted a Host that still owns the previous Browser")
+	}
+}
+
+func TestBeginRunRejectsUndrainedQuit(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.quitPending = true
+	if err := host.beginRun(); err == nil {
+		t.Fatal("beginRun accepted a Host whose previous WM_QUIT was not drained")
+	}
+}
 
 // TestWindowDestroyTeardownStopsTheTimersAndBrowser locks the WM_DESTROY
 // teardown contract: both timers die with the window - a startup show gate
@@ -79,17 +237,37 @@ func TestWindowDestroyTeardownStopsTheTimersAndBrowser(t *testing.T) {
 	host.startRenderWatchdog()
 	browser := webview2.New()
 	host.browser = browser
-
+	host.mu.Lock()
+	host.hwnd = windowHandle(0x1234)
+	host.mu.Unlock()
+	host.beginWindowDestroy(windowHandle(0x9999))
+	if host.window() != windowHandle(0x1234) || host.windowDestroyed {
+		t.Fatal("WM_DESTROY for a different HWND cleared the active Host session")
+	}
+	host.beginWindowDestroy(windowHandle(0x1234))
 	host.windowDestroyTeardown()
 
 	host.startupMu.Lock()
 	gateArmed := host.startupShowTimer != nil
+	gateReleased := host.startupShowReleased
 	host.startupMu.Unlock()
 	if gateArmed {
 		t.Fatal("the startup show gate survived WM_DESTROY; it would post wmNativeShow to a dead HWND")
 	}
+	if !gateReleased {
+		t.Fatal("WM_DESTROY did not close the startup show gate")
+	}
 	if !browser.IsShuttingDown() {
 		t.Fatal("the WM_DESTROY teardown must shut the committed browser down")
+	}
+	if host.window() != 0 {
+		t.Fatalf("WM_DESTROY left stored HWND %#x; exported calls could target a recycled window", host.window())
+	}
+	if host.browser != nil {
+		t.Fatal("WM_DESTROY left a stale Browser reference")
+	}
+	if !host.windowDestroyed {
+		t.Fatal("WM_DESTROY did not preserve destruction state for an in-flight embed")
 	}
 	time.Sleep(60 * time.Millisecond)
 	if strings.Contains(logger.String(), "mullion: frontend render timeout") {

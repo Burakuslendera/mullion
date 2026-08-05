@@ -21,6 +21,10 @@ import (
 // directly, because Win32 window state may only be mutated from the thread that
 // created the window.
 type Host struct {
+	runMu         sync.Mutex
+	running       bool
+	runGeneration uint64
+
 	config   Config
 	log      *logSink
 	js       jsScripts
@@ -41,20 +45,21 @@ type Host struct {
 	// 0016). Both are UI-thread-confined, like host.browser itself.
 	webViewEmbedding bool
 	windowDestroyed  bool
+	quitPending      bool
 
-	dpiAwarenessErr    error
-	renderMu           sync.Mutex
-	renderTimer        *time.Timer
-	frontendReady      bool
-	frontendShellReady bool
-	startupMu          sync.Mutex
-	startupShowTimer   *time.Timer
-	startupShowOnce    sync.Once
-	startupTiming      *startupTiming
-	diagnostics        *nativeDiagnostics
-	sysMenuLast        sysMenuSnapshot
-	boundsMu           sync.Mutex
-	lastBoundsSyncLog  boundsSyncLogState
+	dpiAwarenessErr     error
+	renderMu            sync.Mutex
+	renderTimer         *time.Timer
+	frontendReady       bool
+	frontendShellReady  bool
+	startupMu           sync.Mutex
+	startupShowTimer    *time.Timer
+	startupShowReleased bool
+	startupTiming       *startupTiming
+	diagnostics         *nativeDiagnostics
+	sysMenuLast         sysMenuSnapshot
+	boundsMu            sync.Mutex
+	lastBoundsSyncLog   boundsSyncLogState
 
 	// The error-surface admission state (issues #3, #56, #68; decisions/0017,
 	// 0021). The runtime reports the empty string as the source of a data:
@@ -170,30 +175,128 @@ func New(config Config) *Host {
 	}
 }
 
+// beginRun establishes a fresh window session while retaining the immutable
+// configuration and the process-lifetime window callback. A Host is reusable
+// after Run returns, but concurrent Run calls on the same Host are not.
+func (host *Host) beginRun() error {
+	host.runMu.Lock()
+	defer host.runMu.Unlock()
+	if host.running {
+		return errors.New("host is already running")
+	}
+	if host.window() != 0 || host.browser != nil || host.quitPending {
+		return errors.New("previous host window session did not tear down")
+	}
+	host.running = true
+	host.runGeneration++
+
+	host.webViewEmbedding = false
+	host.windowDestroyed = false
+	host.assets = assetProvider{}
+	if host.diagnostics != nil {
+		host.diagnostics.reset()
+	}
+	host.sysMenuLast = sysMenuSnapshot{}
+	host.errorSurfaceActive = false
+	host.errorSurfacePending = false
+	host.errorSurfaceNavID = 0
+	host.errorSurfaceLoading = false
+	host.errorSurfaceURL = ""
+	host.cancelledNavIDs = [cancelledNavSlots]uint64{}
+	host.cancelledNavAnonymous = 0
+	host.navStartID = 0
+	host.navStartInOrigin = false
+
+	host.renderMu.Lock()
+	if host.renderTimer != nil {
+		host.renderTimer.Stop()
+		host.renderTimer = nil
+	}
+	host.frontendReady = false
+	host.frontendShellReady = false
+	host.renderMu.Unlock()
+
+	host.startupMu.Lock()
+	if host.startupShowTimer != nil {
+		host.startupShowTimer.Stop()
+		host.startupShowTimer = nil
+	}
+	host.startupShowReleased = false
+	host.startupTiming = newStartupTiming(host.config.StartHidden)
+	if host.log != nil {
+		host.startupTiming.warnBase = host.log.WarnCount()
+		host.startupTiming.errorBase = host.log.ErrorCount()
+	}
+	host.startupMu.Unlock()
+
+	host.boundsMu.Lock()
+	host.lastBoundsSyncLog = boundsSyncLogState{}
+	host.boundsMu.Unlock()
+	return nil
+}
+
+func (host *Host) endRun() {
+	host.runMu.Lock()
+	host.running = false
+	host.runMu.Unlock()
+}
+
 // Run creates the window, embeds the WebView and pumps the message loop until
 // the window closes. It blocks and locks the calling goroutine to its OS thread.
-func (host *Host) Run() (runErr error) {
-	// One line, at INFO, before anything can go wrong. A bug report that carries
-	// the log then already answers "which build, on what architecture, against
-	// which browser runtime" - three questions that otherwise cost a round trip
-	// each, and two of which reporters routinely get wrong from memory.
-	_, webViewVersion, _ := webview2.FindRuntime()
-	host.log.Info(runtimeSummary(webViewVersion, runtime.Version(), runtime.GOARCH))
+// The same Host may Run again after the prior call returns; concurrent calls on
+// one Host return an error.
+func (host *Host) Run() error {
+	return host.withRunGuard(func() error {
+		return continueAfterRuntimeDiscovery(
+			webview2.FindRuntime,
+			func(webViewVersion string) {
+				// One line, at INFO, before anything can go wrong. A bug report
+				// then answers build, architecture, and browser runtime without
+				// a round trip.
+				host.log.Info(runtimeSummary(webViewVersion, runtime.Version(), runtime.GOARCH))
+			},
+			host.runAfterRuntimeDiscovery,
+		)
+	})
+}
 
+func (host *Host) withRunGuard(run func() error) error {
+	if err := host.beginRun(); err != nil {
+		return err
+	}
+	defer host.endRun()
+	return run()
+}
+
+// continueAfterRuntimeDiscovery makes the architecture gate the boundary before
+// COM, class registration, or HWND creation. Missing runtimes continue to the
+// normal immediate/deferred embed path; unsupported process ABIs do not.
+func continueAfterRuntimeDiscovery(
+	find func() (folder string, version string, err error),
+	observeVersion func(string),
+	proceed func() error,
+) error {
+	_, version, discoveryErr := find()
+	observeVersion(version)
+	if err := runtimeStartupError(discoveryErr); err != nil {
+		return err
+	}
+	return proceed()
+}
+
+func (host *Host) runAfterRuntimeDiscovery() (runErr error) {
 	host.log.Debug("mullion: ui thread locking")
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	if host.dpiAwarenessErr == nil && !alreadyPerMonitorV2DPIAware() {
+	dpiErr := host.dpiAwarenessErr
+	if dpiErr == nil && !alreadyPerMonitorV2DPIAware() {
 		// New may have run on a different thread. Its already-PMv2 acceptance
 		// samples the New thread, and a thread-level override there cannot
-		// vouch for this one - the thread the window is created on. A process
-		// that is genuinely PMv2 passes here too (no override in play), so the
-		// re-check costs nothing on the normal path; it only turns the exotic
-		// override-on-another-thread case back into the fatal error the DPI
-		// gate promises. Unreachable below Windows 1703: the enable has
-		// already failed there and the error short-circuits this check.
-		host.dpiAwarenessErr = errors.New("the Run thread is not per-monitor-v2 dpi aware")
+		// vouch for this one - the thread the window is created on. Keep this
+		// Run-thread result session-local: a later sequential Run may own a
+		// different thread and must perform its own check.
+		dpiErr = errors.New("the Run thread is not per-monitor-v2 dpi aware")
 	}
 
 	loopStarted := false
@@ -204,9 +307,9 @@ func (host *Host) Run() (runErr error) {
 		}
 	}()
 
-	if host.dpiAwarenessErr != nil {
-		host.log.Error("mullion: dpi awareness init failed, reason=" + logsafe.Reason(host.dpiAwarenessErr))
-		return host.dpiAwarenessErr
+	if dpiErr != nil {
+		host.log.Error("mullion: dpi awareness init failed, reason=" + logsafe.Reason(dpiErr))
+		return dpiErr
 	}
 	lastStage = "mullion: dpi awareness applied"
 	host.log.Debug("mullion: dpi awareness applied, context=per_monitor_v2")
@@ -242,18 +345,13 @@ func (host *Host) Run() (runErr error) {
 		return err
 	}
 	defer unregisterWindowClass(host.config.ClassName, host.instance)
-	// A pre-loop exit must not leave the window behind - and that includes a
-	// panic (an OnReady that explodes, say), which a straight-line call on the
-	// error return would miss: the unwind would skip it, the class unregister
-	// above would fail against the live window, and the next Run would die in
-	// RegisterClassEx (issue #48). Registered after the unregister defer so it
-	// runs before it (LIFO); gated on loopStarted so a normal loop exit - whose
-	// window died through WM_DESTROY - changes nothing.
-	defer func() {
-		if !loopStarted {
-			host.destroyWindowOutsideLoop("pre_loop_failure")
-		}
-	}()
+	// Every exit after CreateWindowEx owns a final live-window check, including
+	// a pre-loop error or panic, a broken GetMessage, an external WM_QUIT, and a
+	// panic after the loop starts. Registered after class unregistration so it
+	// runs first (LIFO). Ordinary WM_DESTROY clears the handle in the window
+	// procedure, so this defer never destroys twice; independent quit ownership
+	// still lets it drain a WM_QUIT re-posted by an embed pump.
+	defer host.destroyWindowOutsideLoop("run_exit")
 	lastStage = "mullion: hwnd created"
 	host.log.Debug("mullion: hwnd created")
 
@@ -277,6 +375,16 @@ func (host *Host) Run() (runErr error) {
 	host.log.Debug("mullion: message loop entering")
 	loopStarted = true
 	return host.messageLoop()
+}
+
+// runtimeStartupError separates an unsupported process ABI, which must stop
+// before COM or HWND creation, from ordinary discovery failures handled by the
+// existing immediate/deferred embed paths.
+func runtimeStartupError(discoveryErr error) error {
+	if errors.Is(discoveryErr, webview2.ErrUnsupportedArchitecture) {
+		return discoveryErr
+	}
+	return nil
 }
 
 // initializeCOM enters the apartment. An already-initialised apartment is not an

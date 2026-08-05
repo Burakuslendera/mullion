@@ -129,11 +129,18 @@ func convertPath(path string, convert func(*uint16, *uint16, uint32) (uint32, er
 // answers "this is the runtime that would be loaded, and it does (or does not)
 // still export the entry point we call". Only the second is a diagnosis.
 func describeWebView2() WebView2Section {
+	return describeWebView2With(webview2.DescribeRuntime)
+}
+
+// describeWebView2With keeps the diagnostic mapping headlessly testable. The
+// real callback performs discovery/export inspection; an architecture error
+// returns before those DLL-facing steps and must remain an unusable report.
+func describeWebView2With(describe func() (webview2.RuntimeReport, error)) WebView2Section {
 	section := WebView2Section{
 		PinnedEnv: expandPath(strings.TrimSpace(os.Getenv(webview2.BrowserExecutableFolderEnv))),
 	}
 
-	found, err := webview2.DescribeRuntime()
+	found, err := describe()
 	section.ExportName = found.ExportName
 	if err != nil {
 		section.Problem = err.Error()

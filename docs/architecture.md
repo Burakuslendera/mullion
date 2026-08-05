@@ -54,11 +54,12 @@ dependencies are process-wide and irreversible.
    is tolerated, not fatal — an embedding application is allowed to have called
    `CoInitializeEx` first. Only a genuine failure aborts.
 
-4. **Window class registration.** The name comes from `Config.ClassName` and must be
-   unique per process. It is unregistered when `Run` returns, so a later host in the
-   same process can register it again — a pre-loop failure destroys the window first
-   (and drains the quit that teardown posts), so the unregister succeeds on that
-   path too.
+4. **Window class registration.** The class name and title are both converted to
+   UTF-16 before class ownership or callback allocation, so an embedded NUL cannot
+   strand the class or spend a callback-table slot before a corrected retry.
+   `Config.ClassName` must be unique among live windows in the process. The class
+   is unregistered when `Run` returns; every post-create exit destroys first and
+   drains any quit posted by teardown, so a later session can register it again.
 
 5. **`HWND` creation.** The window procedure is bound at class registration, so the
    first messages the window ever receives — `WM_NCCALCSIZE` among them — already
@@ -89,14 +90,22 @@ dependencies are process-wide and irreversible.
    visibility flag, and a visible parent hosting an invisible controller renders as a
    blank window. Under `Config.StartHidden`, steps 6 and 7 defer to the first `Show`.
 
-8. **Message loop.** `GetMessage` / `TranslateMessage` / `DispatchMessage`, owned by
-   the library, pumping on the locked thread until `WM_QUIT`. An abnormal
-   `GetMessage` failure tears the window down the same way the pre-loop failure
-   path does - destroy, drain, handle cleared - so even that exit leaves the
-   process reusable and the WebView shut down.
-
-`Run` blocks for the life of the window and must be called from the goroutine that
-owns the process main thread.
+8. **Message loop and teardown.** `GetMessage` / `TranslateMessage` /
+   `DispatchMessage`, owned by the library, pump on the locked thread until
+   `WM_QUIT`. Every post-create exit owns a final live-window check: pre-loop
+   failures, `GetMessage == -1`, a bare thread `WM_QUIT` (`GetMessage == 0`) and
+   panics after loop entry all destroy and drain when `WM_DESTROY` did not run.
+   Normal `WM_DESTROY` clears the stored HWND before browser shutdown, then nils
+   the browser after shutdown. Pending `WM_QUIT` ownership is tracked separately
+   from that cleared handle, so a quit consumed and re-posted by the embed pump is
+   still drained without ever destroying a recycled HWND. `Run` blocks for the
+   life of the window and must be called from the process main-thread goroutine.
+   The same `Host` supports sequential `Run` calls; each session resets its
+   destruction, startup-gate, timing, diagnostic and navigation state while
+   retaining stable Logger/diagnostic objects for older goroutine-safe calls.
+   Deferred bounds posts carry the session generation and original HWND, so they
+   cannot cross into a later Run even if Windows recycles the numeric handle.
+   Concurrent calls to `Run` on one `Host` are rejected.
 
 ## Threading model
 
@@ -229,6 +238,16 @@ origin — are dropped with a log line and **no reply to correlate**. An unknown
 method with a bridge configured is the application's to answer; with none, it
 yields `ok: false`. A malformed request is logged and dropped, never a panic.
 
+Frontend-controlled method names, phases, diagnostic kinds/details and asset
+labels are a separate projection of that raw protocol. Before the host logs or
+retains one, it selects bounded input and emits at most 2,000 bytes. The first
+reducible http(s) URL is reserved with its authority whole, so a long
+`window.onerror` prefix cannot erase the URL and no cut can manufacture a
+believable host prefix. Retained file names and reduced strings are detached
+from the request's backing storage. This diagnostic boundary does **not** rewrite
+the raw request passed to `Config.Bridge`
+([decision 0035](./decisions/0035-frontend-diagnostics-are-bounded.md)).
+
 ## Startup gates and watchdog
 
 A WebView2 control can embed successfully, navigate successfully, report
@@ -240,8 +259,10 @@ runtime reports it. Two independent timers exist because of it.
 the frontend to call `shellReady()`, which maps to `Host.MarkFrontendShellReady()` and
 posts the show message, keeping the user from seeing an empty window while the first
 document is still parsing. The wait is bounded by `Config.ShowTimeout`; when it expires
-the host shows the window anyway and logs the reason. A gate that can hang forever is
-worse than the flash it prevents, so the fallback is not optional.
+the host shows the window anyway and logs the reason. Shell readiness may arrive while
+the embed pump is still running, before `Run` reaches the arm point; the once-only
+release is remembered, so an already released gate cannot arm afterward. A fired or
+stopped timer is detached immediately, including across sequential runs.
 
 **Render watchdog.** Armed before `Navigate`, cancelled by `Host.MarkFrontendReady()` —
 the frontend's `ready()` call, made only after it has actually rendered. If
@@ -293,10 +314,19 @@ created until the first `Show`, and even once created a hidden window produces n
 window is actually shown. An application that starts in a tray must treat the first
 `Show`, not `Run`, as the moment its frontend begins to exist.
 
-**Windows only.** The package is behind `//go:build windows`; `Run` returns
-`ErrUnsupportedPlatform` elsewhere. WebView2, Win32 window management and the frameless
-hit-test model have no portable equivalent, and no abstraction layer is attempted.
+**Windows/amd64 only.** WebView2 hosting uses x64 COM argument encodings.
+Windows/386 and Windows/ARM64 remain compile-portable, but `Run` returns a clear
+unsupported-architecture error before COM initialization or window creation. On
+non-Windows targets `Run` returns `ErrUnsupportedPlatform`; no portable window
+abstraction is attempted
+([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
 > Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: docs-vs-code accuracy pass — step 6 lists the sixth callback (new window requested, 0022), and the bridge section states the origin gate and the real reply behaviour (a malformed or restricted-source request gets a log line and no reply, not `ok: false`). Then the threading model gained the second apartment it had been missing: the system-browser launch runs on a bounded set of per-launch goroutines with their own STA (issue #74, 0029), which is also why Config.Logger states a concurrency contract — this file enumerated the cross-thread rules without that one.
 
 > Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: the render-watchdog counters now say what they count and what they do not. They are bucketed from the Content-Type mullion answered with, which comes from the name (decisions/0031), so images, fonts, JSON, wasm and anything application/octet-stream are counted nowhere and a successfully served asset in that class prints no log line at all. Healthy counts therefore do not mean the assets arrived. The suppression applies only under 400; a failed request is always logged, WARN for 4xx and ERROR for 5xx.
+
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: narrow WebView2 hosting support to Windows/amd64 and distinguish runtime support from compile portability (decision 0034).
+
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: make teardown ownership complete for every host and backdrop loop exit, clear HWND/browser references at WM_DESTROY, make startup-show release race-free, and define sequential same-Host reuse (issue #97).
+
+> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: document the 2,000-byte frontend logging and retained-diagnostic boundary, complete-first-URL rule, detached asset names and unchanged raw Config.Bridge payload (decision 0035).

@@ -20,6 +20,8 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    # GitHub's windows-latest runner is amd64. This is the only job that makes a
+    # WebView2 runtime-support claim; the Windows cross-builds below do not.
     # Both ends of the supported range, not just the floor. Until decision 0033
     # this job pinned "1.22" alone, so the "and newer" half of the promise in
     # README.md was never verified by anything. "stable" is the current release,
@@ -72,8 +74,9 @@ jobs:
       - run: go test -tags mullion_caption_passthrough_diag ./...
 
   portable:
-    # The non-Windows stub exists so that `go get` and a cross-platform build
-    # work. This job is what keeps it honest.
+    # Non-Windows stubs and unsupported Windows architectures stay
+    # compile-portable. These builds are not runtime-support claims; WebView2
+    # hosting is supported only by the windows/amd64 job above.
     runs-on: ubuntu-latest
     # Same two-ended range as the windows job, for the same reason (0033).
     strategy:
@@ -89,7 +92,11 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
-      - name: cross-compile for Windows
+      - name: build supported Windows runtime target (amd64)
         run: GOOS=windows GOARCH=amd64 go build ./...
-      - name: cross-compile for darwin
+      - name: compile unsupported Windows targets (portability only)
+        run: |
+          GOOS=windows GOARCH=386 go build ./...
+          GOOS=windows GOARCH=arm64 go build ./...
+      - name: cross-compile non-Windows stub for darwin
         run: GOOS=darwin GOARCH=arm64 go build ./...

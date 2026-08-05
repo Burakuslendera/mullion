@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func TestReasonSanitizesWindowsPathWithSpaces(t *testing.T) {
@@ -168,5 +169,152 @@ func TestMessageStripsControlBytes(t *testing.T) {
 	// FileName sits on the same boundary and must strip too.
 	if got := FileName("\x1b[2Jname.log"); strings.ContainsRune(got, 0x1b) {
 		t.Fatalf("FileName leaked ESC: %q", got)
+	}
+}
+
+var sanitizedTokenSink string
+var diagnosticURLStartSink int
+var diagnosticURLValueSink string
+
+func TestSanitizeTokenTrailingPunctuationIsLinear(t *testing.T) {
+	short := "x.:;,.:;,"
+	long := "x" + strings.Repeat(".:;,", 2048)
+	if got := sanitizeToken(long); got != long {
+		t.Fatalf("sanitizeToken() changed punctuation: got len %d, want len %d", len(got), len(long))
+	}
+	if got, want := sanitizeToken(".:;,"), "unknown.:;,"; got != want {
+		t.Fatalf("sanitizeToken(all punctuation) = %q, want %q", got, want)
+	}
+
+	shortAllocs := testing.AllocsPerRun(10, func() {
+		sanitizedTokenSink = sanitizeToken(short)
+	})
+	longAllocs := testing.AllocsPerRun(10, func() {
+		sanitizedTokenSink = sanitizeToken(long)
+	})
+	if longAllocs > shortAllocs+2 {
+		t.Fatalf("allocations grow with suffix length: short=%v long=%v", shortAllocs, longAllocs)
+	}
+}
+
+func TestDiagnosticBoundsInputAndKeepsFirstMeaningfulURL(t *testing.T) {
+	raw := strings.Repeat("prefix.:;, ", DiagnosticLimit*2) +
+		"https://mullion.localhost/app/main.js?token=secret " +
+		strings.Repeat("tail", DiagnosticLimit)
+	got := Diagnostic(raw)
+	if len(got) > DiagnosticLimit {
+		t.Fatalf("Diagnostic() len = %d, limit = %d", len(got), DiagnosticLimit)
+	}
+	if !strings.Contains(got, "https://mullion.localhost/app/main.js?") {
+		t.Fatalf("Diagnostic() lost the first meaningful URL: %q", got)
+	}
+	if strings.Contains(got, "token=secret") {
+		t.Fatalf("Diagnostic() retained a query value: %q", got)
+	}
+}
+
+func TestDiagnosticNeverPrintsAnInterruptedHost(t *testing.T) {
+	raw := "before https://mullion.example." + strings.Repeat("attacker", DiagnosticLimit)
+	got := Diagnostic(raw)
+	if strings.Contains(got, "https://mullion.example") {
+		t.Fatalf("Diagnostic() printed a host prefix as a whole URL: %q", got)
+	}
+	if len(got) > DiagnosticLimit {
+		t.Fatalf("Diagnostic() len = %d, limit = %d", len(got), DiagnosticLimit)
+	}
+}
+
+func TestDiagnosticFileNameDoesNotRetainLargeInput(t *testing.T) {
+	raw := strings.Repeat("x", DiagnosticLimit*4) + `/tiny.js`
+	got := DiagnosticFileName(raw)
+	if got != "tiny.js" {
+		t.Fatalf("DiagnosticFileName() = %q, want tiny.js", got)
+	}
+	rawStart := uintptr(unsafe.Pointer(unsafe.StringData(raw)))
+	gotStart := uintptr(unsafe.Pointer(unsafe.StringData(got)))
+	if gotStart >= rawStart && gotStart < rawStart+uintptr(len(raw)) {
+		t.Fatal("DiagnosticFileName() shares the large input's backing storage")
+	}
+}
+
+func TestDiagnosticRejectsAuthorityCutByASCIIWhitespace(t *testing.T) {
+	for _, terminator := range []byte{'\t', '\n', '\r', '\v', '\f'} {
+		raw := strings.Repeat("context ", DiagnosticLimit) +
+			"https://mullion.localhost" + string(terminator) + ".evil.example/path"
+		got := Diagnostic(raw)
+		if strings.Contains(got, "https://mullion.localhost") {
+			t.Fatalf("terminator %#x preserved an incomplete authority: %q", terminator, got)
+		}
+	}
+}
+
+func TestDiagnosticCompletesBoundaryEscapeAndKeepsURLMarks(t *testing.T) {
+	const base = "https://mullion.localhost/"
+	padding := strings.Repeat("a", URLLimit-len(base))
+	raw := strings.Repeat("context ", DiagnosticLimit) +
+		base + padding + "%2Ftail?secret=value#fragment"
+	got := Diagnostic(raw)
+	if !strings.Contains(got, "https://mullion.localhost/") || !strings.Contains(got, "...?#") {
+		t.Fatalf("Diagnostic() lost the safely truncated URL or its marks: %q", got)
+	}
+	if strings.Contains(got, "secret=value") || strings.Contains(got, "fragment") {
+		t.Fatalf("Diagnostic() retained query or fragment values: %q", got)
+	}
+}
+
+func TestDiagnosticURLSelectionDoesNotAllocatePerFakeScheme(t *testing.T) {
+	short := "https://% https://mullion.localhost/app.js"
+	long := strings.Repeat("https://% ", 2048) + "https://mullion.localhost/app.js"
+	start, value := firstDiagnosticURL(long)
+	if start == 0 || value != "https://mullion.localhost/app.js" {
+		t.Fatalf("firstDiagnosticURL() = (%d, %q), want trailing meaningful URL", start, value)
+	}
+
+	shortAllocs := testing.AllocsPerRun(10, func() {
+		diagnosticURLStartSink, diagnosticURLValueSink = firstDiagnosticURL(short)
+	})
+	longAllocs := testing.AllocsPerRun(10, func() {
+		diagnosticURLStartSink, diagnosticURLValueSink = firstDiagnosticURL(long)
+	})
+	if longAllocs > shortAllocs+2 {
+		t.Fatalf("allocations grow with fake scheme count: short=%v long=%v", shortAllocs, longAllocs)
+	}
+}
+
+func TestDiagnosticURLSelectionSkipsMalformedBracketedAuthority(t *testing.T) {
+	raw := strings.Repeat("context ", DiagnosticLimit) +
+		strings.Repeat("https://[bad/path ", 10) + "https://mullion.localhost/app.js"
+	got := Diagnostic(raw)
+	if !strings.Contains(got, "https://mullion.localhost/app.js") {
+		t.Fatalf("Diagnostic() lost the later meaningful URL: %q", got)
+	}
+}
+
+func TestEveryAcceptedDiagnosticURLCandidateReducesAsAURL(t *testing.T) {
+	longPath := "https://mullion.localhost/" +
+		strings.Repeat("a", URLLimit) + "%2Ftail?secret=value#fragment"
+	for _, run := range []string{
+		"https://mullion.localhost/app.js?secret=value#fragment",
+		"http://192.0.2.1:8080/a%2Fb",
+		"https://[2001:db8::1]:443/app.js",
+		longPath,
+	} {
+		candidate, ok := diagnosticURLCandidate(run, 0)
+		if !ok {
+			t.Fatalf("diagnosticURLCandidate(%q) rejected a valid URL", run)
+		}
+		if got := reduceRun(candidate, 0); !hasHTTPPrefix(got) {
+			t.Fatalf("accepted candidate %q reduced to non-URL %q", candidate, got)
+		}
+	}
+
+	for _, run := range []string{
+		"https://[bad/path",
+		"https://host:bad/path",
+		"https://host/%zz",
+	} {
+		if candidate, ok := diagnosticURLCandidate(run, 0); ok {
+			t.Fatalf("diagnosticURLCandidate(%q) accepted %q", run, candidate)
+		}
 	}
 }

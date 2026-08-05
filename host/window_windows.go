@@ -24,8 +24,16 @@ func (host *Host) createWindow() error {
 	if err != nil {
 		return err
 	}
+	// Validate caller-controlled strings before allocating the process-lifetime
+	// callback slot. createWin32Window repeats this at its ownership boundary so
+	// direct changes there cannot move a fallible conversion after registration.
+	if _, _, err := prepareWindowStrings(host.config.ClassName, host.config.Title); err != nil {
+		return err
+	}
 	host.instance = instance
-	host.wndProc = newWindowCallback(host.windowProc, host.reportWindowProcPanic)
+	if host.wndProc == 0 {
+		host.wndProc = newWindowCallback(host.windowProc, host.reportWindowProcPanic)
+	}
 
 	// Centered on the primary work area, DPI-scaled (issue #59, decision 0018).
 	// A failed resolution falls back to the shell's default position with the
@@ -53,26 +61,34 @@ func (host *Host) createWindow() error {
 	return nil
 }
 
+// messageLoopExitNeedsTeardown is the ownership decision shared by both loop
+// exits. A zero result normally follows WM_DESTROY, but WM_QUIT is a thread
+// message and can be posted without destroying the window; the teardown helper
+// is idempotent and sees the cleared handle on the ordinary path. A minus-one
+// result likewise leaves the window live unless we destroy it explicitly.
+func messageLoopExitNeedsTeardown(result int32) bool {
+	return result == 0 || result == -1
+}
+
 func (host *Host) messageLoop() error {
 	var message msg
 	for {
 		result, _, err := procGetMessage.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
+		if messageLoopExitNeedsTeardown(int32(result)) {
+			host.destroyWindowOutsideLoop("message_loop_exit")
+		}
 		switch int32(result) {
 		case -1:
 			host.log.Error("mullion: message loop failed, reason=" + logsafe.Reason(err))
 			// The loop dies without ever reading the WM_QUIT a WM_DESTROY would
-			// post: no teardown has run and none will, so without this the
-			// browser process, the COM references and the class registration all
-			// outlive Run - the same shape issue #39 closed for the Navigate
-			// failure, on the abnormal exit instead (issue #54). The destroy
-			// dispatches WM_DESTROY synchronously while the HWND is still alive.
-			// Best effort by construction: the documented causes of -1 are a
-			// corrupted queue or an invalid handle (unverified - this branch has
-			// never been observed live), and on a wounded thread the destroy and
-			// drain may themselves fail. Never worse than returning with
-			// everything alive, and strictly better whenever the handle still
-			// is.
-			host.destroyWindowOutsideLoop("abnormal_loop_exit")
+			// post: no teardown has run and none will, so without the ownership
+			// decision above the browser process, COM references and class
+			// registration all outlive Run (issue #54). The destroy dispatches
+			// WM_DESTROY synchronously while the HWND is still alive. Best effort
+			// by construction: the documented causes of -1 are a corrupted queue
+			// or an invalid handle (unverified - this branch has never been
+			// observed live), and on a wounded thread the destroy and drain may
+			// themselves fail.
 			return syscallError(err)
 		case 0:
 			host.log.Debug("mullion: message loop exited")
@@ -90,44 +106,46 @@ func (host *Host) window() windowHandle {
 	return host.hwnd
 }
 
-// destroyWindowOutsideLoop tears the HWND down when the message loop is not
-// running to do it: Run failed after createWindow but before the loop started
-// (issue #48), or the loop itself died on a GetMessage failure (issue #54).
+// destroyWindowOutsideLoop tears the HWND down whenever no further dispatch can
+// be relied upon to do it: Run failed after createWindow but before the loop
+// started (issue #48), GetMessage failed (issue #54), or WM_QUIT reached the
+// queue without WM_DESTROY (issue #97).
 //
 // Without it the window outlives Run invisibly: the deferred
 // unregisterWindowClass fails with ERROR_CLASS_HAS_WINDOWS against the live
-// window, and a second Run in the same process cannot register the class again.
-// DestroyWindow dispatches WM_DESTROY synchronously on this thread - the
-// teardown case runs (shutting down a still-committed browser on the abnormal
-// exit or an OnReady panic after the embed; on the other pre-loop paths
-// host.browser is nil or already torn down) and posts WM_QUIT. With no loop left to consume it, that WM_QUIT would sit in
-// the thread queue and poison the next message loop on this thread - a later
-// Run would read it first and exit immediately, a silent one-shot failure - so
-// the quit is drained right after the destroy. The stored handle is cleared
-// last, so a stray exported call afterwards fails the zero-handle guard
-// instead of posting to a recycled HWND.
+// window, and a later Run in the same process cannot register the class again.
+// DestroyWindow dispatches WM_DESTROY synchronously on this thread. The HWND is
+// cleared at WM_DESTROY entry, but quit ownership remains independent: an embed
+// pump can consume and re-post WM_QUIT before Run reaches its outer loop. The
+// pending marker makes the final check drain that quit without ever feeding the
+// cleared, potentially recycled handle back to DestroyWindow.
+func windowExitCleanupDecision(hwnd windowHandle, destroyed, quitPending bool) (destroy, drain bool) {
+	if hwnd == 0 {
+		return false, quitPending
+	}
+	return !destroyed, true
+}
+
 func (host *Host) destroyWindowOutsideLoop(reason string) {
 	hwnd := host.window()
-	if hwnd == 0 {
+	destroy, drain := windowExitCleanupDecision(hwnd, host.windowDestroyed, host.quitPending)
+	if !destroy && !drain {
 		return
 	}
 	host.log.Debug("mullion: window teardown outside the loop, reason=" + reason)
-	if host.windowDestroyed {
-		// A Quit dispatched inside the embed pump already destroyed the real
-		// window: the stored handle is stale and is not fed back to
-		// DestroyWindow, on the off-chance the value was recycled. Only the
-		// drain is still owed - the pump re-posts the quit it swallowed
-		// mid-wait, so it is pending right now.
-		drainThreadQuitMessage()
-	} else {
-		// Order is the contract: the destroy's WM_DESTROY posts the WM_QUIT, so
-		// the drain must run after it - draining first would remove nothing and
-		// leave the poison behind.
+	if destroy {
+		// Order is the contract: DestroyWindow synchronously runs WM_DESTROY,
+		// which posts WM_QUIT, so the drain must follow it.
 		procDestroyWindow.Call(uintptr(hwnd))
+	}
+	if drain {
+		// A mid-embed WM_DESTROY may have cleared the HWND while its pump
+		// re-posted WM_QUIT; quit ownership survives the handle clear.
 		drainThreadQuitMessage()
 	}
 	host.mu.Lock()
 	host.hwnd = 0
+	host.quitPending = false
 	host.mu.Unlock()
 }
 
