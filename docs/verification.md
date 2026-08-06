@@ -8,6 +8,7 @@
 - [4. Traps when scripting GUI checks](#4-traps-when-scripting-gui-checks)
 - [5. Diagnostic build tags and env switches](#5-diagnostic-build-tags-and-env-switches)
 - [6. What a good bug report contains](#6-what-a-good-bug-report-contains)
+- [7. 2026-08-06 verification records](#7-2026-08-06-verification-records)
 
 How a change to `mullion` is proved correct. The automated gates are cheap and
 catch a narrow class of mistakes; the manual gates are the only thing that
@@ -384,7 +385,6 @@ Rules:
 The environment a frame bug report needs and the reporting contract live in
 [bug-reports.md](./bug-reports.md); they moved when this file reached its limit.
 
-
 ## 7. 2026-08-06 verification records
 
 - **Automated:** formatting, build, vet, `-unsafeptr`, uncached full tests, both diagnostic-tag build/test pairs, bridge VM, leak scan, Windows/386 production gates, and Linux/amd64 plus Windows/386/ARM64 builds passed. GitHub Actions run `31060250331` passed all four Go 1.24/stable Windows/portable jobs; both Windows jobs passed `go test -count=1 -race ./...`, including the render-watchdog generation repair exposed by the preceding CI run.
@@ -392,7 +392,9 @@ The environment a frame bug report needs and the reporting contract live in
 - **Live:** `mullion doctor` found WebView2 151.0.4129.59; `examples/basic` reached shell-ready, window-visible, application `Ping`, navigation-completed and frontend-ready with zero session warnings/errors on the two-monitor 125%/100% setup.
 - **Not covered:** the final smoke was process-stopped after readiness rather than closed through the UI; the manual snap/resize/DPI checklist was not repeated. Local `go test -race ./...` could not build because `gcc` is absent; the two Windows CI race lanes passed instead.
 - **`unverified`:** Windows/ARM64 remains compile-only by decision 0034, and physical HWND-value recycling was not forced live; the headless token/HWND adversaries cover both identity halves.
-- **Issues #96/#120:** Go 1.24 and current-toolchain focused tests, formatting, build, vet, uncached full tests, bridge VM, both diagnostic-tag build/test pairs, Linux/amd64 and Windows/amd64/386/ARM64 gates, and leak scan passed. `mullion doctor` found WebView2 151.0.4129.59; `examples/basic` served all three embedded assets, completed `Ping`, navigation and frontend readiness with zero warnings/errors, and a live capture showed the rendered restored window.
-- **Not covered / `unverified`:** local `-race` could not build because `gcc` is absent; CI evidence is pending the push. The 4-GiB rejection is boundary-tested with scalar lengths rather than a multi-gigabyte allocation, and the demo was process-stopped after readiness rather than closed through the UI; no frame/snap/DPI behaviour changed, so that manual checklist was not repeated.
-
+- **Issues #96/#120 automated:** Go 1.24 and current-toolchain focused tests, formatting, build, vet, uncached full tests, bridge VM, both diagnostic-tag build/test pairs, Linux/amd64 and Windows/amd64/386/ARM64 gates, and leak scan passed. GitHub Actions run `31101143512` passed all four Go 1.24/stable Windows/portable jobs, including `-race` in both Windows jobs.
+- **Issues #96/#120 A/B:** replacing the call-site pointer conversion with a precomputed `uintptr` made `TestNewMemoryStreamPinsContentAtSyscallBoundary` fail; removing the `UINT` bound made `TestSHCreateMemStreamSizeRejectsValuesOutsideUINT/one_past_UINT` fail. Restoring each repair made both tests pass, and the compiler-safe direct backdrop defer left both focused packages green, on Go 1.24 and the current toolchain.
+- **Issues #96/#120 live:** `mullion doctor` found WebView2 151.0.4129.59. `examples/basic` served all three embedded assets, completed `Ping`, navigation and frontend readiness with zero warnings/errors, and a live capture showed the rendered restored window.
+- **Issues #96/#120 not covered:** local `-race` could not build because `gcc` is absent; CI supplied both Windows race runs. The demo was process-stopped after readiness rather than closed through the UI; no frame/snap/DPI behaviour changed, so that manual checklist was not repeated.
+- **Issues #96/#120 `unverified`:** a real 4-GiB asset was not allocated or requested; the rejection is proved at the scalar size boundary without reaching Win32.
 > Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: lock issues #96 and #120 at the headless compiler and native-width boundaries while keeping Win32 entry points out of the test suite.

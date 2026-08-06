@@ -262,12 +262,10 @@ func Show(colour Colour, targetClass string) error {
 	if atom == 0 {
 		return fmt.Errorf("RegisterClassEx: %w", err)
 	}
-	defer func() {
-		_, _, _ = procUnregisterClass.Call(uintptr(unsafe.Pointer(className)), instance)
-		// A LazyProc defer freezes only the uintptr; retaining the Go pointer
-		// here keeps the UTF-16 allocation alive through UnregisterClassW.
-		runtime.KeepAlive(className)
-	}()
+	// Go's normalizeGoDeferCall retains the unsafe.Pointer operand and performs
+	// the uintptr conversion in its generated wrapper. Only a precomputed
+	// uintptr loses pinning; see issue #96.
+	defer procUnregisterClass.Call(uintptr(unsafe.Pointer(className)), instance)
 
 	x, _, _ := procGetSystemMetrics.Call(smXVirtualScreen)
 	y, _, _ := procGetSystemMetrics.Call(smYVirtualScreen)
