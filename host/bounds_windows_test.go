@@ -107,29 +107,6 @@ func TestDeferredBoundsSourcesStillNotifyParent(t *testing.T) {
 		}
 	}
 }
-func TestDeferredBoundsSyncBelongsOnlyToItsWindowSession(t *testing.T) {
-	const hwnd = windowHandle(0x1234)
-	tests := []struct {
-		name                                   string
-		scheduledGeneration, currentGeneration uint64
-		running                                bool
-		scheduledHWND, currentHWND             windowHandle
-		want                                   bool
-	}{
-		{name: "same live session", scheduledGeneration: 7, currentGeneration: 7, running: true, scheduledHWND: hwnd, currentHWND: hwnd, want: true},
-		{name: "later Run recycled same HWND", scheduledGeneration: 7, currentGeneration: 8, running: true, scheduledHWND: hwnd, currentHWND: hwnd},
-		{name: "window destroyed", scheduledGeneration: 7, currentGeneration: 7, running: true, scheduledHWND: hwnd, currentHWND: 0},
-		{name: "Run returned", scheduledGeneration: 7, currentGeneration: 7, scheduledHWND: hwnd, currentHWND: hwnd},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := deferredBoundsSyncBelongsToRun(test.scheduledGeneration, test.currentGeneration, test.running, test.scheduledHWND, test.currentHWND)
-			if got != test.want {
-				t.Fatalf("deferredBoundsSyncBelongsToRun() = %v, want %v", got, test.want)
-			}
-		})
-	}
-}
 
 func TestDeferredWebViewBoundsSyncDoesNotWarn(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true})

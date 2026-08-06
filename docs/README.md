@@ -13,7 +13,8 @@ other document answers one narrower question below.
 | Question | Document |
 | --- | --- |
 | How does the host work, end to end? | [architecture.md](./architecture.md) |
-| How does the host talk to WebView2, and how are assets served? | [webview2-and-assets.md](./webview2-and-assets.md) |
+| How does the host talk to WebView2? | [webview2-and-assets.md](./webview2-and-assets.md) |
+| How are assets served without a port? | [assets.md](./assets.md) |
 | Why is the frame / hit-test / DPI code shaped like this? | [frame-and-dpi.md](./frame-and-dpi.md) |
 | Snap, the non-client region and caption behaviour | [snap-and-nonclient-region.md](./snap-and-nonclient-region.md) |
 | Where do those snap / non-client claims come from? | [snap-sources.md](./snap-sources.md) |
@@ -21,6 +22,7 @@ other document answers one narrower question below.
 | What was already tried, and why was it abandoned? | [lessons-and-dead-ends.md](./lessons-and-dead-ends.md) |
 | The same question, for what a log line may say | [logging-dead-ends.md](./logging-dead-ends.md) |
 | How do I prove a change actually works? | [verification.md](./verification.md) |
+| What makes scripted GUI verification lie? | [gui-verification-traps.md](./gui-verification-traps.md) |
 | What does a bug report have to contain? | [bug-reports.md](./bug-reports.md) |
 
 ## Why the decision records matter
@@ -43,3 +45,5 @@ change *why* it works that way.
 > Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: index bug-reports.md, split out of verification.md at the 400-line reference-doc limit. Then logging-dead-ends.md, split out of lessons-and-dead-ends.md at the same limit: the data: source and sanitiser dead ends, which are the two about what the host may truthfully say in a log line.
 
 > Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: state the Windows/amd64 runtime-support boundary without conflating it with cross-build portability (decision 0034).
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: index the GUI scripting traps and asset-serving references split verbatim at their source documents' hard limits.

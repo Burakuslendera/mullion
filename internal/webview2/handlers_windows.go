@@ -27,11 +27,9 @@ package webview2
 // QueryInterface from it, so the vtable - which holds nothing but function
 // pointers - can be shared.
 //
-// This is not just tidiness. windows.NewCallback allocates from a small, fixed,
-// never-freed table; a vtable per interface would burn four entries, and a
-// callback per handler *instance* would exhaust the table outright. One shared
-// vtable means exactly one NewCallback for all event handling, created once at
-// package init.
+// windows.NewCallback allocates from a small, fixed, never-freed table. One
+// shared vtable means exactly one Invoke callback for all event handling, and
+// ensureCOMVtables builds it only after the supported-architecture gate.
 //
 // # Threading
 //
@@ -58,14 +56,6 @@ type eventHandlerVtbl struct {
 	Invoke ComProc
 }
 
-// eventHandlerVtable is the single vtable instance behind every event handler.
-// Package-level, so its address is stable for the life of the process - the
-// runtime keeps this pointer and dereferences it on every event.
-var eventHandlerVtable = eventHandlerVtbl{
-	IUnknownVtbl: iunknownVtbl,
-	Invoke:       ComProc(windows.NewCallback(eventHandlerInvoke)),
-}
-
 // eventHandler is one Go-implemented event handler COM object.
 type eventHandler struct {
 	// server must stay first: a COM interface pointer is the address of the
@@ -79,6 +69,9 @@ type eventHandler struct {
 // of one, which the caller owns. See ReleaseHandler (handlers_events_windows.go)
 // for what to do with it.
 func newEventHandler(iid windows.GUID, event string, invoke func(sender, args uintptr)) unsafe.Pointer {
+	if !ensureCOMVtables() {
+		return nil
+	}
 	handler := &eventHandler{event: event, invoke: invoke}
 	handler.server.register(
 		uintptr(unsafe.Pointer(&eventHandlerVtable)),

@@ -19,6 +19,8 @@ func New(config Config) *Host {
 }
 
 // Run reports ErrUnsupportedPlatform. Check with errors.Is.
+// ErrUnsupportedArchitecture is reserved for Windows processes whose ABI is
+// unsupported; a non-Windows build remains a platform error.
 func (host *Host) Run() error { return ErrUnsupportedPlatform }
 
 // Show reports ErrUnsupportedPlatform.

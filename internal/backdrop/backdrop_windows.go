@@ -5,6 +5,8 @@ package backdrop
 import (
 	"fmt"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -95,11 +97,29 @@ type message struct {
 	Point   struct{ X, Y int32 }
 }
 
-// wndProcCallback is created once, at package init: windows.NewCallback
-// allocates from a small fixed table that is never freed, so a callback per
-// call would leak table slots (the same rule host/ and internal/webview2
-// follow).
-var wndProcCallback = windows.NewCallback(backdropWndProc)
+// windows.NewCallback allocates from a small fixed table and never frees an
+// entry. Keep one process-wide callback, but create it only when Show actually
+// reaches window creation: cmd/mullion doctor imports this package too, and an
+// unsupported process must return its architecture sentinel before spending a
+// permanent native callback slot (decision 0034).
+var (
+	wndProcOnce     sync.Once
+	wndProcCallback atomic.Uintptr
+)
+
+func backdropWindowProcCallback() uintptr {
+	wndProcOnce.Do(func() {
+		wndProcCallback.Store(windows.NewCallback(backdropWndProc))
+	})
+	return wndProcCallback.Load()
+}
+
+// CallbackAllocated reports whether the backdrop command has crossed its first
+// native allocation boundary. cmd/mullion doctor checks this before probing so
+// an eager package initializer cannot silently violate decision 0034.
+func CallbackAllocated() bool {
+	return wndProcCallback.Load() != 0
+}
 
 // watchedTarget is the window the backdrop lifted at startup, or 0.
 // activeBackdrop is its owned HWND until WM_DESTROY. The command runs exactly
@@ -232,7 +252,7 @@ func Show(colour Colour, targetClass string) error {
 
 	class := wndClassEx{
 		Size:       uint32(unsafe.Sizeof(wndClassEx{})),
-		WndProc:    wndProcCallback,
+		WndProc:    backdropWindowProcCallback(),
 		Instance:   instance,
 		Cursor:     cursor,
 		Background: brush,

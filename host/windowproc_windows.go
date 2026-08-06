@@ -3,34 +3,10 @@
 package host
 
 func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam uintptr) uintptr {
+	if isNativeHostCommand(message) {
+		return host.dispatchNativeHostCommand(hwnd, message, wParam, lParam)
+	}
 	switch message {
-	case wmNativeShow:
-		if host.showFromMessage() {
-			return 1
-		}
-		return 0
-	case wmNativeHide:
-		host.hideFromMessage()
-		return 0
-	case wmNativeQuit:
-		host.log.Debug("mullion: quit applying")
-		procDestroyWindow.Call(uintptr(hwnd))
-		return 0
-	case wmNativeMinimize:
-		host.minimizeFromMessage()
-		return 0
-	case wmNativeMaxToggle:
-		host.toggleMaximiseFromMessage()
-		return 0
-	case wmNativeStartDrag:
-		host.startDragFromMessage()
-		return 0
-	case wmNativeStartResize:
-		host.startResizeFromMessage(int32(wParam))
-		return 0
-	case wmNativeSyncBounds:
-		host.syncWebViewBounds(boundsSyncSourceFromWParam(wParam))
-		return 0
 	case wmClose:
 		host.log.Debug("mullion: close requested")
 		host.logNativeWindowActionState("close_before", hwnd)
@@ -113,6 +89,62 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		host.requestDeferredBoundsSync(boundsSyncWParamDeferredExitSizeMove)
 	}
 	return defWindowProc(hwnd, message, wParam, lParam)
+}
+
+func isNativeHostCommand(message uint32) bool {
+	switch message {
+	case wmNativeShow, wmNativeHide, wmNativeQuit, wmNativeMinimize,
+		wmNativeMaxToggle, wmNativeStartDrag, wmNativeStartResize,
+		wmNativeSyncBounds, wmNativeSetTitle:
+		return true
+	default:
+		return false
+	}
+}
+
+// dispatchNativeHostCommand is the sole mutation boundary for private window
+// commands. Both the callback HWND and lParam token must still name the active
+// Run before any command-specific log, browser call or Win32 mutation occurs.
+func (host *Host) dispatchNativeHostCommand(hwnd windowHandle, message uint32, wParam, token uintptr) uintptr {
+	host.mu.RLock()
+	current := host.hwnd
+	currentToken := host.activeRunToken
+	host.mu.RUnlock()
+	if hwnd == 0 || hwnd != current || token == 0 || token != currentToken {
+		return 0
+	}
+	if host.applyNativeCommand != nil {
+		result := host.applyNativeCommand(hwnd, message, wParam)
+		if message == wmNativeShow && result == 0 {
+			host.retryStartupShowAfterFailedApplication(hwnd, token)
+		}
+		return result
+	}
+	switch message {
+	case wmNativeShow:
+		if host.showFromMessage() {
+			return 1
+		}
+		host.retryStartupShowAfterFailedApplication(hwnd, token)
+	case wmNativeHide:
+		host.hideFromMessage()
+	case wmNativeQuit:
+		host.log.Debug("mullion: quit applying")
+		procDestroyWindow.Call(uintptr(hwnd))
+	case wmNativeMinimize:
+		host.minimizeFromMessage()
+	case wmNativeMaxToggle:
+		host.toggleMaximiseFromMessage()
+	case wmNativeStartDrag:
+		host.startDragFromMessage()
+	case wmNativeStartResize:
+		host.startResizeFromMessage(int32(wParam))
+	case wmNativeSyncBounds:
+		host.syncWebViewBounds(boundsSyncSourceFromWParam(wParam))
+	case wmNativeSetTitle:
+		host.warnIf("set title", setWindowTextPointer(hwnd, wParam))
+	}
+	return 0
 }
 
 // runWindowDestroy runs the WM_DESTROY teardown and guarantees quit() runs even

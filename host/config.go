@@ -10,6 +10,11 @@ import (
 // ErrUnsupportedPlatform is returned by Run on every platform except Windows.
 var ErrUnsupportedPlatform = errors.New("mullion: unsupported platform (windows only)")
 
+// ErrUnsupportedArchitecture is returned by Run from a Windows binary whose
+// process architecture cannot safely host WebView2. Use errors.Is; the returned
+// error also names runtime.GOARCH and the supported windows/amd64 target.
+var ErrUnsupportedArchitecture = errors.New("mullion: unsupported Windows architecture")
+
 // Colour is an 8-bit-per-channel RGBA colour.
 type Colour struct{ R, G, B, A uint8 }
 

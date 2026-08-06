@@ -284,7 +284,7 @@ no rebuild. A NetLog has neither failure mode: it names the span or it proves th
 wait is not in the network stack. It named it — a `HOST_RESOLVER_MANAGER_JOB` for
 the virtual host, 2.007 s. The measurement, and the five other probes that came
 back null before it, are in
-[webview2-and-assets.md](./webview2-and-assets.md).
+[assets.md](./assets.md).
 
 **Lesson.** Before spending a run on a behavioural probe, ask what its *negative*
 would prove. If "it did nothing" and "it never ran" look identical from outside,
@@ -310,3 +310,5 @@ does not.
 The four items about what a log line may say are in [logging-dead-ends.md](./logging-dead-ends.md) with the sections they summarise.
 
 > Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: the data: source and sanitiser dead ends moved verbatim to logging-dead-ends.md, with their four short-version items, because this file had reached 384 of its 400 lines. Numbering 1-13 is untouched, since decision records and one source comment cite these sections by number; only the two moved sections and the short version were renumbered, and decisions/0017's references were repointed. A new §14 records the --host-resolver-rules probe that was staged, run and unreadable - the negative it produced could not distinguish "not the cause" from "never applied", which is what the NetLog was reached for instead (issue #85).
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: repoint the virtual-host measurement to assets.md after the asset-serving reference split.

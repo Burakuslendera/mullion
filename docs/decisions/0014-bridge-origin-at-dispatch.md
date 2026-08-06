@@ -26,14 +26,15 @@ the document that posted a message. It was read and discarded.
 
 ## Decision
 
-The host enforces the source origin at message dispatch. The `WebMessageReceived`
-handler threads `args.GetSource()` into `MessageCallback`, and
-`messageSourceAllowed` is an **allow-list**: a message passes only when its source
+The host enforces the source origin at message dispatch. The current
+`CoreWebView2.WebMessageReceived` handler receives messages from the top-level
+document only; it threads `args.GetSource()` into `MessageCallback`, and
+`messageSourceAllowed` is an **allow-list**. A message passes only when its source
 is the same http/https origin as the trusted one — the virtual host
 (`https://<VirtualHost>`) in asset mode, or the `Config.URL` origin when set,
-compared with the default port normalised and the host case-insensitive — or is the
-`data:` error surface. Everything else is dropped silently and logged; no reply is
-posted, so a foreign origin gets nothing to correlate.
+compared with the default port normalised and the host case-insensitive — or is
+the `data:` error surface. Everything else is dropped silently and logged; no
+reply is posted, so a foreign origin gets nothing to correlate.
 
 An allow-list, not a deny-list, because the schemes that are *not* a concrete
 http/https origin are not all harmless: `blob:` and `filesystem:` documents carry
@@ -75,13 +76,23 @@ This does not stop the foreign origin from *loading* (that is the
 (`NewWindowRequested`); it stops the foreign origin from *acting through the
 bridge*, which is the reaches-into-Go half of the threat.
 
-The `data:` exception is scoped. A `data:` source is admitted so the error page's
-caption buttons work, but it is **not** trusted for `Config.Bridge`: only mullion
-can put a `data:` document in the *top* frame, but a script can create a `data:`
-*iframe*, and the bridge is injected into every frame — so a `data:` message may
-be a hostile iframe rather than the error surface. `messageSourceTrusted` gates
-the `Config.Bridge` hand-off, so a `data:` source reaches the reserved window
-controls only, never the application's own Go methods.
+The `data:` exception is scoped. A `data:` top-level source is admitted so the
+error page's caption buttons, old-runtime drag path, and resize overlay work. It
+is **not** trusted for `Config.Bridge`, and its reserved-method admission is
+limited to `WindowStartDrag`, `WindowStartResize`, `WindowMinimise`,
+`WindowToggleMaximise`, `WindowIsMaximised`, and `WindowClose`. In particular,
+the fallback's injected `shellReady`, `ready`, `phase`, and `diagnostic` calls
+cannot change readiness or overwrite the failed application's retained render-
+watchdog evidence.
+
+That statement is deliberately top-level-only. The bridge script may be
+injected into child frames, but the `CoreWebView2.WebMessageReceived` event used
+today does not receive their posts; frame messages require the separate
+`CoreWebView2Frame.WebMessageReceived` path. If mullion wires frame receipt in
+the future, a script-created hostile `data:` iframe becomes reachable. The
+separate trusted-origin check and narrow error-surface method set must remain at
+that new dispatch boundary rather than treating every `data:` frame as mullion's
+fallback.
 
 ## What would change our mind
 
@@ -92,10 +103,16 @@ controls only, never the application's own Go methods.
 
 ## Evidence
 
-`host/loopback.go` (`messageSourceAllowed`, `trustedOrigin`), the dispatch check
-in `host/webview_windows.go`, and the source threaded through
-`internal/webview2/browser_events_windows.go`. `TestMessageSourceAllowed`
-(`host/loopback_test.go`) locks the allow/reject matrix. Issue #6 carries the full
-analysis and the reproduction reasoning.
+`host/loopback.go` (`messageSourceAllowed`, `messageSourceTrusted`,
+`trustedOrigin`), the dispatch checks in `host/webview_windows.go` and
+`host/bridge_windows.go`, and the source threaded through
+`internal/webview2/browser_events_windows.go`. `TestMessageSourceAllowed` and
+`TestMessageSourceTrusted` lock the source matrix.
+`TestBridgeRestrictedSourcePreservesWatchdogEvidenceAndWindowControls` routes
+fallback messages through production dispatch and locks the narrower method
+set. `scripts/test-bridge.mjs` evaluates the shipped bridge template with
+Node's built-in `vm` and locks complete diagnostic forwarding. Issue #6 carries
+the original origin-gate analysis and reproduction reasoning; issue #88 carries
+the fallback evidence-retention follow-up.
 
-> Last updated: 2026-07-16 | Editor: Claude (Opus 4.8) | Change: new record for the bridge-origin dispatch gate.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document top-level-only message receipt, restrict fallback methods to caption/drag/resize, and preserve application watchdog evidence.

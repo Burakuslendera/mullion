@@ -7,6 +7,11 @@ import (
 	"runtime"
 )
 
+// CallbackAllocated is always false where the Win32 callback does not exist.
+func CallbackAllocated() bool {
+	return false
+}
+
 // Show cannot cover a desktop this platform does not have. The command still
 // compiles everywhere - the same position the library takes
 // (docs/decisions/0007) - and answers honestly at run time instead.

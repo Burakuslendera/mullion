@@ -28,11 +28,11 @@ type bridgeRequest struct {
 // leave Config.Bridge nil and still get drag, resize, minimise, maximise and
 // close.
 //
-// allowBridge gates the application's own methods. Window controls (the reserved
-// methods) are always answered, but a message from a restricted source - the
-// data: error surface, which a hostile script could equally be posting from a
-// data: iframe (decisions/0014) - may drive those controls and nothing else,
-// never Config.Bridge.
+// allowBridge gates the application's own methods and the reserved readiness
+// and diagnostic methods. A restricted source is mullion's data: error surface;
+// it may drive only the caption, fallback drag and fallback resize controls that
+// surface uses, never readiness, retained diagnostics, or Config.Bridge
+// (decisions/0014).
 func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 	var request bridgeRequest
 	if err := json.Unmarshal([]byte(raw), &request); err != nil {
@@ -45,19 +45,22 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 		host.log.Warn("mullion: bridge message without method")
 		return ""
 	}
+	if !allowBridge && !errorSurfaceMethodAllowed(request.Method) {
+		// The fallback surface never awaits replies. Withholding one also keeps
+		// the restricted admission non-correlatable if frame message receipt is
+		// added in the future and a hostile data: iframe reaches this dispatch.
+		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Diagnostic(request.Method))
+		return ""
+	}
 
 	if reply, handled := host.handleReservedMethod(request); handled {
 		return reply
 	}
 
 	if !allowBridge {
-		// A restricted source reaches only the reserved window controls above,
-		// never the application's own Go methods (decisions/0014). Drop it with no
-		// reply - the same no-correlation stance the outer origin gate takes for a
-		// foreign source (webview_windows.go): a bridgeError reply is correlatable,
-		// letting a hostile data: iframe confirm it holds the restricted admission.
-		// The error surface only ever calls reserved methods, so it never awaits a
-		// reply this withholds (issue #70).
+		// Every method the fallback surface is allowed to use was handled above.
+		// Keep this branch as a closed default if a new reserved method is added
+		// without being deliberately admitted by errorSurfaceMethodAllowed.
 		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Diagnostic(request.Method))
 		return ""
 	}
@@ -70,6 +73,27 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 	response := host.config.Bridge(raw)
 	host.recordBridgeCall(request.Method, "completed")
 	return response
+}
+
+// errorSurfaceMethodAllowed is deliberately narrower than the reserved-method
+// set. The data: fallback needs its caption buttons, the old-runtime drag path,
+// and the resize overlay (including the maximised-state query). Its injected
+// diagnostics and readiness helpers must not overwrite the failed application's
+// watchdog evidence. WebView2's current CoreWebView2 WebMessageReceived path is
+// top-level-only; keeping this boundary narrow also contains a future migration
+// to frame message receipt, where a hostile data: iframe could reach it.
+func errorSurfaceMethodAllowed(method string) bool {
+	switch method {
+	case methodStartDrag,
+		methodStartResize,
+		methodMinimise,
+		methodToggleMaximise,
+		methodIsMaximised,
+		methodClose:
+		return true
+	default:
+		return false
+	}
 }
 
 func (host *Host) handleReservedMethod(request bridgeRequest) (string, bool) {

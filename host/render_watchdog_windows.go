@@ -17,6 +17,10 @@ import (
 //
 // Config.RenderTimeout < 0 disables it.
 func (host *Host) startRenderWatchdog() {
+	host.startRenderWatchdogForRun(host.currentRun())
+}
+
+func (host *Host) startRenderWatchdogForRun(admission runAdmission) {
 	host.renderMu.Lock()
 	defer host.renderMu.Unlock()
 
@@ -31,18 +35,28 @@ func (host *Host) startRenderWatchdog() {
 	}
 	var timer *time.Timer
 	timer = time.AfterFunc(host.config.RenderTimeout, func() {
-		host.renderMu.Lock()
-		defer host.renderMu.Unlock()
-		if host.renderTimer != timer {
-			return
-		}
-		host.renderTimer = nil
-		if host.frontendReady {
-			return
-		}
-		host.log.Error("mullion: frontend render timeout, " + host.diagnostics.timeoutSummary())
+		host.fireRenderWatchdog(timer, admission)
 	})
 	host.renderTimer = timer
+}
+
+func (host *Host) fireRenderWatchdog(timer *time.Timer, admission runAdmission) {
+	if !host.enterOriginatingRun(admission) {
+		return
+	}
+	defer host.leaveRun()
+	host.renderMu.Lock()
+	if host.renderTimer != timer {
+		host.renderMu.Unlock()
+		return
+	}
+	host.renderTimer = nil
+	ready := host.frontendReady
+	host.renderMu.Unlock()
+	if ready {
+		return
+	}
+	host.log.Error("mullion: frontend render timeout, " + host.diagnostics.timeoutSummary())
 }
 
 func (host *Host) stopRenderWatchdog() {
@@ -65,6 +79,9 @@ func (host *Host) stopRenderWatchdog() {
 // is off-thread by construction) and the sync touches the STA-bound WebView2
 // controller.
 func (host *Host) MarkFrontendReady() {
+	admission := host.enterRun()
+	defer host.leaveRun()
+
 	host.renderMu.Lock()
 	if host.frontendReady {
 		host.renderMu.Unlock()
@@ -79,14 +96,14 @@ func (host *Host) MarkFrontendReady() {
 
 	host.recordStartupFrontendReady()
 	host.log.Info("mullion: frontend ready")
-	host.postBoundsSync("frontend ready bounds post", boundsSyncWParamFrontendReady)
+	host.postBoundsSyncForRun(admission, "frontend ready bounds post", boundsSyncWParamFrontendReady)
 }
 
 // MarkFrontendShellReady records that the frontend has rendered enough to be
 // shown, and releases the startup show gate. Corresponds to
 // window.<ns>.shellReady(). Safe from any goroutine, exactly as
-// MarkFrontendReady: the bounds sync is posted, and the show gate already
-// posts.
+// MarkFrontendReady. Once the gate has started its bounds sync and show are
+// posted; an earlier signal is latched without a pre-window post.
 //
 // Idempotent, exactly as MarkFrontendReady: shellReady() is a reserved bridge
 // method reachable from any page the bridge trusts, so a frontend calling it
@@ -94,6 +111,9 @@ func (host *Host) MarkFrontendReady() {
 // shares frontendReady's lifecycle - startRenderWatchdog resets both - while
 // the startup timing record and show gate keep their own per-Run guards.
 func (host *Host) MarkFrontendShellReady() {
+	admission := host.enterRun()
+	defer host.leaveRun()
+
 	host.renderMu.Lock()
 	if host.frontendShellReady {
 		host.renderMu.Unlock()
@@ -104,13 +124,23 @@ func (host *Host) MarkFrontendShellReady() {
 
 	host.recordStartupFrontendShellReady()
 	host.log.Info("mullion: frontend shell ready")
-	host.postBoundsSync("frontend shell ready bounds post", boundsSyncWParamFrontendShellReady)
-	host.requestStartupShow("frontend_shell_ready")
+	// During the embed pump the gate has not started and the controller may not
+	// yet be committed. Latch readiness without posting anything; the eventual
+	// tagged show applies a bounds sync after the gate starts.
+	host.startupMu.Lock()
+	gateStarted := host.startupShowStarted
+	host.startupMu.Unlock()
+	if gateStarted {
+		host.postBoundsSyncForRun(admission, "frontend shell ready bounds post", boundsSyncWParamFrontendShellReady)
+	}
+	host.requestStartupShowForRun(admission, "frontend_shell_ready")
 }
 
 // MarkFrontendPhase records a free-form progress marker from the frontend. It
 // appears in the render-watchdog summary as the last phase reached.
 func (host *Host) MarkFrontendPhase(phase string) {
+	host.enterRun()
+	defer host.leaveRun()
 	phase = logsafe.Diagnostic(phase)
 	host.diagnostics.recordFrontendPhase(phase)
 	host.log.Debug("mullion: frontend phase, phase=" + phase)
@@ -119,5 +149,7 @@ func (host *Host) MarkFrontendPhase(phase string) {
 // MarkFrontendDiagnostic records a frontend diagnostic event (a script error, a
 // failed resource, a DOM snapshot).
 func (host *Host) MarkFrontendDiagnostic(kind string, detail string) {
+	host.enterRun()
+	defer host.leaveRun()
 	host.recordFrontendDiagnostic(kind, detail)
 }

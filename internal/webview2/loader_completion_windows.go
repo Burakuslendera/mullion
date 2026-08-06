@@ -55,17 +55,16 @@ type completedHandler struct {
 	abandoned bool
 }
 
-// completedVtable is shared by both completion handlers. They differ only in the
-// IID they are registered under (loader_windows.go), not in behaviour, and
-// windows.NewCallback allocates from a small table it never frees - so one
-// callback for both is the difference between spending one permanent slot and
-// two.
-var completedVtable = completionVtbl{
-	IUnknownVtbl: iunknownVtbl,
-	Invoke:       ComProc(windows.NewCallback(invoked)),
-}
+// completedVtable is shared by both completion handlers. ensureCOMVtables
+// builds it once, after runtime discovery has accepted the process architecture.
+// The handlers differ only in the IID registered below.
+// completedVtable's storage lives in comserver_windows.go with the other shared
+// callback tables.
 
 func newCompletedHandler(vtable uintptr, iid windows.GUID) *completedHandler {
+	if !ensureCOMVtables() {
+		return nil
+	}
 	// Buffered, so Invoke never blocks. Invoke runs on the UI thread inside our
 	// own message pump: a send that blocked would deadlock the thread that is
 	// supposed to receive it.

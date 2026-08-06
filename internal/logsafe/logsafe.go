@@ -45,22 +45,42 @@ const DiagnosticLimit = 2000
 const diagnosticInputLimit = DiagnosticLimit - 64
 
 // Diagnostic reduces an untrusted diagnostic value with bounded work and
-// bounded output. It keeps the first http(s) URL whose complete authority fits
-// the URL reducer's budget, even when a long plain-text prefix would otherwise
-// push that URL beyond the input bound. A URL authority is never cut: an
-// overlong authority is omitted instead of being printed as a believable host
-// prefix.
+// bounded output. It keeps the first http(s) URL the production reducer can
+// emit, even when a long plain-text prefix would otherwise push that URL beyond
+// the input bound. An overlong or malformed candidate is rejected and scanning
+// continues; a URL authority is never cut into a believable host prefix.
 //
 // The clone is intentional. Several diagnostic values live for the lifetime of
 // a Host; a short reduction must not retain a large frontend-owned backing
 // string.
 func Diagnostic(message string) string {
-	message = boundDiagnosticInput(message)
-	reduced := Message(message)
+	bounded := boundDiagnosticInput(message)
+	reduced := Message(bounded)
 	if len(reduced) > DiagnosticLimit {
-		reduced = strings.TrimSpace(boundForScanAt(reduced, DiagnosticLimit-len(truncationMarker))) + truncationMarker
+		// Path reduction can expand a short token: "." becomes "unknown.".
+		// Reserve the selected URL's output bytes after reduction, not merely
+		// before it, or an expanding prefix can still displace the URL that
+		// boundDiagnosticInput deliberately kept (decision 0035).
+		if urlStart, urlValue := firstDiagnosticURL(message); urlValue != "" {
+			reduced = diagnosticPrefixWithURL(message[:urlStart], urlValue)
+		} else {
+			reduced = strings.TrimSpace(boundForScanAt(reduced, DiagnosticLimit-len(truncationMarker))) + truncationMarker
+		}
 	}
 	return strings.Clone(reduced)
+}
+
+func diagnosticPrefixWithURL(prefix, urlValue string) string {
+	plainBudget := DiagnosticLimit - len(urlValue) - 1
+	prefix = boundForScanAt(prefix, diagnosticInputLimit)
+	plain := strings.TrimSpace(Message(prefix))
+	if len(plain) > plainBudget {
+		plain = strings.TrimSpace(boundForScanAt(plain, plainBudget-len(truncationMarker))) + truncationMarker
+	}
+	if plain == "" {
+		return urlValue
+	}
+	return plain + " " + urlValue
 }
 
 // DiagnosticFileName bounds a path from the tail before reducing it, because
@@ -91,8 +111,8 @@ func DiagnosticFileName(path string) string {
 }
 
 // boundDiagnosticInput caps the bytes that reach Message while reserving the
-// first meaningful URL. Screening is one linear, allocation-free pass; only the
-// first structurally valid, fixed-size candidate is copied for reduction.
+// first meaningful URL. Screening and full-path validation are linear; the
+// selected production reduction has fixed-size allocation and output.
 func boundDiagnosticInput(message string) string {
 	if len(message) <= diagnosticInputLimit {
 		return message
@@ -115,9 +135,10 @@ func boundDiagnosticInput(message string) string {
 	return plain + " " + urlValue
 }
 
-// firstDiagnosticURL returns the first run that URL can reduce while keeping a
-// complete host. Candidate screening covers the parser's rejection conditions,
-// so malformed runs allocate nothing and cannot displace a later valid URL.
+// firstDiagnosticURL returns the first run that the production URL reduction
+// accepts while keeping a complete host. Cheap malformed shapes allocate
+// nothing; every parse and retained candidate is bounded independently of the
+// input, and rejected runs cannot displace a later valid URL.
 func firstDiagnosticURL(message string) (int, string) {
 	for index := 0; index < len(message); {
 		offset := strings.IndexAny(message[index:], "hH")
@@ -140,81 +161,43 @@ func firstDiagnosticURL(message string) (int, string) {
 	return 0, ""
 }
 
-// diagnosticURLCandidate makes a fixed-size, parser-ready projection of one URL
-// run. It keeps the authority whole, validates path escapes before any parse,
-// completes the rune or %XX escape crossing the path budget, and carries query
-// and fragment presence without their values.
+// diagnosticURLCandidate returns the bounded production reduction of one URL
+// run. The complete raw run is validated before any candidate is accepted, so
+// an over-budget authority, parser-invalid shape or malformed late path escape
+// cannot displace a later meaningful URL. Userinfo is accepted but never copied
+// into the returned value.
 func diagnosticURLCandidate(run string, terminator byte) (string, bool) {
+	if terminator != 0 && terminator != ' ' && !hasCompleteAuthority(run) {
+		return "", false
+	}
+	head, hasQuery, hasFragment := splitURLMarks(run)
+	host, ok := diagnosticURLHost(head)
+	if !ok || !isDiagnosticAuthorityShaped(host) {
+		return "", false
+	}
+	return reduceHTTPURL(head, hasQuery, hasFragment)
+}
+
+func diagnosticURLHost(head string) (string, bool) {
 	schemeEnd := len("http://")
-	if len(run) >= len("https://") && strings.EqualFold(run[:len("https://")], "https://") {
+	if len(head) >= len("https://") && strings.EqualFold(head[:len("https://")], "https://") {
 		schemeEnd = len("https://")
 	}
-
-	fragment := strings.IndexByte(run, '#')
-	headEnd := len(run)
-	hasFragment := fragment >= 0
-	if hasFragment {
-		headEnd = fragment
+	if len(head) < schemeEnd {
+		return "", false
 	}
-	query := strings.IndexByte(run[:headEnd], '?')
-	hasQuery := query >= 0
-	if hasQuery {
-		headEnd = query
-	}
-
-	authorityEnd := headEnd
-	authorityComplete := headEnd < len(run)
-	if slash := strings.IndexByte(run[schemeEnd:headEnd], '/'); slash >= 0 {
+	authorityEnd := len(head)
+	if slash := strings.IndexByte(head[schemeEnd:], '/'); slash >= 0 {
 		authorityEnd = schemeEnd + slash
-		authorityComplete = true
 	}
-	if !isDiagnosticAuthorityShaped(run[schemeEnd:authorityEnd]) {
-		return "", false
-	}
-	if terminator != 0 && terminator != ' ' && !authorityComplete {
-		return "", false
-	}
-
-	head := run[:headEnd]
-	for index := schemeEnd; index < len(head); index++ {
-		value := head[index]
-		if value < ' ' || value == 0x7f {
+	authority := head[schemeEnd:authorityEnd]
+	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+		if !isValidUserinfo(authority[:at]) {
 			return "", false
 		}
-		if value == '%' {
-			if index+2 >= len(head) || !isHexByte(head[index+1]) || !isHexByte(head[index+2]) {
-				return "", false
-			}
-			index += 2
-		}
+		authority = authority[at+1:]
 	}
-
-	candidateEnd := len(head)
-	if candidateEnd > URLLimit+1 {
-		candidateEnd = URLLimit + 1
-		if percent := strings.LastIndexByte(head[:candidateEnd], '%'); percent >= 0 && percent+3 > candidateEnd {
-			candidateEnd = percent + 3
-		}
-		runeEnd := candidateEnd
-		for runeEnd < len(head) && !utf8.RuneStart(head[runeEnd]) && runeEnd-candidateEnd < utf8.UTFMax {
-			runeEnd++
-		}
-		if runeEnd < len(head) && !utf8.RuneStart(head[runeEnd]) {
-			return "", false
-		}
-		candidateEnd = runeEnd
-	}
-
-	var candidate strings.Builder
-	candidate.Grow(candidateEnd + 2)
-	candidate.WriteString(head[:candidateEnd])
-	if hasQuery {
-		candidate.WriteByte('?')
-	}
-	if hasFragment {
-		candidate.WriteByte('#')
-	}
-	return candidate.String(), true
+	return authority, true
 }
 
 func isDiagnosticAuthorityShaped(authority string) bool {
@@ -233,13 +216,13 @@ func isDiagnosticAuthorityShaped(authority string) bool {
 		if remainder[0] != ':' {
 			return false
 		}
-		return isDecimal(remainder[1:])
+		return remainder[1:] == "" || isDecimal(remainder[1:])
 	}
 	if strings.ContainsAny(authority, "[]") || strings.Count(authority, ":") > 1 {
 		return false
 	}
 	if colon := strings.LastIndexByte(authority, ':'); colon >= 0 {
-		return isDecimal(authority[colon+1:])
+		return authority[colon+1:] == "" || isDecimal(authority[colon+1:])
 	}
 	return true
 }

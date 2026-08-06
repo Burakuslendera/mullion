@@ -23,8 +23,10 @@ import (
 // This page is mullion's own controllable surface instead.
 //
 // The injected bridge shim (host/js.go, registered with Init) runs on every
-// document, including this data: page, so window.<ns> exists here and the caption
-// buttons and the fallback drag path work exactly as on the real frontend.
+// document, including this data: page, so window.<ns> exists here. Restricted
+// dispatch admits its caption buttons, fallback drag path, and resize overlay,
+// but not the readiness and diagnostic helpers injected alongside them; those
+// belong to the failed application's watchdog evidence (decisions/0014).
 
 // errorPageURL renders the fallback surface as a data:text/html URL for failedURL.
 //

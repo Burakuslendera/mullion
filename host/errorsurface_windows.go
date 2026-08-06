@@ -352,9 +352,11 @@ func (host *Host) noteOrderedOutcome(success bool, status webview2.WebErrorStatu
 // rejected when it can only plausibly come from mullion's own fallback error
 // surface: the source is the empty string - the runtime's representation of a
 // data: document (issue #56, measured live) - and the surface is the document
-// the host last navigated to. The admission grants the reserved window controls
-// only, so the surface's caption buttons work; Config.Bridge stays behind
-// messageSourceTrusted, which never accepts an empty source (decisions/0014).
+// the host last navigated to. The later bridge dispatch grants only the
+// fallback's caption, drag and resize methods, so injected readiness and
+// diagnostics cannot mutate the failed application's watchdog evidence;
+// Config.Bridge stays behind messageSourceTrusted, which never accepts an empty
+// source (decisions/0014).
 func (host *Host) errorSurfaceMessageAllowed(source string) bool {
 	return source == "" && host.errorSurfaceActive
 }

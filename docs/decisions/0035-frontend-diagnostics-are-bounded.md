@@ -29,16 +29,23 @@ keep.
 
 `logsafe.Diagnostic` is the boundary for frontend-controlled text used by host
 logging or diagnostics. It limits a value to 2,000 bytes. It first selects at
-most 1,936 bytes for reduction, reserving the remaining budget for reduction
-markers and seams, and enforces the 2,000-byte limit again on the result. Cuts
-stay on UTF-8 rune boundaries.
+most 1,936 bytes for reduction, reserving the remaining input budget for
+reduction markers and seams, then enforces the 2,000-byte output limit. If plain
+prefix reduction expands — a lone `.` becomes `unknown.` — the final projection
+reserves the selected URL's reduced bytes before trimming that prefix. Cuts stay
+on UTF-8 rune boundaries.
 
-The bounded input reserves the first http(s) run that can be reduced with its
-complete authority. A normal URL therefore survives even after a long text
-prefix. ASCII control whitespace cannot end an open authority. A long path may
-be cut only after its authority; a boundary escape or UTF-8 rune is completed,
-and query/fragment presence is carried without their values. An authority that
-cannot fit is omitted rather than shortened into a believable host.
+The bounded input reserves the first http(s) run that the production URL
+reduction can actually emit with its complete authority. A normal URL therefore
+survives even after a long text prefix. ASCII control whitespace cannot end an
+open authority. A long path may be cut only after its authority; the reducer
+validates the entire path, projects it into fixed storage by complete `%XX`,
+percent-encoded-rune or UTF-8-rune units, and carries query/fragment presence
+without their values. A shaped authority that cannot fit, or a candidate with a
+malformed userinfo or late path byte, is rejected and scanning continues. The
+selector accepts every authority shape the production reducer does, including an
+empty optional port. Valid userinfo is accepted, but credentials are validated
+in place and never copied into the selected URL.
 
 `DiagnosticFileName` takes the bounded tail of a frontend-controlled asset path,
 then reduces and clones the final name. All retained diagnostic strings are
@@ -51,6 +58,14 @@ application's `Config.Bridge` still receives the original raw JSON string,
 byte-for-byte. The JavaScript-side 240-code-unit slice is removed because a
 pre-parse cut can shorten a URL authority and because the Go boundary is the one
 direct WebView messages cannot bypass.
+
+The fallback error surface is not admitted as a diagnostic source. Although
+`diagnostics.js` is injected into its `data:` document, restricted dispatch
+allows only the caption, drag and resize methods the surface needs. Its
+`shellReady`, `ready`, `phase`, and `diagnostic` messages are dropped before
+reserved-method handling, so the failed application's retained phase and render-
+watchdog summary remain authoritative. Trusted-origin diagnostic messages still
+arrive complete and are bounded only at the Go receipt boundary.
 
 ## Alternatives rejected
 
@@ -74,16 +89,19 @@ keeps that evidence without retaining the whole message.
 
 Frontend-controlled log fields and retained phase, bridge and asset diagnostics
 are finite. Reduction after the initial selection has constant-sized input. The
-selector scans linearly and rejects the URL parser's failure conditions without
-allocating, then copies the first structurally valid fixed-size candidate; the
-bounded reducer parses that candidate once. Fake scheme count therefore cannot
-drive allocation count. A large request still has to be received and decoded,
+selector scans linearly, rejects cheap lexical failures without allocating, and
+accepts a candidate only after the production reducer has validated its whole
+path and parsed its bounded credential-free origin. Fake-scheme count therefore
+cannot drive allocation bytes. URL path projection and userinfo validation also
+allocate a fixed amount: a 1 MiB path or credential costs the same bounded output
+storage as a 1 KiB one. A large request still has to be received and decoded,
 and `Config.Bridge` deliberately receives it whole.
 
-Long context and later URLs are discarded. A first URL with an authority larger
-than the URL reducer's budget is discarded too; saying less is the permanent
-cost of never printing a shortened host as a whole one. Asset diagnostics keep
-the final component rather than the beginning of an overlong path.
+Long context and URLs after the selected candidate are discarded. An authority
+larger than the URL reducer's budget is rejected without being shortened, and
+the scan continues to the next candidate; saying less is the permanent cost of
+never printing a shortened host as a whole one. Asset diagnostics keep the final
+component rather than the beginning of an overlong path.
 
 The 2,000-byte value is now a compatibility limit for host diagnostics, not for
 the application bridge protocol. Raising or lowering it changes observable log
@@ -105,13 +123,23 @@ and watchdog output and requires this decision to be revisited.
 `TestSanitizeTokenTrailingPunctuationIsLinear` compares allocation counts for
 short and 8 KiB punctuation suffixes and locks exact output, so the former
 per-byte prepend fails without a timing threshold. Bounded-reducer tests cover
-adversarial punctuation, control-whitespace authority cuts, a boundary `%XX`,
-query/fragment markers, too-long authorities, output size and fake-scheme
-allocation counts. They also prove every accepted candidate shape reduces as a
-URL and that ten malformed authorities cannot displace the next meaningful URL.
-Host tests cover large method, phase, kind and detail values, restricted-source
-diagnostics, detached retained state, a final resource name after a long URL
-path, and the original large request reaching `Config.Bridge`.
+adversarial punctuation, post-reduction prefix expansion, control-whitespace
+authority cuts, over-budget and parser-invalid decoys followed by a real URL,
+malformed userinfo continuation, credential removal, production-valid empty
+ports, every `%XX` and encoded-rune boundary, control bytes and malformed escapes
+beyond the retained projection, query/fragment markers, output size, and
+fake-scheme allocation bytes. They prove every accepted candidate reduces as a
+URL. URL benchmarks compare 1 KiB and 1 MiB paths and userinfo values and lock
+input-size-independent allocated bytes.
+Host tests cover large method, phase, kind and detail values, detached retained
+state, a final resource name after a long URL path, the original large request
+reaching `Config.Bridge`, and a trusted diagnostic whose first URL begins after
+240 characters but survives bounded Go receipt. The production callback
+constructor is driven with trusted and active-fallback sources: fallback
+readiness/diagnostics and `Config.Bridge` admission stay closed, one fallback
+window control executes, and the trusted origin remains admitted. Run
+`node scripts/test-bridge.mjs` to render and evaluate the shipped bridge template
+with Node's built-in `vm`; it fails if client-side diagnostic truncation returns.
 
 On 2026-08-06 `go test -count=1 ./...` passed on Windows/amd64. A live
 WebView2 151.0.4129.59 run delivered 100,000 punctuation bytes through
@@ -119,4 +147,6 @@ WebView2 151.0.4129.59 run delivered 100,000 punctuation bytes through
 complete `https://mullion.localhost/app/main.js?` target without its query
 value, shut down cleanly, and exited 0.
 
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: accepted the 2,000-byte frontend diagnostic boundary, complete-first-URL rule, detached retained values and raw Config.Bridge transparency for issue #88; strengthened lexical selection against control-whitespace authority cuts, split escapes, malformed candidates and fake-scheme allocation growth.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: retain complete bridge diagnostics until the bounded Go boundary, and prevent fallback diagnostics from replacing application watchdog evidence.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: continue after invalid decoys, reserve the selected URL after expanding prefix reduction, match production authority shapes, validate complete paths/userinfo with fixed allocation, and drive trusted, restricted, and allowed-fallback cases through the production callback.

@@ -143,9 +143,10 @@ func (host *Host) openInSystemBrowser(uri string) {
 	if !host.claimExternalOpenSlot(uri) {
 		return
 	}
+	admission := host.currentRun()
 	go func() {
 		defer host.releaseExternalOpenSlot()
-		host.shellExecuteOpen(uri)
+		host.shellExecuteOpen(uri, admission)
 	}()
 }
 
@@ -179,9 +180,9 @@ func (host *Host) releaseExternalOpenSlot() {
 //
 // It runs on a goroutine of its own and is the one piece of the routing a
 // headless test cannot exercise - it would launch a browser - so it is verified
-// live. Everything it reports therefore reaches the embedder's Logger off the UI
-// thread, which Config.Logger documents.
-func (host *Host) shellExecuteOpen(uri string) {
+// live. Its captured Run admission lets warnings reach the embedder's
+// concurrent-safe Logger only while that Run still owns them.
+func (host *Host) shellExecuteOpen(uri string, admission runAdmission) {
 	// A COM apartment is thread-affine and a fresh goroutine is in none, while the
 	// Go runtime may move it between OS threads at any suspension point.
 	// ShellExecuteW can activate a COM handler, so the thread is pinned and an STA
@@ -204,16 +205,16 @@ func (host *Host) shellExecuteOpen(uri string) {
 		// to launch here would lose a navigation over a condition that may not
 		// affect it. It is still news - nothing else in the process would say the
 		// apartment was refused on a worker.
-		host.log.Warn("mullion: external open apartment unavailable, reason=" + logsafe.Reason(err))
+		host.warnForRun(admission, "mullion: external open apartment unavailable, reason="+logsafe.Reason(err))
 	}
 	verb, err := windows.UTF16PtrFromString("open")
 	if err != nil {
-		host.log.Warn("mullion: external open skipped, reason=" + logsafe.Reason(err))
+		host.warnForRun(admission, "mullion: external open skipped, reason="+logsafe.Reason(err))
 		return
 	}
 	target, err := windows.UTF16PtrFromString(uri)
 	if err != nil {
-		host.log.Warn("mullion: external open skipped, bad url, reason=" + logsafe.Reason(err))
+		host.warnForRun(admission, "mullion: external open skipped, bad url, reason="+logsafe.Reason(err))
 		return
 	}
 	// ShellExecuteW returns an HINSTANCE-sized value; > 32 is success, anything
@@ -228,6 +229,14 @@ func (host *Host) shellExecuteOpen(uri string) {
 		swShowNormal,
 	)
 	if ret <= 32 {
-		host.log.Warn("mullion: external open failed, shellexecute code=" + strconv.FormatUint(uint64(ret), 10))
+		host.warnForRun(admission, "mullion: external open failed, shellexecute code="+strconv.FormatUint(uint64(ret), 10))
 	}
+}
+
+func (host *Host) warnForRun(admission runAdmission, message string) {
+	if !host.enterOriginatingRun(admission) {
+		return
+	}
+	defer host.leaveRun()
+	host.log.Warn(message)
 }

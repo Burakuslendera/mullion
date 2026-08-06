@@ -37,6 +37,10 @@ func main() {
 
 	switch command {
 	case "doctor":
+		if backdrop.CallbackAllocated() {
+			fmt.Fprintln(os.Stderr, "mullion doctor: backdrop callback allocated before command dispatch")
+			os.Exit(1)
+		}
 		report := doctor.Probe(host.Version())
 		fmt.Print(doctor.Format(report))
 		if !report.Usable() {

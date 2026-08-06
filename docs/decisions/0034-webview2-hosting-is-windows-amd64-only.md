@@ -37,27 +37,35 @@ an unsafe widening of the claim.
 
 WebView2 hosting is supported only when the target is `windows/amd64`.
 
-`archFolder` is the single architecture gate. It returns `x64` for `amd64` and a
-clear unsupported-Windows-architecture error for every other `GOARCH`, including
-`386` and `arm64`. `findRuntime` calls the gate before environment or registry
-discovery. Consequently `FindRuntime`, `RuntimeClientPath`, `DescribeRuntime`,
-and `CreateEnvironmentWithOptions` all reject the process before probing for,
-loading, or calling a WebView2 client DLL. No controller can be obtained through
-the supported creation path, so the x64-only `PutBounds`, background-colour, and
-rasterization-scale encodings are unreachable on unsupported targets.
+`archFolder` is the single architecture decision. It returns `x64` for `amd64`
+and a clear unsupported-Windows-architecture error for every other `GOARCH`,
+including `386` and `arm64`; `ValidateArchitecture` exposes that same decision
+to consumers which must gate their own native setup. `findRuntime` calls it
+before environment or registry discovery. Consequently `FindRuntime`,
+`RuntimeClientPath`, `DescribeRuntime`, and `CreateEnvironmentWithOptions` all
+reject the process before probing for, loading, or calling a WebView2 client DLL.
 
-`ErrUnsupportedArchitecture` preserves the reason across those entry points.
-`Host.Run` checks that specific discovery error before COM initialization or
-creating an `HWND`; ordinary missing-runtime errors retain the existing deferred
-embed behaviour. This distinction makes `StartHidden` safe as well: an
-unsupported target cannot enter its message loop and later collapse the ABI
-error into a generic failed `Show`.
+The Go-implemented COM callback vtables are process-wide and initialized through
+one `sync.Once`, not per object, but the initialization is lazy. No
+`windows.NewCallback` trampoline is allocated at package initialization; the
+first supported environment/handler construction builds the shared WebView2
+tables only after discovery accepted amd64. The backdrop window callback follows
+the same rule, and `mullion doctor` asserts that command dispatch did not allocate
+it before probing. Unsupported entry points therefore cannot spend callback slots
+merely by importing either package.
 
-Windows/386 and Windows/ARM64 remain compile-portable. CI cross-builds them, but
-labels those builds as portability checks rather than runtime support. The
-supported Windows CI target remains amd64 and is the only Windows target on
-which runtime-backed checks make a support claim. Non-Windows source portability
-from decision 0007 is unchanged.
+The internal error remains the discovery cause. Public `host.Run` translates it
+to `host.ErrUnsupportedArchitecture` while wrapping both sentinels, so
+`errors.Is` is stable for callers and the returned text still names `GOARCH` and
+`windows/amd64`. `host.New` uses `ValidateArchitecture` before process-DPI work;
+`Run` rejects the retained result before rediscovery, COM initialization, class
+registration, callback creation, or HWND creation.
+
+The doctor asks `DescribeRuntime` before reading or expanding the pinned runtime
+path and, on this sentinel, returns without DPI, registry, GPU, home-directory,
+or monitor-callback probes. Windows/386 CI executes these production discovery,
+host and doctor entries as a real process under WOW64. Windows/ARM64 remains
+compile-only; only amd64 makes a runtime-support claim.
 
 ## Alternatives rejected
 
@@ -88,11 +96,11 @@ justify loading an ARM64 client into it or treating an ARM64 build as verified.
 
 ## Consequences
 
-Users running a Windows/386 or Windows/ARM64 binary receive an explicit error
-that WebView2 hosting supports only `windows/amd64`, instead of a blank,
-mis-scaled, or corrupt controller. `mullion doctor` receives the same error from
-`DescribeRuntime`, reports no usable runtime, and exits unsuccessfully without
-loading WebView2.
+Users running a Windows/386 or Windows/ARM64 binary receive an explicit public
+host error that WebView2 hosting supports only `windows/amd64`, instead of a
+blank, mis-scaled, or corrupt controller. `errors.Is` distinguishes it from
+ordinary startup failures. `mullion doctor` reports the same architecture error
+and exits unsuccessfully without reading a pinned path or probing the machine.
 
 The cost is real: a native 32-bit or ARM64 application can compile with mullion
 but cannot host a mullion window. It must ship an amd64 process, isolate the host
@@ -131,29 +139,36 @@ requirement.
   converting `Float64bits(1.5)` to 32-bit `uintptr` produced zero.
 - `internal/webview2/interfaces_windows.go` documents the Windows/amd64 ABI
   contract and points to Go's amd64 syscall bridge behaviour.
-- `internal/webview2/loader_discovery_windows.go` calls `archFolder` before its
-  injected candidate-discovery, disk, and DLL-version dependencies.
-- `internal/webview2/loader_discovery_windows_test.go` pins `amd64 -> x64`,
-  proves `386` and `arm64` return `ErrUnsupportedArchitecture` without invoking
-  any discovery dependency, and proves amd64 proceeds through selection. It
-  creates no window and requires no runtime.
-- `host/host_windows.go` places the runtime-discovery continuation before COM,
-  class registration, and window creation while leaving ordinary missing-runtime
-  errors to the embed path. `host/pure_helpers_test.go` proves the unsupported
-  branch never invokes that continuation and that the run guard is released for
-  a succeeding sequential attempt.
-- `internal/doctor/probe_windows_test.go` injects an unsupported
-  `DescribeRuntime` result and pins its mapping to `Found=false`, a clear
-  `Problem`, no export state, and an unusable report.
-- `internal/doctor/doctor_test.go` pins the paste-ready unsupported-architecture
-  text, including the process architecture and supported target.
-- `.github/workflows/ci.yml` labels amd64 as the supported Windows runtime target
-  and 386/ARM64 builds as compile-only portability checks.
-- On 2026-08-06 `go test -count=1 ./...` passed; Windows/amd64,
-  Windows/386 and Windows/ARM64 builds all compiled. The amd64 live smoke used
-  WebView2 151.0.4129.59 and completed two sequential window sessions. No
-  unsupported-architecture binary was executed, by design.
+- `internal/webview2/loader_discovery_windows.go` calls the architecture decision
+  before its injected candidate-discovery, disk, and DLL-version dependencies.
+- `internal/webview2/architecture_gate_unsupported_windows_test.go` drives the
+  real production entries and proves their injected COM callback factory and
+  shared vtables remain untouched on an unsupported process.
+- `host/host_windows.go` checks the architecture in `New` before DPI setup and
+  in `Run` before discovery/native startup, translating it to the public
+  `host.ErrUnsupportedArchitecture` without losing the internal cause.
+  `host/architecture_gate_unsupported_windows_test.go` counts both forbidden
+  dependency calls and pins the absence of HWND/class/callback state; the amd64
+  test is the DPI-call positive control.
+- `internal/backdrop/backdrop_windows.go` creates its one process-lifetime
+  callback lazily in `Show`; `cmd/mullion doctor` checks that allocation state
+  before probing, so an eager initializer changes the production command result.
+- `internal/doctor/probe_windows_test.go` proves a wrapped architecture sentinel
+  is handled before either reading or resolving the pinned runtime path.
+  `internal/doctor/architecture_gate_unsupported_windows_test.go` drives the
+  production probe and pins the absence of machine-probe results.
+- `.github/workflows/ci.yml` runs those architecture-tagged production tests and
+  the real `cmd/mullion doctor` command as a Windows/386 process under WOW64,
+  while ARM64 remains compile-only. The amd64 lane runs runtime-dependent tests
+  with `-count=1` and directly executes `mullion doctor`, so test caching or
+  removal cannot manufacture runtime/export evidence.
+- On 2026-08-06 the original audit ran `go test -count=1 ./...`; all three
+  Windows targets compiled, and the amd64 live smoke used WebView2
+  151.0.4129.59 for two sequential window sessions. That observation preceded
+  the new WOW64 execution gate and remains historical evidence only.
 
 ---
 
 > Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: accept the conservative windows/amd64-only WebView2 hosting boundary, retain clearly labelled compile portability for unsupported Windows architectures, and require hardware-backed ABI evidence before widening support.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: make callback tables and the backdrop callback lazy behind command/architecture decisions, expose the public host sentinel, count forbidden DPI/discovery calls, gate doctor path and machine probes, and execute the real Windows/386 doctor entry under WOW64.

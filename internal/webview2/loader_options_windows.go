@@ -74,21 +74,14 @@ type environmentOptions struct {
 	opts   Options
 }
 
-// The vtable is a package-level value built once. Every windows.NewCallback is
-// permanent, so one per method for the whole process is the budget.
-var environmentOptionsVtable = environmentOptionsVtbl{
-	IUnknownVtbl:                              iunknownVtbl,
-	GetAdditionalBrowserArguments:             ComProc(windows.NewCallback(optionsGetAdditionalBrowserArguments)),
-	PutAdditionalBrowserArguments:             ComProc(windows.NewCallback(optionsPutString)),
-	GetLanguage:                               ComProc(windows.NewCallback(optionsGetLanguage)),
-	PutLanguage:                               ComProc(windows.NewCallback(optionsPutString)),
-	GetTargetCompatibleBrowserVersion:         ComProc(windows.NewCallback(optionsGetTargetCompatibleBrowserVersion)),
-	PutTargetCompatibleBrowserVersion:         ComProc(windows.NewCallback(optionsPutString)),
-	GetAllowSingleSignOnUsingOSPrimaryAccount: ComProc(windows.NewCallback(optionsGetAllowSingleSignOn)),
-	PutAllowSingleSignOnUsingOSPrimaryAccount: ComProc(windows.NewCallback(optionsPutBOOL)),
-}
+// environmentOptionsVtable has one process-wide, stable address. Its callbacks
+// are filled by ensureCOMVtables only after runtime discovery has accepted the
+// process architecture; instances share it rather than consuming callback slots.
 
 func newEnvironmentOptions(opts Options) *environmentOptions {
+	if !ensureCOMVtables() {
+		return nil
+	}
 	options := &environmentOptions{opts: opts}
 	options.this = options.server.register(
 		uintptr(unsafe.Pointer(&environmentOptionsVtable)),

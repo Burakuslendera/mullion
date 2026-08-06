@@ -41,10 +41,11 @@ go get github.com/Burakuslendera/mullion/host
 
 Requires Go 1.24 or newer, Windows on amd64, and the [WebView2 Runtime][runtime]
 (shipped with Windows 11 and current Windows 10). Windows/386 and Windows/ARM64
-builds remain source-portability checks only: at runtime they return a clear
-unsupported-architecture error before loading WebView2. Non-Windows builds also
-compile — `Run` returns `ErrUnsupportedPlatform` — so a cross-platform program
-does not need build tags to depend on this package.
+builds remain source-portability checks only: `Run` returns
+`host.ErrUnsupportedArchitecture` before DPI, runtime discovery, callback, COM,
+class or window work; distinguish it with `errors.Is`, and the error text still
+names `GOARCH`. Non-Windows builds compile too — `Run` returns
+`ErrUnsupportedPlatform` — so cross-platform programs need no build tags.
 
 Go 1.24 is a floor this library holds to deliberately: it uses no standard-library
 symbol newer than 1.24, and CI builds and tests both 1.24 and the current release
@@ -118,7 +119,8 @@ and a bridge round-trip printed into the page.
 | Document                                                             | What it covers                                                                   |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | [architecture.md](docs/architecture.md)                               | Bootstrap order, threading model, message routing, the bridge                     |
-| [webview2-and-assets.md](docs/webview2-and-assets.md)                 | The in-house WebView2 COM binding, and asset serving without a port               |
+| [webview2-and-assets.md](docs/webview2-and-assets.md)                 | The in-house WebView2 COM binding                                                  |
+| [assets.md](docs/assets.md)                                         | In-process asset serving, its boundary, and COM stream lifetime                    |
 | [frame-and-dpi.md](docs/frame-and-dpi.md)                             | `WM_NCCALCSIZE`, hit-testing, per-monitor DPI, restore flicker                    |
 | [snap-and-nonclient-region.md](docs/snap-and-nonclient-region.md)     | What WebView2 can and cannot do with Windows 11 snap, and the COM binding for it  |
 | [snap-sources.md](docs/snap-sources.md)                               | The 40 primary and secondary sources those findings rest on                       |
@@ -337,8 +339,10 @@ above was taken that way, on the same flat ground.
   still exists, and `mullion doctor` answers the same question in one command,
   without a checkout.
 - **WebView2 hosting is Windows/amd64 only**, by construction. Windows/386 and
-  Windows/ARM64 remain compile-portable, but `Run` returns the explicit
-  unsupported-architecture error before COM initialization or window creation.
+  Windows/ARM64 remain compile-portable, but `Run` returns
+  `host.ErrUnsupportedArchitecture` before DPI, runtime discovery, callback,
+  COM, class or window work. CI executes the production rejection gates as a
+  real Windows/386 process under WOW64; ARM64 remains compile-only.
 
 ## Status
 
@@ -354,3 +358,5 @@ MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 The only dependency is `golang.org/x/sys` (BSD 3-Clause). Nothing else is
 vendored, embedded or redistributed — including the WebView2 Runtime, which is a
 system component that mullion locates and calls into.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document the public unsupported-architecture sentinel, side-effect-free production gate, and execution-versus-compile portability boundary; index the asset-serving reference split at its hard limit.

@@ -3,6 +3,7 @@
 package host
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -31,8 +32,8 @@ func TestRuntimeArchitectureGatePrecedesNativeStartupAndReleasesRunGuard(t *test
 			},
 		)
 	})
-	if err != unsupported {
-		t.Fatalf("unsupported attempt error = %v, want original %v", err, unsupported)
+	if !errors.Is(err, ErrUnsupportedArchitecture) || !errors.Is(err, webview2.ErrUnsupportedArchitecture) {
+		t.Fatalf("unsupported attempt error = %v, want public sentinel and internal cause", err)
 	}
 	if got := strings.Join(steps, ","); got != "discovery,version observed" {
 		t.Fatalf("unsupported attempt steps = %q; native startup must not run", got)

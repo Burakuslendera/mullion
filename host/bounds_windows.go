@@ -157,38 +157,30 @@ func shouldNotifyBoundsSource(source string) bool {
 }
 
 // requestDeferredBoundsSync posts a second bounds sync 16ms after a window
-// action whose final bounds may not have settled. The scheduled Run generation
-// and HWND are both required at fire time: a timer from an ending session must
-// neither look up nor post to a newer session's recycled handle.
+// action whose final bounds may not have settled. The scheduled Run token and
+// HWND are both required at fire time, including when Windows recycles the
+// numeric handle for a later Run.
 func (host *Host) requestDeferredBoundsSync(source uintptr) {
-	host.runMu.Lock()
-	generation := host.runGeneration
-	running := host.running
-	host.mu.RLock()
-	hwnd := host.hwnd
-	host.mu.RUnlock()
-	host.runMu.Unlock()
-	if !running || hwnd == 0 {
+	admission := host.enterRun()
+	defer host.leaveRun()
+	if !host.runMatches(admission) {
 		return
 	}
+
 	time.AfterFunc(16*time.Millisecond, func() {
-		host.runMu.Lock()
-		host.mu.RLock()
-		currentHWND := host.hwnd
-		if !deferredBoundsSyncBelongsToRun(generation, host.runGeneration, host.running, hwnd, currentHWND) {
-			host.mu.RUnlock()
-			host.runMu.Unlock()
-			return
-		}
-		err := postWindowMessageArgs(hwnd, wmNativeSyncBounds, source, 0)
-		host.mu.RUnlock()
-		host.runMu.Unlock()
-		host.warnIf("deferred bounds sync post", err)
+		host.fireDeferredBoundsSync(admission, source)
 	})
 }
 
-func deferredBoundsSyncBelongsToRun(scheduledGeneration, currentGeneration uint64, running bool, scheduledHWND, currentHWND windowHandle) bool {
-	return running && scheduledGeneration == currentGeneration && scheduledHWND != 0 && scheduledHWND == currentHWND
+func (host *Host) fireDeferredBoundsSync(admission runAdmission, source uintptr) {
+	if !host.enterOriginatingRun(admission) {
+		return
+	}
+	defer host.leaveRun()
+	err := host.postRunCommand(admission, wmNativeSyncBounds, source)
+	// Keep reporting inside the originating Run. endRun cannot begin the next
+	// session until this callback leaves its counted admission.
+	host.warnIf("deferred bounds sync post", err)
 }
 
 // A wmNativeSyncBounds message carries the origin of the sync request in
@@ -228,15 +220,10 @@ func boundsSyncSourceFromWParam(wParam uintptr) string {
 	}
 }
 
-// postBoundsSync queues a bounds sync on the UI thread instead of running it on
-// the caller's goroutine. MarkFrontendReady and MarkFrontendShellReady carry the
-// any-goroutine contract every exported method honours (see the Host doc), and
-// syncWebViewBounds talks to the STA-bound WebView2 controller - so from a
-// background goroutine the sync must travel as a message, never as a call. The
-// bridge path loses nothing: it already runs on the UI thread, and the posted
-// message is handled on the next pump iteration.
-func (host *Host) postBoundsSync(action string, source uintptr) {
-	host.warnIf(action, postWindowMessageArgs(host.window(), wmNativeSyncBounds, source, 0))
+// postBoundsSyncForRun queues a tagged bounds sync on the UI thread instead of
+// touching the STA-bound controller from an arbitrary caller goroutine.
+func (host *Host) postBoundsSyncForRun(admission runAdmission, action string, source uintptr) {
+	host.warnIf(action, host.postRunCommand(admission, wmNativeSyncBounds, source))
 }
 
 func webViewBoundsMismatch(clientWidth, clientHeight, controllerWidth, controllerHeight int32) bool {

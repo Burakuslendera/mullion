@@ -373,6 +373,9 @@ func TestHandlerPanicReportCarriesEventAndStack(t *testing.T) {
 // it. Unreachable in practice, but it is the difference between an error return
 // and a wild jump if anything ever goes wrong upstream.
 func TestHandlerInvokeUnknownThis(t *testing.T) {
+	if !ensureCOMVtables() {
+		t.Fatal("supported test architecture rejected")
+	}
 	hr, _, _ := eventHandlerVtable.Invoke.Call(0, 0, 0)
 	if hr != eFail {
 		t.Errorf("Invoke on an unregistered `this` = %#x, want E_FAIL (%#x)", hr, eFail)

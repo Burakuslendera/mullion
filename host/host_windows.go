@@ -4,8 +4,10 @@ package host
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Burakuslendera/mullion/internal/webview2"
@@ -16,14 +18,23 @@ import (
 
 // Host owns one Win32 window and the WebView2 control embedded in it.
 //
-// Every exported method except Run may be called from any goroutine: they post
-// or send a private WM_APP message to the UI thread instead of touching the HWND
-// directly, because Win32 window state may only be mutated from the thread that
-// created the window.
+// Every exported method except Run may be called from any goroutine. Window
+// mutations travel through active-Run-tagged private WM_APP messages to the UI
+// thread; readiness/diagnostic methods serialize their whole effect with Run
+// teardown; and IsMaximised pins HWND ownership across its documented
+// cross-thread-safe query.
 type Host struct {
-	runMu         sync.Mutex
-	running       bool
-	runGeneration uint64
+	runMu       sync.Mutex
+	runCond     *sync.Cond
+	running     bool
+	runStarting bool
+	runEnding   bool
+	runCalls    int
+
+	// activeRunToken is the non-zero identity carried in lParam by every
+	// private window command. It is protected by mu together with hwnd so a
+	// command can prove both session and handle ownership in one snapshot.
+	activeRunToken uintptr
 
 	config   Config
 	log      *logSink
@@ -46,20 +57,31 @@ type Host struct {
 	webViewEmbedding bool
 	windowDestroyed  bool
 	quitPending      bool
+	architectureErr  error
 
-	dpiAwarenessErr     error
-	renderMu            sync.Mutex
-	renderTimer         *time.Timer
-	frontendReady       bool
-	frontendShellReady  bool
-	startupMu           sync.Mutex
-	startupShowTimer    *time.Timer
-	startupShowReleased bool
-	startupTiming       *startupTiming
-	diagnostics         *nativeDiagnostics
-	sysMenuLast         sysMenuSnapshot
-	boundsMu            sync.Mutex
-	lastBoundsSyncLog   boundsSyncLogState
+	dpiAwarenessErr      error
+	renderMu             sync.Mutex
+	renderTimer          *time.Timer
+	frontendReady        bool
+	frontendShellReady   bool
+	startupMu            sync.Mutex
+	startupShowTimer     *time.Timer
+	startupShowStarted   bool
+	startupShowRequested bool
+	startupShowApplying  bool
+	startupShowReleased  bool
+	startupTiming        *startupTiming
+	diagnostics          *nativeDiagnostics
+	sysMenuLast          sysMenuSnapshot
+	boundsMu             sync.Mutex
+	lastBoundsSyncLog    boundsSyncLogState
+
+	// Headless production seams. Tests replace these only to observe the final
+	// Win32 boundary without creating a window; nil selects the real call.
+	postNativeCommand    func(windowHandle, uint32, uintptr, uintptr) error
+	sendNativeCommand    func(windowHandle, uint32, uintptr, uintptr) (uintptr, error)
+	queryNativeMaximised func(windowHandle) bool
+	applyNativeCommand   func(windowHandle, uint32, uintptr) uintptr
 
 	// The error-surface admission state (issues #3, #56, #68; decisions/0017,
 	// 0021). The runtime reports the empty string as the source of a data:
@@ -154,21 +176,50 @@ type Host struct {
 	externalOpenSlots chan struct{}
 }
 
+// nativeRunTokens are process-global, not per Host. Windows can recycle an
+// HWND across two different Host values; a per-Host first-generation token
+// would then collide and let the older Host's delayed command control the new
+// owner's window.
+var nativeRunTokens atomic.Uint64
+
+func nextNativeRunToken() uintptr {
+	for {
+		if token := uintptr(nativeRunTokens.Add(1)); token != 0 {
+			return token
+		}
+	}
+}
+
+// Native setup is routed through these seams so the unsupported-architecture
+// contract can prove that New stops before DPI work and Run stops before runtime
+// discovery. Tests restore each function before returning and never run in
+// parallel.
+var (
+	applyProcessDPIAwareness = enablePerMonitorV2DPIAwareness
+	discoverWebViewRuntime   = webview2.FindRuntime
+)
+
 // New prepares a host. It does not create a window; Run does that.
 //
-// Process DPI awareness is applied here rather than in Run, because
-// PER_MONITOR_AWARE_V2 must be set before the process owns any HWND - including
-// hidden helper windows created by unrelated libraries - and before any WebView2
-// child exists. Waiting until Run would let an early tray icon or a message-only
-// window pin the process into an unaware context. Any failure is stored and
-// reported from Run.
+// The process-architecture decision comes first: unsupported builds retain the
+// error for Run and perform no native setup. On supported amd64, process DPI
+// awareness is applied here rather than in Run because PER_MONITOR_AWARE_V2 must
+// be set before the process owns any HWND, including hidden helper windows from
+// unrelated libraries, and before any WebView2 child exists. Any DPI failure is
+// stored and reported from Run.
 func New(config Config) *Host {
 	normalised := config.normalise()
+	architectureErr := webview2.ValidateArchitecture()
+	var dpiAwarenessErr error
+	if architectureErr == nil {
+		dpiAwarenessErr = applyProcessDPIAwareness()
+	}
 	return &Host{
 		config:            normalised,
 		log:               newLogSink(normalised.Logger),
 		js:                normalised.jsScripts(),
-		dpiAwarenessErr:   enablePerMonitorV2DPIAwareness(),
+		architectureErr:   architectureErr,
+		dpiAwarenessErr:   dpiAwarenessErr,
 		startupTiming:     newStartupTiming(normalised.StartHidden),
 		diagnostics:       newNativeDiagnostics(),
 		externalOpenSlots: make(chan struct{}, externalOpenLimit),
@@ -180,15 +231,33 @@ func New(config Config) *Host {
 // after Run returns, but concurrent Run calls on the same Host are not.
 func (host *Host) beginRun() error {
 	host.runMu.Lock()
-	defer host.runMu.Unlock()
+	host.ensureRunCondLocked()
+	for host.runStarting {
+		host.runCond.Wait()
+	}
 	if host.running {
+		host.runMu.Unlock()
 		return errors.New("host is already running")
 	}
+	// Drain generation-zero work before closing API admission for the reset.
+	// Keeping runStarting false while waiting is load-bearing: a Logger invoked
+	// by an older admitted call may re-enter another Host method.
+	for host.runCalls != 0 {
+		host.runCond.Wait()
+	}
+	host.runStarting = true
+	defer func() {
+		host.runStarting = false
+		host.runCond.Broadcast()
+		host.runMu.Unlock()
+	}()
 	if host.window() != 0 || host.browser != nil || host.quitPending {
 		return errors.New("previous host window session did not tear down")
 	}
 	host.running = true
-	host.runGeneration++
+	host.mu.Lock()
+	host.activeRunToken = nextNativeRunToken()
+	host.mu.Unlock()
 
 	host.webViewEmbedding = false
 	host.windowDestroyed = false
@@ -221,6 +290,9 @@ func (host *Host) beginRun() error {
 		host.startupShowTimer.Stop()
 		host.startupShowTimer = nil
 	}
+	host.startupShowStarted = false
+	host.startupShowRequested = false
+	host.startupShowApplying = false
 	host.startupShowReleased = false
 	host.startupTiming = newStartupTiming(host.config.StartHidden)
 	if host.log != nil {
@@ -237,8 +309,105 @@ func (host *Host) beginRun() error {
 
 func (host *Host) endRun() {
 	host.runMu.Lock()
+	host.ensureRunCondLocked()
+	host.runEnding = true
+	host.runCond.Broadcast()
+	for host.runCalls != 0 {
+		host.runCond.Wait()
+	}
 	host.running = false
+	host.mu.Lock()
+	host.activeRunToken = 0
+	host.mu.Unlock()
+	host.runEnding = false
+	host.runCond.Broadcast()
 	host.runMu.Unlock()
+}
+
+type runAdmission struct {
+	token   uintptr
+	hwnd    windowHandle
+	running bool
+}
+
+// enterRun admits an exported method without retaining a non-reentrant mutex
+// across Logger calls or native dispatch. endRun marks callback admission
+// closed and waits for every exported method that enters before token poison; a
+// Logger callback may therefore re-enter Host methods without deadlocking,
+// while N's readiness sequence still finishes before N+1 can begin.
+func (host *Host) enterRun() runAdmission {
+	host.runMu.Lock()
+	host.ensureRunCondLocked()
+	for host.runStarting {
+		host.runCond.Wait()
+	}
+	// Exported calls that enter while endRun is waiting still belong to that
+	// not-yet-ended Run. Admitting rather than waiting is load-bearing: an
+	// embedder Logger can re-enter a Host method from an already-admitted call
+	// while teardown waits for the outer call.
+	host.mu.RLock()
+	admission := runAdmission{
+		token:   host.activeRunToken,
+		hwnd:    host.hwnd,
+		running: host.running,
+	}
+	host.mu.RUnlock()
+	host.runCalls++
+	host.runMu.Unlock()
+	return admission
+}
+
+func (host *Host) leaveRun() {
+	host.runMu.Lock()
+	host.runCalls--
+	if host.runCalls == 0 && host.runCond != nil {
+		host.runCond.Broadcast()
+	}
+	host.runMu.Unlock()
+}
+
+func (host *Host) ensureRunCondLocked() {
+	if host.runCond == nil {
+		host.runCond = sync.NewCond(&host.runMu)
+	}
+}
+
+// enterOriginatingRun admits a library-owned callback only while its captured
+// identity still names the current Run. A callback arriving after teardown has
+// closed admission neither waits into nor observes the next Run.
+func (host *Host) enterOriginatingRun(admission runAdmission) bool {
+	host.runMu.Lock()
+	host.ensureRunCondLocked()
+	if host.runStarting || host.runEnding || !host.runMatches(admission) {
+		host.runMu.Unlock()
+		return false
+	}
+	host.runCalls++
+	host.runMu.Unlock()
+	return true
+}
+
+func (host *Host) currentRun() runAdmission {
+	host.mu.RLock()
+	defer host.mu.RUnlock()
+	return runAdmission{
+		token:   host.activeRunToken,
+		hwnd:    host.hwnd,
+		running: host.activeRunToken != 0,
+	}
+}
+
+func (host *Host) runMatches(admission runAdmission) bool {
+	host.mu.RLock()
+	defer host.mu.RUnlock()
+	if admission.token == 0 {
+		// Headless tests and harmless pre-Run calls live in generation zero.
+		// beginRun poisons that identity before production work can start.
+		return !admission.running && host.activeRunToken == 0 &&
+			admission.hwnd == host.hwnd
+	}
+	return admission.running && admission.token == host.activeRunToken &&
+		admission.hwnd != 0 && admission.hwnd == host.hwnd
 }
 
 // Run creates the window, embeds the WebView and pumps the message loop until
@@ -247,8 +416,11 @@ func (host *Host) endRun() {
 // one Host return an error.
 func (host *Host) Run() error {
 	return host.withRunGuard(func() error {
+		if err := runtimeStartupError(host.architectureErr); err != nil {
+			return err
+		}
 		return continueAfterRuntimeDiscovery(
-			webview2.FindRuntime,
+			discoverWebViewRuntime,
 			func(webViewVersion string) {
 				// One line, at INFO, before anything can go wrong. A bug report
 				// then answers build, architecture, and browser runtime without
@@ -377,12 +549,12 @@ func (host *Host) runAfterRuntimeDiscovery() (runErr error) {
 	return host.messageLoop()
 }
 
-// runtimeStartupError separates an unsupported process ABI, which must stop
-// before COM or HWND creation, from ordinary discovery failures handled by the
-// existing immediate/deferred embed paths.
+// runtimeStartupError translates the internal architecture cause to the public
+// sentinel while preserving both errors for errors.Is and keeping GOARCH in the
+// cause text. Ordinary discovery failures retain the existing embed path.
 func runtimeStartupError(discoveryErr error) error {
 	if errors.Is(discoveryErr, webview2.ErrUnsupportedArchitecture) {
-		return discoveryErr
+		return fmt.Errorf("%w: %w", ErrUnsupportedArchitecture, discoveryErr)
 	}
 	return nil
 }

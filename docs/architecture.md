@@ -100,12 +100,17 @@ dependencies are process-wide and irreversible.
    from that cleared handle, so a quit consumed and re-posted by the embed pump is
    still drained without ever destroying a recycled HWND. `Run` blocks for the
    life of the window and must be called from the process main-thread goroutine.
-   The same `Host` supports sequential `Run` calls; each session resets its
-   destruction, startup-gate, timing, diagnostic and navigation state while
-   retaining stable Logger/diagnostic objects for older goroutine-safe calls.
-   Deferred bounds posts carry the session generation and original HWND, so they
-   cannot cross into a later Run even if Windows recycles the numeric handle.
-   Concurrent calls to `Run` on one `Host` are rejected.
+   The same `Host` supports sequential `Run` calls; each session resets and
+   poisons its destruction, startup-gate, timing, diagnostic and navigation
+   state while retaining stable Logger/diagnostic objects for older
+   goroutine-safe calls. Every private command carries a process-global,
+   non-zero active-Run token in `lParam` and is rejected unless both that token
+   and the callback HWND still match; process scope matters because Windows can
+   recycle one numeric handle across two different `Host` values. Deferred
+   bounds posts preserve their original token and HWND. An older Run therefore
+   cannot mutate the newer owner. Concurrent calls to `Run` on one `Host` are
+   rejected immediately, including calls arriving while the prior Run is still
+   draining already-admitted work; they never wait into a new sequential session.
 
 ## Threading model
 
@@ -123,13 +128,21 @@ where the window procedure applies it:
 | `StartDrag()` | `WM_APP+26` | post |
 | `StartResize(edge)` | `WM_APP+27` | post; edge travels in `wParam` as a hit-test code |
 | deferred bounds resync; `MarkFrontendReady()` / `MarkFrontendShellReady()` bounds sync | `WM_APP+28` | post; the source label travels in `wParam` |
+| `SetTitle(title)` | `WM_APP+29` | send; a call-lifetime UTF-16 pointer travels in `wParam` |
 
-The pattern generalises: **the only thread allowed to call a window-affine Win32
-function is the thread that pumps the queue.** `PostMessage` is the asynchronous
-form, used wherever no result is needed; `SendMessage` is the synchronous form, safe
-from a non-UI thread and used only where the caller must observe the outcome.
-Read-only queries Windows documents as cross-thread safe (`IsZoomed`, behind
-`IsMaximised()`) are called directly.
+Every private message in this table carries the originating active-Run token in
+`lParam`; existing `wParam` payloads remain unchanged. The window procedure
+compares token and HWND before the first command-specific log, browser call or
+Win32 mutation. An API call belongs to the Run active when the method enters.
+Entry increments a short locked admission count, then releases the mutex before
+native, WebView, caller or Logger code: re-entrant Logger/bridge calls therefore
+cannot self-deadlock. Teardown closes library-callback admission and waits for
+already-entered public methods to finish their timing, log, bounds and show
+effects before poisoning the token and allowing the next Run. A new `Run`
+arriving during that drain is rejected rather than queued behind it. `IsMaximised`
+additionally pins HWND ownership across its direct `IsZoomed` query, and
+`SetTitle` routes through the tagged UI command rather than dereferencing a
+looked-up HWND on the caller.
 
 Two threads enter a COM apartment, not one. The UI thread's is the process's
 (`initializeCOM`, step 3 above). The second belongs to the system-browser launch:
@@ -145,10 +158,13 @@ there.
 That worker is why `Config.Logger` carries a concurrency contract: an
 implementation must be safe to call from more than one goroutine. The launch
 reports from its own thread, and the render watchdog and the startup show gate
-write from `time.AfterFunc` timers. `NopLogger` is trivially safe and
-`SlogLogger` inherits whatever `*slog.Logger` guarantees; a Logger of the
-embedder's own that holds a buffer, a file handle or a counter of its own needs
-its own lock.
+write from `time.AfterFunc` timers. Each library-owned callback preserves its
+originating Run: it either takes a counted admission and finishes there, or
+finds teardown/a different token and performs no post or log. A late
+system-browser worker may finish its OS launch, but its warnings are similarly
+suppressed after its Run ends. `NopLogger` is trivially safe and `SlogLogger`
+inherits whatever `*slog.Logger` guarantees; a Logger of the embedder's own that
+holds a buffer, a file handle or a counter of its own needs its own lock.
 
 Drag and resize are handed back to the window manager rather than emulated:
 `StartDrag` releases capture and sends `WM_NCLBUTTONDOWN` with `HTCAPTION`;
@@ -191,10 +207,10 @@ Everything else falls through to `DefWindowProc`.
 
 ## Talking to WebView2, and serving assets
 
-The in-house COM binding — runtime discovery, the loader-bypass traps, the
-event-handler constraints — and the whole asset path, boundary matrix and COM
-stream lifetime included, moved verbatim to
-[webview2-and-assets.md](./webview2-and-assets.md).
+The in-house COM binding — runtime discovery, loader-bypass traps and
+event-handler constraints — moved verbatim to
+[webview2-and-assets.md](./webview2-and-assets.md). The asset boundary, caller-URL
+transfer and COM stream lifetime are in [assets.md](./assets.md).
 
 ## Bridge protocol
 
@@ -230,22 +246,28 @@ the frontend diagnostics (`phase`, `diagnostic`).
 Everything else is handed to `Config.Bridge` as the raw request JSON; it returns the raw
 response JSON, or `""` to stay silent. `Bridge` may be nil — window controls
 (`window.mullion.window.minimise()` and friends) work before the application has
-implemented a single bridge method. Dispatch is origin-gated first
+implemented a single bridge method. The production WebView callback classifies
+the source before dispatch
 ([decisions/0014](./decisions/0014-bridge-origin-at-dispatch.md)): only the trusted
-origin reaches `Config.Bridge`; a `data:` document reaches the reserved window
-controls alone, and its non-reserved calls — like every message from a foreign
-origin — are dropped with a log line and **no reply to correlate**. An unknown
-method with a bridge configured is the application's to answer; with none, it
-yields `ok: false`. A malformed request is logged and dropped, never a panic.
+origin reaches `Config.Bridge`; the active `data:` fallback reaches the reserved
+window controls alone, and its readiness, diagnostics and non-reserved calls —
+like every message from a foreign origin — are dropped with **no reply to
+correlate**. An unknown method with a bridge configured is the application's to
+answer; with none, it yields `ok: false`. A malformed request is logged and
+dropped, never a panic.
 
 Frontend-controlled method names, phases, diagnostic kinds/details and asset
 labels are a separate projection of that raw protocol. Before the host logs or
-retains one, it selects bounded input and emits at most 2,000 bytes. The first
-reducible http(s) URL is reserved with its authority whole, so a long
-`window.onerror` prefix cannot erase the URL and no cut can manufacture a
-believable host prefix. Retained file names and reduced strings are detached
-from the request's backing storage. This diagnostic boundary does **not** rewrite
-the raw request passed to `Config.Bridge`
+retains one, it selects bounded input and emits at most 2,000 bytes. Selection
+rejects over-budget, malformed-authority, malformed-userinfo, and parser-invalid
+path candidates — including control bytes or bad escapes beyond the retained
+projection — then continues to the first http(s) candidate the production
+reducer can emit with its authority whole. Valid userinfo is stripped to the
+credential-free host without input-sized allocation, and a fully validated path
+is streamed into fixed output storage without splitting escapes or encoded
+runes. Retained file names and reduced strings are detached from the request's
+backing storage. This diagnostic boundary does **not** rewrite the raw request
+passed to `Config.Bridge`
 ([decision 0035](./decisions/0035-frontend-diagnostics-are-bounded.md)).
 
 ## Startup gates and watchdog
@@ -257,12 +279,15 @@ runtime reports it. Two independent timers exist because of it.
 
 **Show gate.** After the embed the window is not shown immediately: the host waits for
 the frontend to call `shellReady()`, which maps to `Host.MarkFrontendShellReady()` and
-posts the show message, keeping the user from seeing an empty window while the first
-document is still parsing. The wait is bounded by `Config.ShowTimeout`; when it expires
-the host shows the window anyway and logs the reason. Shell readiness may arrive while
-the embed pump is still running, before `Run` reaches the arm point; the once-only
-release is remembered, so an already released gate cannot arm afterward. A fired or
-stopped timer is detached immediately, including across sequential runs.
+posts the tagged show message, keeping the user from seeing an empty window while the
+first document is still parsing. The wait is bounded by `Config.ShowTimeout`; when it
+expires the host shows the window anyway and logs the reason. Shell readiness may
+arrive while the embed pump is still running, before `Run` reaches the gate start.
+That readiness is latched without attempting a pre-window show post; gate start then
+arms the fallback and performs exactly one release attempt. Queue failure leaves the
+fallback armed, and a queued show whose embed/visibility application fails reopens
+and re-arms the gate. Fired and stopped timers detach immediately and retain their
+originating Run token, including across sequential runs.
 
 **Render watchdog.** Armed before `Navigate`, cancelled by `Host.MarkFrontendReady()` —
 the frontend's `ready()` call, made only after it has actually rendered. If
@@ -277,7 +302,7 @@ last_bridge=<method:status>
 
 The counts are what make the payload diagnostic rather than decorative.
 `document=1, stylesheet=0, script=0` is an asset-serving failure — the stream lifetime
-bug in [webview2-and-assets.md](./webview2-and-assets.md) produces exactly this shape. `document=0` is a navigation or filter failure.
+bug in [assets.md](./assets.md) produces exactly this shape. `document=0` is a navigation or filter failure.
 Healthy counts with `phase` stuck early is a frontend fault. `last_bridge=unknown` means
 no bridge call ever arrived — the injected shim never ran. One line separates four root
 causes that all present as the same white rectangle. Both timeouts are configurable; a negative value disables the mechanism.
@@ -315,11 +340,13 @@ window is actually shown. An application that starts in a tray must treat the fi
 `Show`, not `Run`, as the moment its frontend begins to exist.
 
 **Windows/amd64 only.** WebView2 hosting uses x64 COM argument encodings.
-Windows/386 and Windows/ARM64 remain compile-portable, but `Run` returns a clear
-unsupported-architecture error before COM initialization or window creation. On
-non-Windows targets `Run` returns `ErrUnsupportedPlatform`; no portable window
-abstraction is attempted
-([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
+Windows/386 and Windows/ARM64 remain compile-portable, but `Run` returns public
+`ErrUnsupportedArchitecture` (for `errors.Is`) before DPI, discovery, shared
+callback allocation, COM, class or HWND work. Doctor rejects the same process
+before reading a pinned runtime path or probing the machine. CI executes these
+production gates under Windows/386 WOW64; ARM64 is compile-only. Non-Windows
+`Run` returns `ErrUnsupportedPlatform`; no portable window abstraction is
+attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
 > Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: docs-vs-code accuracy pass — step 6 lists the sixth callback (new window requested, 0022), and the bridge section states the origin gate and the real reply behaviour (a malformed or restricted-source request gets a log line and no reply, not `ok: false`). Then the threading model gained the second apartment it had been missing: the system-browser launch runs on a bounded set of per-launch goroutines with their own STA (issue #74, 0029), which is also why Config.Logger states a concurrency contract — this file enumerated the cross-thread rules without that one.
 
@@ -330,3 +357,10 @@ abstraction is attempted
 > Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: make teardown ownership complete for every host and backdrop loop exit, clear HWND/browser references at WM_DESTROY, make startup-show release race-free, and define sequential same-Host reuse (issue #97).
 
 > Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: document the 2,000-byte frontend logging and retained-diagnostic boundary, complete-first-URL rule, detached asset names and unchanged raw Config.Bridge payload (decision 0035).
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: correct the frontend logging boundary to continue past invalid URL decoys, remove accepted userinfo credentials, and stream fully validated paths with fixed allocation.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: define issue #97 process-global Run-token plus HWND identity for every private command, immediate concurrent-Run rejection even during teardown drain, counted and Logger-reentrant ordering, early shell-ready latching, and originating-Run ownership; document issue #88's production source classifier and full-candidate diagnostic validation.
+
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document the lazy callback/public sentinel/doctor ordering guarantees and distinguish Windows/386 execution evidence from ARM64 compile portability (decision 0034).

@@ -23,15 +23,15 @@ one cannot.
 gofmt -l .                                       # must print nothing
 go build ./...                                   # windows build
 go vet ./...                                     # syscall/unsafe/printf misuse
-go test ./...                                    # unit + table tests
-go test -race ./...                              # message pump vs. callback races
-go build -tags mullion_dwm_caption_diag ./...    # diagnostic tag still compiles
-go test -tags mullion_dwm_caption_diag ./...     # ... and its gated tests still pass
-go build -tags mullion_caption_passthrough_diag ./...
-go test -tags mullion_caption_passthrough_diag ./...
-GOOS=linux go build ./...                        # non-windows stub gate
+go test -count=1 ./...                           # unit + table tests, never cached
+go test -count=1 -race ./...                     # message pump vs. callback races
+node scripts/test-bridge.mjs                     # real bridge bytes in a Node VM
+go run ./cmd/mullion doctor                      # execute runtime/export discovery
+go build -tags mullion_dwm_caption_diag ./...; go test -count=1 -tags mullion_dwm_caption_diag ./...
+go build -tags mullion_caption_passthrough_diag ./...; go test -count=1 -tags mullion_caption_passthrough_diag ./...
+$env:GOOS = 'linux'; go build ./...; Remove-Item Env:GOOS # non-Windows stub gate (PowerShell)
 pwsh scripts/leak-scan.ps1                       # nothing private is published
-cd examples/basic && go run .                    # it actually starts
+Push-Location examples/basic; go run .; Pop-Location # it actually starts
 ```
 
 | Gate | What it catches |
@@ -39,14 +39,16 @@ cd examples/basic && go run .                    # it actually starts
 | `gofmt -l .` | Formatting drift. Non-empty output is a failure, not a suggestion. |
 | `go build ./...` | Compile errors on the default Windows path only. |
 | `go vet ./...` | Misuse of `unsafe.Pointer` around Win32 calls, wrong printf verbs in log lines, suspicious struct tags. Vet is the closest thing to a static check on syscall boundaries. |
-| `go test ./...` | Pure-logic invariants: hit-test region maths, non-client rect adjustment, DPI scaling, style-bit composition, asset name-to-MIME mapping, diagnostic log parsing — **and every COM vtable offset and IID in `internal/webview2`** (see below). |
+| `go test -count=1 ./...` | Uncached pure-logic invariants: hit-test region maths, non-client rect adjustment, DPI scaling, style-bit composition, asset name-to-MIME mapping, diagnostic log parsing — **and every COM vtable offset and IID in `internal/webview2`** (see below). CI also executes the architecture-tagged production gates as a real Windows/386 process under WOW64; Windows/ARM64 remains compile-only. |
 | `TestNoNetworkListener` | The promise on the README's first screen: **no local port is ever opened.** It greps the source for `net.Listen`, `http.ListenAndServe`, `httptest` and loopback literals — with one exemption, the default virtual host name, and only where that name stands alone: `preview.mullion.localhost`, `mullion.localhost:443` and the trailing-dot FQDN form all still fail ([decisions/0030](./decisions/0030-guard-exempts-the-virtual-host-name.md)). Until this existed the claim was documentation and nothing else — the kind of invariant that decays quietly, when somebody reaches for a test server "just for a fixture" and the build stays green. See [decisions/0002](./decisions/0002-no-local-port.md). |
 | `TestNoUpstreamBrandLeak`, `TestNoNonASCIIInSource` | The repository stays in one language, and carries nothing from the private code base it was extracted from. |
-| `go test -race ./...` | Data races between the UI thread and any goroutine that touches shared state (asset serving, watchdogs, bound callbacks). The window procedure runs on one thread; anything reachable from another must be synchronised, and the race detector is the only automated proof of it. |
-| `go build -tags <diag>` | Diagnostic builds rot silently. A plain `go build ./...` never compiles a file behind a build tag, so a rename in the default path can break a diagnostic variant for weeks without anyone noticing. Each diagnostic tag gets its own build in CI. |
-| `GOOS=linux go build ./...` | The non-Windows stubs still satisfy the public API. Anyone who imports this package from a cross-platform program must be able to compile on Linux/macOS, even though the window cannot run there. |
+| `TestRunTokensAreProcessGlobalAcrossHosts` | Process-global non-zero Run identities keep a stale private command from one Host from being admitted by another Host after the OS recycles the same HWND. |
+| `TestLoggerMayReenterHostMethodWhileTeardownWaits` | A Logger callback may re-enter `Quit` while teardown waits for the outer `Hide`; both admitted commands post and both calls complete instead of deadlocking on Run admission. |
+| `go test -count=1 -race ./...` | Uncached data-race coverage between the UI thread and goroutines that touch shared state (asset serving, watchdogs, bound callbacks). |
+| `go build -tags <diag>` | Diagnostic builds rot silently. Each diagnostic tag therefore gets its own build and uncached test in CI. |
+| `$env:GOOS = 'linux'; go build ./...; Remove-Item Env:GOOS` | PowerShell-runnable proof that non-Windows stubs still satisfy the public API; this is compile portability, not window execution support. |
 | `pwsh scripts/leak-scan.ps1` | Anything that must never be published: upstream product names, absolute local paths, artefact hashes, real-looking pseudo-versions, commit-trailer text inside a file — across tracked files **and commit messages**. CI runs it in the Windows job. |
-| `go run .` in the example | The bootstrap sequence still produces a visible window with a loaded frontend. Compilation says nothing about this. |
+| `node scripts/test-bridge.mjs`; `go run ./cmd/mullion doctor`; the example | Dependency-free VM coverage of the exact bridge bytes; direct, uncached execution of runtime discovery/export resolution; then a visible loaded window. These execution gates catch false greens that compilation or cached/removed tests cannot. |
 
 ### The COM ABI is pinned by tests, because the compiler cannot see it
 
@@ -228,6 +230,38 @@ a pass/fail with an observable result — "looks fine" is not a result.
       create a fresh Host with the corrected title and the same class name.
       Every supported retry must paint, with no stale `WM_QUIT`, "Class already
       exists", stale browser, or already-destroyed refusal (issues #48, #97).
+- [ ] **Sequential-Run stale-control and early-readiness adversary.** Reuse one
+      `Host` for two sessions and record both Run tokens. Queue every private
+      window command from session N (`Show`, `Hide`, `Quit`, `Minimise`,
+      maximise toggle, drag, resize, bounds sync and `SetTitle`), end N, and
+      arrange for Windows to reuse the same numeric HWND in N+1. None may apply
+      or add a warning/log line in N+1; fresh commands must still apply. During
+      an embed pump, signal `shellReady()` before the show gate starts: no show
+      may be posted before start, and exactly one tagged show must be posted
+      after start. Reject that show's first embed/application attempt and confirm
+      the fallback re-arms and retries rather than leaving the non-hidden session
+      invisible.
+- [ ] **Teardown ordering under admitted calls and firing callbacks.** Block an
+      already-entered `MarkFrontendShellReady()` between its bounds and show
+      effects while teardown attempts to finish. Teardown must wait; both effects
+      retain N's token. Separately fire N's startup/render timers, deferred bounds
+      callback and worker-warning path after N+1 starts with the recycled HWND:
+      N+1 must receive no post, timeout/fallback line or warning. Block
+      `IsMaximised()` inside its query and confirm `WM_DESTROY` cannot clear/reuse
+      the HWND until the query returns.
+      `TestRunTokensAreProcessGlobalAcrossHosts`,
+      `TestPrivateCommandsRejectOldRunTokenAfterIdenticalHWNDReuse`,
+      `TestExportedCommandsCarryEntryRunTokenAndPreserveWParamPayloads`,
+      `TestLoggerMayReenterHostMethodWhileTeardownWaits`,
+      `TestStartupShowGateLatchesEarlyReadinessUntilStart`,
+      `TestStartupShowApplicationFailureRestoresFallbackAndRetries`,
+      `TestOldRunTimersDeferredPostsAndWorkerWarningsStayOutOfNextRun`,
+      `TestReadinessAdmittedBeforeTeardownCompletesInsideOriginatingRun` and
+      `TestIsMaximisedPinsHWNDOwnershipUntilQueryReturns` exercise these through
+      headless production dispatch/callback seams without creating a window.
+      Remaining uncertainty is live Windows scheduling and actual numeric HWND
+      recycling; repeat this checklist live because a headless seam cannot force
+      the kernel's allocation timing.
 - [ ] **`StartHidden` → first `Show`.** With `Config.StartHidden` set, no
       window may appear until `Show()` is called; the first `Show` embeds the
       WebView and the frontend paints. Quitting without ever showing must
@@ -303,64 +337,9 @@ There is no "small frame change".
 
 ## 4. Traps when scripting GUI checks
 
-Automating the manual list is possible but the environment fights back. These
-are the failure modes that produced false passes and false failures, and the
-rules that avoid them.
-
-**Injected mouse input does not reach the WebView2 child.** Synthetic input
-(`mouse_event`, `SendInput` at a `SetCursorPos` location) is delivered to the
-native window tree, and the WebView2 child does not process it the way it
-processes real hardware input. Consequence: **you cannot click an HTML button
-from a script.** What you *can* drive is the native frame — the title bar drag
-strip, the resize borders and corners, and the caption buttons — because those
-live on the parent `HWND` and are resolved by our own window procedure. So:
-script the native frame; do not script the DOM. To verify the frontend/host
-bridge instead, have the frontend call one host binding on load and write the
-result into the DOM, then assert on the screenshot or on the host-side log.
-
-**Do not measure WebView2 client coverage with "the largest child HWND".**
-Chromium creates an intermediate compositing window in addition to the
-controller window. After a programmatic resize that intermediate window can
-report a **stale rect larger than the client area** for a while — the parent
-clips it, so there is no visual defect, but a script comparing "largest child"
-against the client rect will report a bogus failure. Enumerate children and
-measure **only the controller child** (`Chrome_WidgetWin*` class); ignore the
-rest.
-
-**Never run cursor/foreground smokes in parallel.** The cursor position and the
-foreground window are *global* machine state. Two scripts that move the mouse or
-raise a window at the same time corrupt each other and produce failures that do
-not reproduce. Serialise every check that drags, hovers, snaps or focuses. Only
-checks that are purely passive (log scraping, build gates) may run concurrently.
-
-**Screenshot acceptance has a contract.** A screenshot is evidence only if all
-four hold:
-1. the capturing probe is **DPI-aware** (otherwise Windows hands it a scaled,
-   blurry bitmap and every pixel assertion is meaningless);
-2. the target window is found by its **real window class**, not by "the
-   foreground window" or "the biggest window";
-3. the capture waits for the **frontend-ready signal** — capturing during load
-   photographs a white client area and proves nothing;
-4. the crop includes an **outer margin** beyond the window rect, so shadow,
-   rounded corners and any leaked native caption are inside the frame.
-
-**Quit gracefully, then clean up.** Post the application's own quit message to
-the window first and give it a moment to tear itself down; only then walk the
-process tree and force-stop anything left. Force-stopping the process tree
-directly kills the WebView2 browser process out from under the controller and
-produces teardown error output — noise that looks exactly like a real bug.
-
-**Check the return value of `PostMessageW`.** It fails silently. A script that
-posts a quit or a click and never inspects the result will happily report a
-clean lifecycle for a message that was never delivered.
-
-**Do not trust the PID you launched.** An application may hand off to another
-process (relaunch, elevation, single-instance handoff), so the PID your script
-started can exit immediately while the real window belongs to a different
-process. Find the window by **class name**, then derive the PID from the window
-— not the other way around. When cleaning up, stop only the process tree you
-own; if a window with your class is running that you did not start, abort the
-run instead of killing someone else's process.
+The GUI scripting failure modes and rules moved verbatim to
+[gui-verification-traps.md](./gui-verification-traps.md) when this file reached
+its 400-line limit.
 
 ## 5. Diagnostic build tags and env switches
 
@@ -392,9 +371,23 @@ Rules:
 
 ## 6. What a good bug report contains
 
-The environment a frame bug report needs, the `mullion doctor` block that
-gathers it, and the rest of the reporting contract moved verbatim to
-[bug-reports.md](./bug-reports.md) when this file reached the 400-line
-reference-doc limit.
+The environment a frame bug report needs and the reporting contract live in
+[bug-reports.md](./bug-reports.md); they moved when this file reached its limit.
 
 > Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: define issue #97's live lifecycle retries after bad-title, pre-loop-failure and normal-destruction paths; and update the frontend-error item for issue #88's 2,000-byte diagnostic bound, whose first-complete-URL behavior is headless-tested while real window.onerror delivery remains live-only (decision 0035).
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add uncached runtime checks, direct doctor/export and bridge VM smoke, and real Windows/386 WOW64 architecture-gate execution while keeping ARM64 compile-only.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add issue #97 adversarial sequential-Run verification for tagged private commands, early shell-ready retry, firing timers/deferred workers, already-admitted readiness ordering and HWND-pinned synchronous queries; state the live HWND-recycling uncertainty.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: name the two headless lifecycle locks for process-global Run tokens and Logger re-entry while teardown waits, without changing their mechanism claims.
+
+## 7. 2026-08-06 post-merge blocker closure audit
+
+- **Automated:** formatting, build, vet, `-unsafeptr`, uncached full tests, both diagnostic-tag build/test pairs, bridge VM, leak scan, Windows/386 production gates, and Linux/amd64 plus Windows/386/ARM64 builds passed.
+- **A/B:** restoring the teardown wait, pre-gate DPI call, eager backdrop callback, post-reduction URL displacement, or disconnected production message callback made its named regression fail; each repaired version passed.
+- **Live:** `mullion doctor` found WebView2 151.0.4129.59; `examples/basic` reached shell-ready, window-visible, application `Ping`, navigation-completed and frontend-ready with zero session warnings/errors on the two-monitor 125%/100% setup.
+- **Not covered:** the final smoke was process-stopped after readiness rather than closed through the UI; the manual snap/resize/DPI checklist was not repeated. Local `go test -race ./...` could not build because `gcc` is absent; the Windows CI race lane owns that check.
+- **`unverified`:** Windows/ARM64 remains compile-only by decision 0034, and physical HWND-value recycling was not forced live; the headless token/HWND adversaries cover both identity halves.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: record the post-merge blocker closure commands, A/B mutations, final live bridge smoke, explicit local race-toolchain gap, and remaining architecture/HWND uncertainties.

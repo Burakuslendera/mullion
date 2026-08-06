@@ -144,11 +144,13 @@ func TestBridgeRejectsUnknownResizeEdge(t *testing.T) {
 	}
 }
 
-// TestBridgeRestrictedSourceReachesOnlyReservedMethods locks the data:-source
-// containment (decisions/0014). A restricted source - a data: document, which a
-// hostile script could be posting from a data: iframe - may drive the reserved
-// window controls, but a non-reserved method must never reach Config.Bridge.
-func TestBridgeRestrictedSourceReachesOnlyReservedMethods(t *testing.T) {
+// TestBridgeRestrictedSourcePreservesWatchdogEvidenceAndWindowControls is the
+// headless fallback-surface regression. The failed application owns the render
+// watchdog evidence. diagnostics.js is injected into the data: fallback too, but
+// its phase, diagnostic and readiness posts must not replace that evidence or
+// disarm the watchdog. The fallback still needs every caption/drag/resize method
+// it actually calls.
+func TestBridgeRestrictedSourcePreservesWatchdogEvidenceAndWindowControls(t *testing.T) {
 	called := false
 	host, logger := newTestHost(t, Config{
 		StartHidden: true,
@@ -157,58 +159,131 @@ func TestBridgeRestrictedSourceReachesOnlyReservedMethods(t *testing.T) {
 			return `{"id":"x","ok":true}`
 		},
 	})
+	host.MarkFrontendPhase("application bootstrap")
+	before := host.diagnostics.timeoutSummary()
 
-	// A reserved window control still works from a restricted source.
-	reply := host.handleWebMessage(`{"id":"1","method":"`+methodMinimise+`","args":[]}`, false)
-	if !strings.Contains(reply, `"ok":true`) {
-		t.Fatalf("reserved method blocked from a restricted source: %q", reply)
+	rejected := []string{
+		`{"id":"shell","method":"` + methodShellReady + `","args":[]}`,
+		`{"id":"ready","method":"` + methodReady + `","args":[]}`,
+		`{"id":"phase","method":"` + methodPhase + `","args":["fallback document created"]}`,
+		`{"id":"diagnostic","method":"` + methodDiagnostic + `","args":["error","fallback diagnostic"]}`,
+		`{"id":"show","method":"` + methodShow + `","args":[]}`,
+		`{"id":"hide","method":"` + methodHide + `","args":[]}`,
 	}
-	// An application method must NOT reach Config.Bridge from a restricted source,
-	// and gets no reply - the same no-correlation stance the outer origin gate
-	// takes for a foreign source, so a hostile data: iframe cannot confirm it
-	// holds the restricted admission (decisions/0014, issue #70).
-	reply = host.handleWebMessage(`{"id":"2","method":"GetSecret","args":[]}`, false)
+	for _, raw := range rejected {
+		if reply := host.handleWebMessage(raw, false); reply != "" {
+			t.Fatalf("restricted non-fallback method produced a reply: %q", reply)
+		}
+	}
+
+	controls := []struct {
+		method string
+		args   string
+		log    string
+	}{
+		{methodStartDrag, "[]", "titlebar drag requested"},
+		{methodStartResize, `["left"]`, "resize requested, edge=left"},
+		{methodMinimise, "[]", "minimize requested"},
+		{methodToggleMaximise, "[]", "maximize toggle requested"},
+		{methodIsMaximised, "[]", ""},
+		{methodClose, "[]", "quit requested"},
+	}
+	for id, control := range controls {
+		raw := `{"id":` + strconv.Quote(strconv.Itoa(id)) + `,"method":` +
+			strconv.Quote(control.method) + `,"args":` + control.args + `}`
+		reply := host.handleWebMessage(raw, false)
+		if !strings.Contains(reply, `"ok":true`) {
+			t.Fatalf("fallback control %q was blocked: %q", control.method, reply)
+		}
+		if control.log != "" && !strings.Contains(logger.String(), control.log) {
+			t.Fatalf("fallback control %q did not execute; log missing %q:\n%s", control.method, control.log, logger.String())
+		}
+	}
+
+	if reply := host.handleWebMessage(`{"id":"app","method":"GetSecret","args":[]}`, false); reply != "" {
+		t.Fatalf("restricted application call should get no reply, got %q", reply)
+	}
 	if called {
 		t.Fatal("a restricted source reached Config.Bridge")
 	}
-	if reply != "" {
-		t.Fatalf("restricted application call should get no reply, got %q", reply)
+	host.renderMu.Lock()
+	ready, shellReady := host.frontendReady, host.frontendShellReady
+	host.renderMu.Unlock()
+	if ready || shellReady {
+		t.Fatalf("fallback changed readiness: ready=%t shellReady=%t", ready, shellReady)
 	}
-	// The rejection is still diagnosed host-side; only the frontend reply is
-	// withheld, so the drop must not become silent to the operator too.
+	if after := host.diagnostics.timeoutSummary(); after != before {
+		t.Fatalf("fallback changed retained watchdog evidence:\nbefore %q\nafter  %q", before, after)
+	}
 	if !strings.Contains(logger.String(), "rejected from a restricted source") {
-		t.Fatalf("restricted rejection was not logged:\n%s", logger.String())
+		t.Fatalf("restricted rejections were not logged:\n%s", logger.String())
 	}
-	// The same method DOES reach the bridge from a trusted source (allowBridge=true).
-	host.handleWebMessage(`{"id":"3","method":"GetSecret","args":[]}`, true)
+
+	// Trusted-origin reserved behavior and raw Config.Bridge admission are
+	// unchanged: the same application method reaches the configured bridge.
+	host.handleWebMessage(`{"id":"trusted","method":"GetSecret","args":[]}`, true)
 	if !called {
 		t.Fatal("a trusted source did not reach Config.Bridge")
 	}
 }
 
-func TestRestrictedSourceDiagnosticsUseTheSameBoundedBoundary(t *testing.T) {
+func TestWebMessageCallbackKeepsFallbackOutOfTrustedAdmission(t *testing.T) {
+	var bridgeCalls int
+	host, logger := newTestHost(t, Config{
+		StartHidden: true,
+		Bridge: func(string) string {
+			bridgeCalls++
+			return ""
+		},
+	})
+	host.errorSurfaceActive = true
+	browser := host.newWebViewBrowser()
+	if browser.MessageCallback == nil {
+		t.Fatal("production Browser constructor left MessageCallback disconnected")
+	}
+	callback := browser.MessageCallback
+	applicationCall := `{"id":"app","method":"GetSecret","args":[]}`
+
+	callback(applicationCall, "", nil)
+	callback(`{"id":"ready","method":"`+methodReady+`","args":[]}`, "", nil)
+	if bridgeCalls != 0 {
+		t.Fatal("fallback source reached Config.Bridge through the production callback")
+	}
+	host.renderMu.Lock()
+	fallbackReady := host.frontendReady
+	host.renderMu.Unlock()
+	if fallbackReady {
+		t.Fatal("fallback source changed readiness through the production callback")
+	}
+	callback(`{"id":"drag","method":"`+methodStartDrag+`","args":[]}`, "", nil)
+	if !strings.Contains(logger.String(), "titlebar drag requested") {
+		t.Fatal("production callback rejected an allowed fallback window control")
+	}
+
+	callback(applicationCall, host.config.trustedOrigin(), nil)
+	if bridgeCalls != 1 {
+		t.Fatalf("trusted source bridge calls = %d, want 1", bridgeCalls)
+	}
+}
+
+// This is the Go receipt half of scripts/test-bridge.mjs. The shipped bridge
+// must post the complete detail so the bounded host reducer can still find a URL
+// that begins after 240 characters; only the log boundary may reduce it.
+func TestBridgeTrustedDiagnosticReceiptIsBoundedAndKeepsLateURL(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true})
-	phase := strings.Repeat(".:;,", logsafe.DiagnosticLimit*2)
-	phaseRaw := `{"id":"phase","method":"` + methodPhase + `","args":[` + strconv.Quote(phase) + `]}`
-	if reply := host.handleWebMessage(phaseRaw, false); !strings.Contains(reply, `"ok":true`) {
-		t.Fatalf("restricted phase was not handled: %q", reply)
-	}
-
-	host.diagnostics.mu.Lock()
-	retainedPhase := host.diagnostics.lastFrontendPhase
-	host.diagnostics.mu.Unlock()
-	if len(retainedPhase) > logsafe.DiagnosticLimit {
-		t.Fatalf("restricted retained phase len = %d, limit = %d", len(retainedPhase), logsafe.DiagnosticLimit)
-	}
-
 	detail := strings.Repeat("context ", logsafe.DiagnosticLimit) +
 		"https://mullion.localhost/app/main.js?secret=value"
-	diagnosticRaw := `{"id":"diagnostic","method":"` + methodDiagnostic +
+	raw := `{"id":"diagnostic","method":"` + methodDiagnostic +
 		`","args":["error",` + strconv.Quote(detail) + `]}`
-	if reply := host.handleWebMessage(diagnosticRaw, false); !strings.Contains(reply, `"ok":true`) {
-		t.Fatalf("restricted diagnostic was not handled: %q", reply)
+
+	if reply := host.handleWebMessage(raw, true); !strings.Contains(reply, `"ok":true`) {
+		t.Fatalf("trusted diagnostic was not handled: %q", reply)
 	}
-	if !strings.Contains(logger.String(), "https://mullion.localhost/app/main.js?") {
-		t.Fatalf("restricted diagnostic lost its first URL:\n%s", logger.String())
+	logText := logger.String()
+	if !strings.Contains(logText, "https://mullion.localhost/app/main.js?") {
+		t.Fatalf("bounded Go receipt lost the late URL:\n%s", logText)
+	}
+	if strings.Contains(logText, "secret=value") || strings.Contains(logText, detail) {
+		t.Fatalf("bounded Go receipt retained query data or the raw detail:\n%s", logText)
 	}
 }

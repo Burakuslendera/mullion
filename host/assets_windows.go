@@ -57,7 +57,7 @@ func newAssetProvider(assets fs.FS, log *logSink, virtualHost string, diagnostic
 // loopback, which measured 47-141 ms instead and took issue #77's aborts with it.
 // The reasoning, the exact name, the six negatives it took to get there and what
 // the change cost the no-port guard are on Config.VirtualHost, in
-// docs/decisions/0030 and in docs/webview2-and-assets.md. A caller that overrides
+// docs/decisions/0030 and in docs/assets.md. A caller that overrides
 // Config.VirtualHost with a name outside that TLD gets the wait back.
 func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs, environment *webview2.ICoreWebView2Environment) {
 	if request == nil {

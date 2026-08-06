@@ -22,34 +22,36 @@ points back here for the mechanics.
 Run these in order. Each one is cheap; each one catches a different class of
 mistake. Do not skip to the demo.
 
-```
-gofmt -l .                                   # must print nothing
+```powershell
+gofmt -l .                                      # must print nothing
 go build ./...
 go vet ./...
-go test ./...
-go test -race ./...                          # the message pump is thread-affine
-go build -tags mullion_dwm_caption_diag ./... # diagnostic build tag still compiles
-go test -tags mullion_dwm_caption_diag ./...  # ... and its gated tests still pass
-go build -tags mullion_caption_passthrough_diag ./... # ... and the other one
-go test -tags mullion_caption_passthrough_diag ./...
-GOOS=linux go build ./...                     # build-tag hygiene: no Win32 leak
-GOOS=windows GOARCH=amd64 go build ./...           # supported WebView2 target
-GOOS=windows GOARCH=386 go build ./...             # compile portability only
-GOOS=windows GOARCH=arm64 go build ./...           # compile portability only
-pwsh scripts/leak-scan.ps1                    # nothing private is published
-cd examples/basic && go run .                 # live demo
+go test -count=1 ./...
+go test -count=1 -race ./...                    # message pump is thread-affine
+node scripts/test-bridge.mjs                    # exact embedded bridge in a Node VM
+go run ./cmd/mullion doctor                     # direct runtime/export execution
+go build -tags mullion_dwm_caption_diag ./...; go test -count=1 -tags mullion_dwm_caption_diag ./...
+go build -tags mullion_caption_passthrough_diag ./...; go test -count=1 -tags mullion_caption_passthrough_diag ./...
+$env:GOOS = 'linux';   $env:GOARCH = 'amd64'; go build ./... # stub portability
+$env:GOOS = 'windows'; $env:GOARCH = 'amd64'; go build ./... # supported WebView2 target
+$env:GOOS = 'windows'; $env:GOARCH = '386'; go test -count=1 ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture' # WOW64 execution
+$env:GOOS = 'windows'; $env:GOARCH = 'arm64'; go build ./... # compile portability only
+Remove-Item Env:GOOS, Env:GOARCH
+pwsh scripts/leak-scan.ps1                      # nothing private is published
+Push-Location examples/basic; go run .; Pop-Location # live demo
 ```
 
-`GOOS=linux go build ./...` is not decoration. It is the only automatic check
-that a Win32 symbol has not leaked out of a `_windows.go` file into a portable
-one. It fails loudly and early; treat a failure as a build-tag bug, not as a
-platform complaint.
+The Linux build is not decoration. It is the automatic check that a Win32
+symbol has not leaked out of a `_windows.go` file into a portable one. The
+PowerShell environment assignments above are deliberately runnable as written;
+the final `Remove-Item` restores native builds.
 
-The three Windows cross-builds prove different contracts. `windows/amd64` is the
-only supported WebView2 hosting target. Windows/386 and Windows/ARM64 compile so
-cross-platform dependency graphs stay portable, but a green build is not a
-runtime-support claim: both targets return an unsupported-architecture error
-before loading WebView2 (decision 0034).
+The Windows gates prove different contracts. `windows/amd64` is the only
+supported WebView2 hosting target. Windows/386 actually executes the
+architecture-tagged production discovery, host and doctor gates under WOW64,
+proving rejection precedes runtime, DLL, COM, callback, class and HWND work.
+Windows/ARM64 remains compile-only. A green cross-build is source portability,
+not runtime support (decision 0034).
 
 `go test -race ./...` is the one step that wants a C toolchain: on Windows the
 race detector links through a mingw-w64 gcc at test time. That does not soften
@@ -180,3 +182,5 @@ The full taxonomy and the triage rules are in
 > Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: the prerequisite states a Go version for the first time. 1.24 is the supported floor and an invariant on the library, not the version this happened to be written on, and it is 1.24 because that is where os.OpenRoot arrives (decisions/0033).
 
 > Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: distinguish the supported Windows/amd64 WebView2 target from compile-only Windows/386 and Windows/ARM64 portability gates (decision 0034).
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: make cross-build commands runnable in PowerShell; add uncached, direct doctor/export, bridge VM, and Windows/386 WOW64 execution gates while keeping ARM64 compile-only (decision 0034).

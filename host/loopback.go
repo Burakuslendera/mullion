@@ -77,17 +77,18 @@ func (config Config) trustedOrigin() string {
 	return urlOrigin(config.startURL())
 }
 
-// messageSourceAllowed decides whether a web message posted from source may reach
-// the bridge. window.<ns> - the window controls and Config.Bridge, the application's
-// own Go methods - is injected into every document the WebView loads (decisions/0014),
-// so this is an allow-list, not a deny-list: only mullion's own surfaces pass. That
-// is the trusted origin (the virtual host, or the Config.URL origin) and the data:
-// error page (errorpage.go). Everything else is rejected - a foreign http/https
-// origin, and also blob:/filesystem:/file: (which carry a real web origin a bare
-// scheme check would wave through) and about:blank/"" (which a script-driven top
-// navigation can reach while inheriting the previous document's origin). Admitting
-// data: is safe: only mullion itself can put a data: document in the top frame,
-// because browsers block a script-driven top navigation to a data: URL.
+// messageSourceAllowed decides whether a top-level web message posted from
+// source may reach the bridge. window.<ns> is injected into every document the
+// WebView loads, but the CoreWebView2 WebMessageReceived path currently receives
+// top-level document messages only (decisions/0014). This is an allow-list, not a
+// deny-list: only mullion's own surfaces pass. That is the trusted origin (the
+// virtual host, or the Config.URL origin) and the data: error page (errorpage.go).
+// Everything else is rejected - a foreign http/https origin, and also
+// blob:/filesystem:/file: (which carry a real web origin a bare scheme check
+// would wave through) and about:blank/"" (which a script-driven top navigation
+// can reach while inheriting the previous document's origin). Admitting data: is
+// safe on this current top-level path: only mullion itself can put a data:
+// document there, because browsers block script-driven top navigation to data:.
 //
 // The data: branch is belt and braces, kept for a runtime that reports the URI:
 // the runtime measured live (150.0.4078.65) reports a data: document's source as
@@ -104,13 +105,14 @@ func (config Config) messageSourceAllowed(source string) bool {
 }
 
 // messageSourceTrusted reports whether a message from source may drive the
-// application's own Config.Bridge methods, not just the reserved window controls.
+// application's own Config.Bridge methods, not just fallback window controls.
 // Only the trusted origin qualifies. The error surface's messages are allowed
 // (messageSourceAllowed, or Host.errorSurfaceMessageAllowed for the empty-source
-// form the runtime actually reports - issue #56) so its caption buttons work, but
-// they are NOT trusted for Config.Bridge: a data: document may be a hostile iframe
-// a script created, not mullion's own error surface, and an empty source says even
-// less (decisions/0014).
+// form the runtime actually reports - issue #56) so its caption, drag and resize
+// controls work, but they are NOT trusted for Config.Bridge. That distinction is
+// defense in depth on today's top-level-only receipt path and becomes essential
+// if frame message receipt is added: a script can create a hostile data: iframe,
+// and an empty source says even less (decisions/0014).
 func (config Config) messageSourceTrusted(source string) bool {
 	return sameHTTPOrigin(source, config.trustedOrigin())
 }
