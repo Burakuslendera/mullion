@@ -79,9 +79,13 @@ jobs:
         run: |
           $env:GOARCH = '386'
           go test -count=1 ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture'
-          $doctor = (& go run ./cmd/mullion doctor 2>&1) | Out-String
-          if ($LASTEXITCODE -ne 1) {
-            throw "unsupported Windows/386 doctor exit = $LASTEXITCODE, want 1`n$doctor"
+          $doctorOut = Join-Path $env:RUNNER_TEMP "mullion-doctor-$PID.out"
+          $doctorErr = Join-Path $env:RUNNER_TEMP "mullion-doctor-$PID.err"
+          $doctorProcess = Start-Process -FilePath go -ArgumentList @('run', './cmd/mullion', 'doctor') -Wait -PassThru -NoNewWindow -RedirectStandardOutput $doctorOut -RedirectStandardError $doctorErr
+          $doctor = (Get-Content -Raw $doctorOut) + (Get-Content -Raw $doctorErr)
+          Remove-Item $doctorOut, $doctorErr
+          if ($doctorProcess.ExitCode -ne 1) {
+            throw "unsupported Windows/386 doctor exit = $($doctorProcess.ExitCode), want 1`n$doctor"
           }
           if ($doctor -notmatch 'windows/amd64') {
             throw "unsupported Windows/386 doctor did not report the architecture sentinel`n$doctor"
