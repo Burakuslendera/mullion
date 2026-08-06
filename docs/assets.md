@@ -113,6 +113,11 @@ the bytes. `mime.TypeByExtension` remains in the middle, unpinned — it is stil
 decision about the name, which is the model, not about the bytes.
 
 Bodies are wrapped in a COM `IStream` built with `SHCreateMemStream`.
+`SHCreateMemStream` takes a 32-bit `UINT` byte count. A body larger than
+4,294,967,295 bytes is rejected before that call; otherwise Windows would
+silently use only the low 32 bits and expose a truncated or empty stream (issue
+#120). The request fails and the asset-response error is logged rather than
+serving partial content.
 
 ### Serving from a caller URL instead (`Config.URL`)
 
@@ -341,4 +346,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document the SHCreateMemStream UINT body limit and fail-closed handling from issue #120.

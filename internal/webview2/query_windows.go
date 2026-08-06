@@ -4,7 +4,6 @@ package webview2
 
 import (
 	"errors"
-	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -101,6 +100,15 @@ func (s *ICoreWebView2Settings5) Release() { asUnknown(s).Release() }
 // Release drops a reference obtained from QueryInterface.
 func (s *ICoreWebView2Settings9) Release() { asUnknown(s).Release() }
 
+const maxSHCreateMemStreamSize = uint64(1<<32 - 1)
+
+func shCreateMemStreamSize(length uint64) (uint32, error) {
+	if length > maxSHCreateMemStreamSize {
+		return 0, errors.New("webview2: SHCreateMemStream content exceeds UINT maximum")
+	}
+	return uint32(length), nil
+}
+
 // NewMemoryStream copies content into a COM memory stream.
 //
 // The bytes have to be copied because the response outlives the call that
@@ -108,14 +116,22 @@ func (s *ICoreWebView2Settings9) Release() { asUnknown(s).Release() }
 // WebResourceRequested handler has returned. A stream over a Go slice would be
 // a promise the garbage collector does not keep.
 func NewMemoryStream(content []byte) (*IStream, error) {
-	var data uintptr
-	if len(content) > 0 {
-		data = uintptr(unsafe.Pointer(&content[0]))
+	size, err := shCreateMemStreamSize(uint64(len(content)))
+	if err != nil {
+		return nil, err
 	}
-	result, _, err := procSHCreateMemStream.Call(data, uintptr(len(content)))
-	// The syscall only ever saw a uintptr, which the collector does not treat as
-	// a reference; keep the slice alive until the copy is done.
-	runtime.KeepAlive(content)
+	var result uintptr
+	if len(content) == 0 {
+		result, _, err = procSHCreateMemStream.Call(0, 0)
+	} else {
+		// Keep the conversion in the Call expression: LazyProc.Call's
+		// uintptrescapes contract pins the backing array through the synchronous
+		// copy. A uintptr local would not keep it alive.
+		result, _, err = procSHCreateMemStream.Call(
+			uintptr(unsafe.Pointer(&content[0])),
+			uintptr(size),
+		)
+	}
 	if result == 0 {
 		if err == nil || errors.Is(err, windows.ERROR_SUCCESS) {
 			return nil, errors.New("webview2: SHCreateMemStream returned no stream")

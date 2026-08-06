@@ -104,6 +104,16 @@ Rules for new tests:
   tested headlessly. A test that requires a desktop turns a green CI into a
   machine-dependent coin flip. Reject it in review.
 
+Issue #96's `SHCreateMemStream` pointer-lifetime repair cannot be locked by a
+runtime test because it would have to cross a Win32 boundary, which is forbidden
+above. `TestNewMemoryStreamPinsContentAtSyscallBoundary` instead compiles the
+package with escape diagnostics and locks the compiler-recognised
+`uintptrescapes` contract: the slice backing array must remain pinned through the
+synchronous `LazyProc.Call`.
+`TestSHCreateMemStreamSizeRejectsValuesOutsideUINT` locks the native 32-bit
+length boundary with scalar values, so its over-limit case allocates no
+multi-gigabyte slice and reaches no Win32 entry point (issue #120).
+
 ## 2. Why "it compiles" is not acceptance
 
 In this architecture the compiler is nearly blind to the failure modes that
@@ -375,12 +385,14 @@ The environment a frame bug report needs and the reporting contract live in
 [bug-reports.md](./bug-reports.md); they moved when this file reached its limit.
 
 
-## 7. 2026-08-06 post-merge blocker closure audit
+## 7. 2026-08-06 verification records
 
 - **Automated:** formatting, build, vet, `-unsafeptr`, uncached full tests, both diagnostic-tag build/test pairs, bridge VM, leak scan, Windows/386 production gates, and Linux/amd64 plus Windows/386/ARM64 builds passed. GitHub Actions run `31060250331` passed all four Go 1.24/stable Windows/portable jobs; both Windows jobs passed `go test -count=1 -race ./...`, including the render-watchdog generation repair exposed by the preceding CI run.
 - **A/B:** restoring the teardown wait, pre-gate DPI call, eager backdrop callback, post-reduction URL displacement, disconnected production message callback, or the render watchdog's callback-before-identity assignment made its named regression or race check fail; each repaired version passed.
 - **Live:** `mullion doctor` found WebView2 151.0.4129.59; `examples/basic` reached shell-ready, window-visible, application `Ping`, navigation-completed and frontend-ready with zero session warnings/errors on the two-monitor 125%/100% setup.
 - **Not covered:** the final smoke was process-stopped after readiness rather than closed through the UI; the manual snap/resize/DPI checklist was not repeated. Local `go test -race ./...` could not build because `gcc` is absent; the two Windows CI race lanes passed instead.
 - **`unverified`:** Windows/ARM64 remains compile-only by decision 0034, and physical HWND-value recycling was not forced live; the headless token/HWND adversaries cover both identity halves.
+- **Issues #96/#120:** Go 1.24 and current-toolchain focused tests, formatting, build, vet, uncached full tests, bridge VM, both diagnostic-tag build/test pairs, Linux/amd64 and Windows/amd64/386/ARM64 gates, and leak scan passed. `mullion doctor` found WebView2 151.0.4129.59; `examples/basic` served all three embedded assets, completed `Ping`, navigation and frontend readiness with zero warnings/errors, and a live capture showed the rendered restored window.
+- **Not covered / `unverified`:** local `-race` could not build because `gcc` is absent; CI evidence is pending the push. The 4-GiB rejection is boundary-tested with scalar lengths rather than a multi-gigabyte allocation, and the demo was process-stopped after readiness rather than closed through the UI; no frame/snap/DPI behaviour changed, so that manual checklist was not repeated.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: lock issues #96 and #120 at the headless compiler and native-width boundaries while keeping Win32 entry points out of the test suite.
