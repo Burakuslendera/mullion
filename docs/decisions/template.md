@@ -51,3 +51,5 @@ you have not understood it yet (do not write it *yet*).
 The commit, the test, the log line, the live observation. Not a summary of the
 code, and not a generated map of the repository: those are descriptions, not
 observations.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the template file's single current edit footer so every Markdown file except the repository-root README follows the same invariant.

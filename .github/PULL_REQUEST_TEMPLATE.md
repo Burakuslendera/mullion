@@ -64,3 +64,5 @@ it at cost, or trust it wrongly.
       would change our mind. Not needed for a bug fix or a behaviour-preserving
       refactor.
 - [ ] `gofmt -l .` is empty, and `scripts/leak-scan.ps1` is clean.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the template file's single current edit footer so every Markdown file except the repository-root README follows the same invariant.
