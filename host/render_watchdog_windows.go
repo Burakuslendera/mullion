@@ -33,20 +33,24 @@ func (host *Host) startRenderWatchdogForRun(admission runAdmission) {
 	if host.config.RenderTimeout < 0 {
 		return
 	}
-	var timer *time.Timer
-	timer = time.AfterFunc(host.config.RenderTimeout, func() {
-		host.fireRenderWatchdog(timer, admission)
+	// Identity is a lock-protected generation rather than the timer pointer.
+	// time.AfterFunc may run a zero-duration callback before it returns the
+	// *Timer to its caller; closing over a variable assigned from that return is
+	// both a data race and a stale-timer admission hole.
+	host.renderGeneration++
+	generation := host.renderGeneration
+	host.renderTimer = time.AfterFunc(host.config.RenderTimeout, func() {
+		host.fireRenderWatchdog(generation, admission)
 	})
-	host.renderTimer = timer
 }
 
-func (host *Host) fireRenderWatchdog(timer *time.Timer, admission runAdmission) {
+func (host *Host) fireRenderWatchdog(generation uint64, admission runAdmission) {
 	if !host.enterOriginatingRun(admission) {
 		return
 	}
 	defer host.leaveRun()
 	host.renderMu.Lock()
-	if host.renderTimer != timer {
+	if host.renderGeneration != generation {
 		host.renderMu.Unlock()
 		return
 	}
@@ -65,6 +69,7 @@ func (host *Host) stopRenderWatchdog() {
 
 	if host.renderTimer != nil {
 		host.renderTimer.Stop()
+		host.renderGeneration++
 		host.renderTimer = nil
 	}
 }
@@ -90,6 +95,7 @@ func (host *Host) MarkFrontendReady() {
 	host.frontendReady = true
 	if host.renderTimer != nil {
 		host.renderTimer.Stop()
+		host.renderGeneration++
 		host.renderTimer = nil
 	}
 	host.renderMu.Unlock()

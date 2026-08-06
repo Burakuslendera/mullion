@@ -62,6 +62,7 @@ type Host struct {
 	dpiAwarenessErr      error
 	renderMu             sync.Mutex
 	renderTimer          *time.Timer
+	renderGeneration     uint64
 	frontendReady        bool
 	frontendShellReady   bool
 	startupMu            sync.Mutex
@@ -281,6 +282,7 @@ func (host *Host) beginRun() error {
 		host.renderTimer.Stop()
 		host.renderTimer = nil
 	}
+	host.renderGeneration++
 	host.frontendReady = false
 	host.frontendShellReady = false
 	host.renderMu.Unlock()

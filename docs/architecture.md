@@ -290,8 +290,11 @@ and re-arms the gate. Fired and stopped timers detach immediately and retain the
 originating Run token, including across sequential runs.
 
 **Render watchdog.** Armed before `Navigate`, cancelled by `Host.MarkFrontendReady()` —
-the frontend's `ready()` call, made only after it has actually rendered. If
-`Config.RenderTimeout` elapses first, the host logs an error carrying everything it knows:
+the frontend's `ready()` call, made only after it has actually rendered. Timer
+identity is a lock-protected generation chosen before `time.AfterFunc`; even a
+zero-duration callback cannot race its own identity assignment or impersonate a
+later session. If `Config.RenderTimeout` elapses first, the host logs an error
+carrying everything it knows:
 
 ```
 phase=<last frontend phase>   asset=<last asset served>

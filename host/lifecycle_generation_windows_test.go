@@ -279,6 +279,7 @@ func TestOldRunTimersDeferredPostsAndWorkerWarningsStayOutOfNextRun(t *testing.T
 	host.startupMu.Unlock()
 	host.renderMu.Lock()
 	renderTimer := host.renderTimer
+	renderGeneration := host.renderGeneration
 	host.renderMu.Unlock()
 	if showTimer == nil || renderTimer == nil {
 		t.Fatal("originating Run did not arm both timers")
@@ -294,7 +295,7 @@ func TestOldRunTimersDeferredPostsAndWorkerWarningsStayOutOfNextRun(t *testing.T
 	}
 	before := logger.String()
 	host.fireStartupShowGate(showTimer, oldRun)
-	host.fireRenderWatchdog(renderTimer, oldRun)
+	host.fireRenderWatchdog(renderGeneration, oldRun)
 	host.fireDeferredBoundsSync(oldRun, boundsSyncWParamDeferredMaximize)
 	host.warnForRun(oldRun, "mullion: stale worker warning")
 
