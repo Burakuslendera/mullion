@@ -1,6 +1,7 @@
 package logsafe
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -77,6 +78,11 @@ func TestURLDropsQueryAndCredentials(t *testing.T) {
 	}
 	if want := "https://example.com/a/b?#"; got != want {
 		t.Fatalf("URL() = %q, want %q", got, want)
+	}
+
+	got = URL("https://user:p@ssword@example.com/a")
+	if got != "https://example.com/a" {
+		t.Fatalf("URL() did not reduce valid @ userinfo to the host alone: %q", got)
 	}
 }
 
@@ -202,5 +208,94 @@ func TestURLParseFailureStillDropsTheQuery(t *testing.T) {
 		if strings.Contains(got, "s3cr3t") || strings.Contains(got, "token") {
 			t.Errorf("URL(%q) = %q leaked the query through the fallback", in, got)
 		}
+	}
+}
+
+var reducedURLSink string
+
+func TestURLPathAllocationBytesAreInputSizeIndependent(t *testing.T) {
+	measure := func(size int) int64 {
+		input := "https://mullion.local/" + strings.Repeat("\u00e9", size/2)
+		return testing.Benchmark(func(b *testing.B) {
+			for range b.N {
+				reducedURLSink = URL(input)
+			}
+		}).AllocedBytesPerOp()
+	}
+
+	oneKiB := measure(1 << 10)
+	oneMiB := measure(1 << 20)
+	if oneMiB > oneKiB+512 {
+		t.Fatalf("URL allocated bytes grow with path input: 1 KiB=%d, 1 MiB=%d", oneKiB, oneMiB)
+	}
+}
+
+func TestURLUserinfoAllocationBytesAreInputSizeIndependent(t *testing.T) {
+	measure := func(size int) int64 {
+		input := "https://" + strings.Repeat("a", size) + "@mullion.localhost/app.js"
+		return testing.Benchmark(func(b *testing.B) {
+			for range b.N {
+				reducedURLSink = URL(input)
+			}
+		}).AllocedBytesPerOp()
+	}
+
+	oneKiB := measure(1 << 10)
+	oneMiB := measure(1 << 20)
+	if oneMiB > oneKiB+512 {
+		t.Fatalf("URL allocated bytes grow with userinfo input: 1 KiB=%d, 1 MiB=%d", oneKiB, oneMiB)
+	}
+}
+
+func TestURLTruncationKeepsCompletePathEncodingUnits(t *testing.T) {
+	const origin = "https://example.com"
+	budget := URLLimit - len(origin)
+	for _, c := range []struct {
+		name    string
+		unit    string
+		room    int
+		present bool
+	}{
+		{"percent escape at exhausted boundary", "%2F", 0, false},
+		{"percent escape after first byte", "%2F", 1, false},
+		{"percent escape before boundary", "%2F", 2, false},
+		{"percent escape on boundary", "%2F", 3, true},
+		{"encoded rune after first escape", "%E2%82%AC", 3, false},
+		{"encoded rune after second escape", "%E2%82%AC", 6, false},
+		{"encoded rune on boundary", "%E2%82%AC", 9, true},
+		{"raw multibyte rune before boundary", "\u20ac", 8, false},
+		{"raw multibyte rune on boundary", "\u20ac", 9, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := "/" + strings.Repeat("a", budget-1-c.room) + c.unit + "tail"
+			got := URL(origin + path + "?#")
+			if len(got) > URLLimit+len(truncationMarker)+2 {
+				t.Fatalf("URL() emitted %d bytes, want at most %d: %q", len(got), URLLimit+len(truncationMarker)+2, got)
+			}
+			if _, err := url.Parse(got); err != nil {
+				t.Fatalf("URL() emitted an unparsable projection %q: %v", got, err)
+			}
+			encoded := c.unit
+			if c.unit == "\u20ac" {
+				encoded = "%E2%82%AC"
+			}
+			if strings.Contains(got, encoded) != c.present {
+				t.Fatalf("URL() = %q, complete unit %q presence = %t, want %t", got, encoded, strings.Contains(got, encoded), c.present)
+			}
+			if !strings.HasSuffix(got, truncationMarker+"?#") {
+				t.Fatalf("URL() = %q, want visible truncation and query/fragment markers", got)
+			}
+		})
+	}
+}
+
+func TestURLRejectsMalformedEscapeBeyondTheProjection(t *testing.T) {
+	raw := "https://decoy.example/" + strings.Repeat("a", 1<<20) + "%zz?secret=value"
+	got := URL(raw)
+	if strings.HasPrefix(got, "https://decoy.example") {
+		t.Fatalf("URL() accepted a malformed late path escape: %q", got)
+	}
+	if strings.Contains(got, "secret=value") {
+		t.Fatalf("URL() leaked a query value through the malformed-path fallback: %q", got)
 	}
 }

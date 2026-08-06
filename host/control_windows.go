@@ -4,70 +4,150 @@ package host
 
 import (
 	"errors"
+	"runtime"
 	"strconv"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
 func (host *Host) Show() error {
+	admission := host.enterRun()
+	defer host.leaveRun()
 	host.log.Debug("mullion: show requested")
-	result, err := sendWindowMessageResult(host.window(), wmNativeShow, 0, 0)
-	host.warnIf("show send", err)
+
+	// Admission is counted rather than represented by a held mutex: a deferred
+	// embed may pump a bridge readiness callback, and Logger callbacks may also
+	// re-enter Host. endRun still waits for this complete synchronous result.
+	result, err := host.sendRunCommand(admission, wmNativeShow, 0)
+	stillOriginatingRun := host.runMatches(admission)
+	if stillOriginatingRun {
+		host.warnIf("show send", err)
+	}
 	if err != nil {
 		return err
 	}
 	if result == 0 {
 		err := errors.New("native show did not become visible")
-		host.log.Warn("mullion: show failed, reason=" + logsafe.Reason(err))
+		if stillOriginatingRun {
+			host.log.Warn("mullion: show failed, reason=" + logsafe.Reason(err))
+		}
 		return err
 	}
 	return nil
 }
 
 func (host *Host) Hide() {
+	admission := host.enterRun()
+	defer host.leaveRun()
 	host.log.Debug("mullion: hide requested")
-	host.warnIf("hide post", postWindowMessage(host.window(), wmNativeHide))
+	host.warnIf("hide post", host.postRunCommand(admission, wmNativeHide, 0))
 }
 
 func (host *Host) Quit() {
+	admission := host.enterRun()
+	defer host.leaveRun()
 	host.log.Debug("mullion: quit requested")
-	host.warnIf("quit post", postWindowMessage(host.window(), wmNativeQuit))
+	host.warnIf("quit post", host.postRunCommand(admission, wmNativeQuit, 0))
 }
 
 func (host *Host) Minimise() {
+	admission := host.enterRun()
+	defer host.leaveRun()
 	host.log.Debug("mullion: minimize requested")
-	host.warnIf("minimize post", postWindowMessage(host.window(), wmNativeMinimize))
+	host.warnIf("minimize post", host.postRunCommand(admission, wmNativeMinimize, 0))
 }
 
 func (host *Host) ToggleMaximise() {
+	admission := host.enterRun()
+	defer host.leaveRun()
 	host.log.Debug("mullion: maximize toggle requested")
-	host.warnIf("maximize toggle post", postWindowMessage(host.window(), wmNativeMaxToggle))
+	host.warnIf("maximize toggle post", host.postRunCommand(admission, wmNativeMaxToggle, 0))
 }
 
 func (host *Host) StartDrag() {
+	admission := host.enterRun()
+	defer host.leaveRun()
 	host.log.Debug("mullion: titlebar drag requested")
-	host.warnIf("titlebar drag post", postWindowMessage(host.window(), wmNativeStartDrag))
+	host.warnIf("titlebar drag post", host.postRunCommand(admission, wmNativeStartDrag, 0))
 }
 
 func (host *Host) StartResize(edge string) {
+	admission := host.enterRun()
+	defer host.leaveRun()
 	hit, ok := resizeHitTestForEdge(edge)
 	if !ok {
 		host.log.Warn("mullion: resize requested with unknown edge, edge=" + logsafe.Diagnostic(edge))
 		return
 	}
 	host.log.Debug("mullion: resize requested, edge=" + logsafe.Diagnostic(edge))
-	host.warnIf("resize post", postWindowMessageArgs(host.window(), wmNativeStartResize, uintptr(hit), 0))
+	host.warnIf("resize post", host.postRunCommand(admission, wmNativeStartResize, uintptr(hit)))
 }
 
 func (host *Host) IsMaximised() bool {
-	return isZoomed(host.window())
+	admission := host.enterRun()
+	defer host.leaveRun()
+	if !admission.running || admission.hwnd == 0 {
+		return false
+	}
+	// Keep lookup and use under the same HWND ownership read lock. WM_DESTROY
+	// must clear ownership under the write lock before Windows may recycle it.
+	host.mu.RLock()
+	defer host.mu.RUnlock()
+	if admission.token != host.activeRunToken || admission.hwnd != host.hwnd {
+		return false
+	}
+	if host.queryNativeMaximised != nil {
+		return host.queryNativeMaximised(admission.hwnd)
+	}
+	return isZoomed(admission.hwnd)
 }
 
 // SetTitle updates the window title. With a custom title bar the caption is not
 // painted by the shell, so this is what the taskbar, Alt+Tab and the window
-// switcher show.
+// switcher show. The UTF-16 payload is synchronous and the private command is
+// session-tagged, so a recycled HWND can never receive an older Run's title.
 func (host *Host) SetTitle(title string) {
-	host.warnIf("set title", setWindowText(host.window(), title))
+	admission := host.enterRun()
+	defer host.leaveRun()
+	text, err := windows.UTF16PtrFromString(title)
+	if err != nil {
+		host.warnIf("set title", err)
+		return
+	}
+	_, err = host.sendRunCommand(admission, wmNativeSetTitle, uintptr(unsafe.Pointer(text)))
+	runtime.KeepAlive(text)
+	host.warnIf("set title", err)
+}
+
+func (host *Host) postRunCommand(admission runAdmission, message uint32, wParam uintptr) error {
+	// PostMessage itself does not dispatch, so HWND ownership can remain pinned
+	// across lookup/use without re-entrancy. WM_DESTROY cannot clear/recycle the
+	// handle until the tagged command has been queued.
+	host.mu.RLock()
+	defer host.mu.RUnlock()
+	if admission.token != host.activeRunToken || admission.hwnd != host.hwnd {
+		return windows.ERROR_INVALID_WINDOW_HANDLE
+	}
+	if host.postNativeCommand != nil {
+		return host.postNativeCommand(admission.hwnd, message, wParam, admission.token)
+	}
+	return postWindowMessageArgs(admission.hwnd, message, wParam, admission.token)
+}
+
+func (host *Host) sendRunCommand(admission runAdmission, message uint32, wParam uintptr) (uintptr, error) {
+	// SendMessage may re-enter the embed pump, so it cannot hold mu across the
+	// call. Reject known-stale ownership here; the process-global lParam token is
+	// the final guard if destruction/reuse wins after this snapshot.
+	if !host.runMatches(admission) {
+		return 0, windows.ERROR_INVALID_WINDOW_HANDLE
+	}
+	if host.sendNativeCommand != nil {
+		return host.sendNativeCommand(admission.hwnd, message, wParam, admission.token)
+	}
+	return sendWindowMessageResult(admission.hwnd, message, wParam, admission.token)
 }
 
 func (host *Host) showFromMessage() bool {

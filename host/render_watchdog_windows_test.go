@@ -159,11 +159,21 @@ func TestShellReadyAndReadyAreIndependentSignals(t *testing.T) {
 // log-count tests miss (both independent auditors of the #47 fix flagged
 // exactly this gap).
 func TestMarkFrontendShellReadyReleasesTheShowGate(t *testing.T) {
-	host, logger := newTestHost(t, Config{})
-
+	host, logger := newTestHost(t, Config{ShowTimeout: time.Hour})
+	var showPosts int
+	host.postNativeCommand = func(_ windowHandle, message uint32, _ uintptr, _ uintptr) error {
+		if message == wmNativeShow {
+			showPosts++
+		}
+		return nil
+	}
+	host.startStartupShowGate()
 	host.MarkFrontendShellReady()
 	host.MarkFrontendShellReady()
 
+	if showPosts != 1 {
+		t.Fatalf("shellReady queued %d show commands, want exactly 1", showPosts)
+	}
 	if got := strings.Count(logger.String(), "msg=mullion: initial show gate released, reason=frontend_shell_ready\n"); got != 1 {
 		t.Fatalf("show gate released %d times for shellReady, want exactly 1:\n%s", got, logger.String())
 	}

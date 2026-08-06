@@ -122,14 +122,13 @@ func TestMessageSourceAllowed(t *testing.T) {
 }
 
 // TestMessageSourceTrusted locks the second half of decisions/0014, the one
-// TestMessageSourceAllowed does not reach: a data: source is allowed (so the error
-// page's caption buttons work) but is NOT trusted for Config.Bridge, because a data:
-// document may be a hostile iframe a script created rather than mullion's own error
-// surface. Only the trusted origin drives the application's own Go methods. Without
-// this test the difference between the two functions is unlocked: collapsing
-// messageSourceTrusted to messageSourceAllowed (both call sameHTTPOrigin, so it reads
-// like harmless dedup) would make a data: iframe trusted - the exact hole 0014 closes
-// - and every other test would still pass.
+// TestMessageSourceAllowed does not reach: a data: top-level source is allowed so
+// the error page's window controls work, but is NOT trusted for Config.Bridge.
+// CoreWebView2 WebMessageReceived currently receives only top-level messages; if
+// frame receipt is added later, a data: document may instead be a hostile iframe.
+// Keeping these functions distinct means that future change cannot silently
+// widen Config.Bridge admission by collapsing messageSourceTrusted into
+// messageSourceAllowed.
 func TestMessageSourceTrusted(t *testing.T) {
 	asset := Config{}.normalise()                            // virtual host https://mullion.localhost
 	loop := Config{URL: "http://127.0.0.1:8080"}.normalise() // caller loopback origin

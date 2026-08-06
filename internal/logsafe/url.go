@@ -3,6 +3,7 @@ package logsafe
 import (
 	"net/url"
 	"strings"
+	"unicode/utf8"
 )
 
 // URLLimit bounds a reduced URL. It is applied to the *result*, never to the
@@ -72,64 +73,257 @@ func URL(raw string) string {
 	// "http:/C:/Users/alice/x" (empty host, drive-letter path) - and rebuilding
 	// those from Host and Path either erases the target entirely or prints a home
 	// directory. Neither is a target a browser would hand back, so the old
-	// reduction is the right answer for both. The prefix test also skips
-	// url.Parse for the common non-URL case, which is every fallback caller.
-	// Message, not messagePlain: a value that does not begin with the scheme is
-	// not a URL this can reduce, but it may still carry one - "blob:https://x/y"
-	// wraps an origin, and so does a sentence a caller passed here by mistake.
-	// Message is where those are found. It cannot loop back: whatever it hands
-	// on does begin with the scheme, and the fallbacks below that one all take
-	// messagePlain.
-	//
-	// boundForScan, not boundInput: this is the one path where a bounded value
-	// then has its URLs read, and a bound that cut one in half would hand
-	// Message a shortened host to print as a whole one.
+	// reduction is the right answer for both.
 	if !hasHTTPPrefix(raw) {
 		return Message(boundForScan(raw))
 	}
 
-	// From here the fallback reduces head, never raw. An http(s) value that fails
-	// to parse is still an http(s) value: handing the whole thing back to Message
-	// reproduces issue #78 in its worst form - the host deleted and the query,
-	// where a token would be, kept intact. A lone "%" is enough to get here
-	// ("https://host/50%off/p?token=..."), and so is the runtime handing back
-	// anything url.Parse rejects, so this path is not exotic.
 	head, hasQuery, hasFragment := splitURLMarks(raw)
-	parsed, err := url.Parse(head)
-	if err != nil || !isHostnameShaped(parsed.Host) {
-		return messagePlain(boundInput(head))
-	}
-
-	origin := parsed.Scheme + "://" + parsed.Host
-	// A host that cannot fit the budget is not printed at all rather than cut,
-	// because cutting it is exactly the failure this bound exists to prevent.
-	if len(origin) > URLLimit {
-		return messagePlain(boundInput(head))
-	}
-
-	reduced := origin + parsed.EscapedPath()
-	if len(reduced) > URLLimit {
-		reduced = reduced[:URLLimit] + truncationMarker
-	}
-	if hasQuery {
-		reduced += "?"
-	}
-	if hasFragment {
-		reduced += "#"
-	}
-
-	// Belt and braces, and unreachable today: the scheme is one of two literals,
-	// isHostnameShaped has already held the host to printable ASCII, and
-	// EscapedPath percent-encodes every control, space and non-ASCII byte it
-	// re-emits. Kept because that last one is a standard library behaviour this
-	// package does not control, and a control byte reaching a terminal is the one
-	// failure worth a redundant check. Nothing reaches this branch, so do not go
-	// hunting for a test that covers it - the property is locked at
-	// isHostnameShaped, which is where it can actually be exercised.
-	if !isPrintableASCII(reduced) {
+	reduced, ok := reduceHTTPURL(head, hasQuery, hasFragment)
+	if !ok {
+		// An http(s) parse failure still drops the query and fragment. Handing
+		// raw back to Message reproduces issue #78 in its worst form: the host
+		// disappears while a token in the query survives.
 		return messagePlain(boundInput(head))
 	}
 	return reduced
+}
+
+// reduceHTTPURL validates the entire identifying part of an http(s) URL and
+// emits a bounded projection. It deliberately does not parse or escape the
+// whole path with net/url: EscapedPath builds an input-sized intermediate for a
+// path containing bytes that need escaping. Instead the path is validated in
+// one pass and projected by complete escape/rune units in a second, bounded
+// pass. The work remains linear while allocation is fixed by URLLimit.
+func reduceHTTPURL(head string, hasQuery, hasFragment bool) (string, bool) {
+	schemeEnd := len("http://")
+	scheme := "http"
+	if len(head) >= len("https://") && strings.EqualFold(head[:len("https://")], "https://") {
+		schemeEnd = len("https://")
+		scheme = "https"
+	}
+	if len(head) < schemeEnd {
+		return "", false
+	}
+
+	authorityEnd := len(head)
+	if slash := strings.IndexByte(head[schemeEnd:], '/'); slash >= 0 {
+		authorityEnd = schemeEnd + slash
+	}
+	authority := head[schemeEnd:authorityEnd]
+	host := authority
+	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+		if !isValidUserinfo(authority[:at]) {
+			return "", false
+		}
+		host = authority[at+1:]
+	}
+	if !isHostnameShaped(host) {
+		return "", false
+	}
+	if len(scheme)+len("://")+len(host) > URLLimit {
+		return "", false
+	}
+
+	path := head[authorityEnd:]
+	if !validURLPath(path) {
+		return "", false
+	}
+
+	// The parser sees only the bounded, credential-free origin. Userinfo and the
+	// entire path were validated above and are intentionally never copied.
+	// Parsing here locks an accepted authority to the production URL semantics
+	// without making credentials or a long path part of an allocation.
+	originText := scheme + "://" + host
+	parsed, err := url.Parse(originText)
+	if err != nil || parsed.User != nil || !isHostnameShaped(parsed.Host) {
+		return "", false
+	}
+	origin := parsed.Scheme + "://" + parsed.Host
+	if len(origin) > URLLimit {
+		return "", false
+	}
+
+	var reduced strings.Builder
+	reduced.Grow(URLLimit + len(truncationMarker) + 2)
+	reduced.WriteString(origin)
+	pathBudget := URLLimit - len(origin)
+	truncated := appendBoundedEscapedPath(&reduced, path, pathBudget)
+	if truncated {
+		reduced.WriteString(truncationMarker)
+	}
+	if hasQuery {
+		reduced.WriteByte('?')
+	}
+	if hasFragment {
+		reduced.WriteByte('#')
+	}
+	result := reduced.String()
+	if !isPrintableASCII(result) {
+		return "", false
+	}
+	return result, true
+}
+
+// isValidUserinfo mirrors the RFC 3986 userinfo alphabet accepted by net/url.
+// Credentials are validated in place and then discarded; even a very large
+// password therefore cannot become retained or allocated diagnostic state.
+func isValidUserinfo(value string) bool {
+	for index := 0; index < len(value); {
+		c := value[index]
+		if c == '%' {
+			if index+2 >= len(value) || !isHexByte(value[index+1]) || !isHexByte(value[index+2]) {
+				return false
+			}
+			index += 3
+			continue
+		}
+		if c >= utf8.RuneSelf {
+			return false
+		}
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9':
+		case strings.ContainsRune("-._~!$&'()*+,;=:@", rune(c)):
+		default:
+			return false
+		}
+		index++
+	}
+	return true
+}
+
+// validURLPath validates all of path, including bytes beyond the retained
+// projection. A malformed late escape must reject the candidate rather than
+// letting a valid-looking prefix displace a later complete URL.
+func validURLPath(path string) bool {
+	for index := 0; index < len(path); index++ {
+		c := path[index]
+		if c < ' ' || c == 0x7f {
+			return false
+		}
+		if c == '%' {
+			if index+2 >= len(path) || !isHexByte(path[index+1]) || !isHexByte(path[index+2]) {
+				return false
+			}
+			index += 2
+		}
+	}
+	return true
+}
+
+// appendBoundedEscapedPath writes at most budget escaped bytes and reports
+// whether any path unit was omitted. A unit is one raw UTF-8 rune, one %XX
+// escape, or a complete run of %XX escapes encoding one UTF-8 rune.
+func appendBoundedEscapedPath(out *strings.Builder, path string, budget int) bool {
+	for index := 0; index < len(path); {
+		end := escapedPathUnitEnd(path, index)
+		size := escapedPathUnitSize(path[index:end])
+		if size > budget {
+			return true
+		}
+		appendEscapedPathUnit(out, path[index:end])
+		budget -= size
+		index = end
+	}
+	return false
+}
+
+func escapedPathUnitEnd(path string, index int) int {
+	if path[index] == '%' {
+		first := unhex(path[index+1])<<4 | unhex(path[index+2])
+		width := utf8SequenceLen(first)
+		if width <= 1 || index+width*3 > len(path) {
+			return index + 3
+		}
+		var encoded [utf8.UTFMax]byte
+		encoded[0] = first
+		for offset := 1; offset < width; offset++ {
+			next := index + offset*3
+			if path[next] != '%' {
+				return index + 3
+			}
+			encoded[offset] = unhex(path[next+1])<<4 | unhex(path[next+2])
+		}
+		if utf8.Valid(encoded[:width]) {
+			return index + width*3
+		}
+		return index + 3
+	}
+	_, size := utf8.DecodeRuneInString(path[index:])
+	return index + size
+}
+
+func utf8SequenceLen(first byte) int {
+	switch {
+	case first < utf8.RuneSelf:
+		return 1
+	case first >= 0xc2 && first <= 0xdf:
+		return 2
+	case first >= 0xe0 && first <= 0xef:
+		return 3
+	case first >= 0xf0 && first <= 0xf4:
+		return 4
+	default:
+		return 1
+	}
+}
+
+func escapedPathUnitSize(unit string) int {
+	if unit[0] == '%' {
+		return len(unit)
+	}
+	size := 0
+	for index := range len(unit) {
+		if shouldEscapePathByte(unit[index]) {
+			size += 3
+		} else {
+			size++
+		}
+	}
+	return size
+}
+
+func appendEscapedPathUnit(out *strings.Builder, unit string) {
+	if unit[0] == '%' {
+		out.WriteString(unit)
+		return
+	}
+	const hex = "0123456789ABCDEF"
+	for index := range len(unit) {
+		c := unit[index]
+		if !shouldEscapePathByte(c) {
+			out.WriteByte(c)
+			continue
+		}
+		out.WriteByte('%')
+		out.WriteByte(hex[c>>4])
+		out.WriteByte(hex[c&15])
+	}
+}
+
+func shouldEscapePathByte(c byte) bool {
+	if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
+		return false
+	}
+	switch c {
+	case '-', '_', '.', '~', '$', '&', '\'', '+', ',', '/', ':', ';', '=', '@':
+	default:
+		return true
+	}
+	return false
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0'
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10
+	default:
+		return c - 'A' + 10
+	}
 }
 
 // boundInput bounds a fallback whose value goes to messagePlain: a foreign

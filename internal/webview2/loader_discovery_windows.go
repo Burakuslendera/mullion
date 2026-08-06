@@ -38,6 +38,14 @@ const BrowserExecutableFolderEnv = "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER"
 // proceed.
 var ErrUnsupportedArchitecture = errors.New("webview2: unsupported Windows architecture")
 
+// ValidateArchitecture rejects Windows targets whose COM ABI this package does
+// not implement. Callers that perform other Win32 setup use this gate to keep
+// that work behind the same runtime.GOARCH decision as discovery.
+func ValidateArchitecture() error {
+	_, err := archFolder(runtime.GOARCH)
+	return err
+}
+
 // runtimeSource records how a runtime was found, so a failure to start can name
 // the thing that was wrong rather than "WebView2 not found".
 type runtimeSource string
@@ -271,11 +279,13 @@ func selectRuntime(candidates []candidate, arch string, exists func(string) bool
 
 // --- pure helpers (unit-tested without a runtime present) -------------------
 
-// archFolder is the single runtime-architecture gate. The COM call encodings
-// used by this package follow the Windows x64 ABI, so finding a native client
-// DLL for another process architecture would not make that architecture safe to
-// host. Keep non-amd64 source builds portable, but reject them before discovery
-// touches the registry or disk and before a client DLL can be loaded.
+// archFolder is the single runtime-architecture decision. The COM call
+// encodings used by this package follow the Windows x64 ABI, so finding a native
+// client DLL for another process architecture would not make that architecture
+// safe to host. ValidateArchitecture and discovery both route through here so
+// consumers and callback constructors cannot invent a second decision. Keep
+// non-amd64 source builds portable, but reject execution before discovery,
+// callback allocation, registry or disk access, and client DLL loading.
 func archFolder(goarch string) (string, error) {
 	if goarch == "amd64" {
 		return "x64", nil

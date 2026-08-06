@@ -29,6 +29,29 @@ func TestDPIAwarenessEnableIsRepeatable(t *testing.T) {
 	}
 }
 
+func TestSupportedNewCrossesArchitectureGateIntoDPISetup(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		t.Skip("WebView2 hosting is supported only on Windows/amd64")
+	}
+	original := applyProcessDPIAwareness
+	var calls int
+	applyProcessDPIAwareness = func() error {
+		calls++
+		return nil
+	}
+	defer func() {
+		applyProcessDPIAwareness = original
+	}()
+
+	host := New(Config{})
+	if host.architectureErr != nil {
+		t.Fatalf("supported New architecture error = %v", host.architectureErr)
+	}
+	if calls != 1 {
+		t.Fatalf("supported New DPI setup calls = %d, want 1", calls)
+	}
+}
+
 // The drain must actually remove a pending WM_QUIT from the thread queue: left
 // there, it would poison the next Run on this thread (issues #48 and #54 - the
 // loop is not running to consume it, having never started or having just died).
@@ -113,22 +136,57 @@ func TestWindowExitCleanupDecisionOwnsLiveWindowAndPendingQuit(t *testing.T) {
 }
 
 // Shell readiness may arrive while WebView2's embed pump is still inside Run,
-// before Run reaches startStartupShowGate. Once released, the gate must never
-// arm a timer afterward.
-func TestStartupShowGateCannotArmAfterEarlyRelease(t *testing.T) {
+// before Run reaches startStartupShowGate. It must latch without posting to a
+// zero/pre-window handle, then produce exactly one tagged show post after the
+// gate starts.
+func TestStartupShowGateLatchesEarlyReadinessUntilStart(t *testing.T) {
 	host, logger := newTestHost(t, Config{ShowTimeout: time.Hour})
-	host.requestStartupShow("frontend_shell_ready")
+	if err := host.beginRun(); err != nil {
+		t.Fatalf("beginRun = %v", err)
+	}
+	earlyToken := host.currentRun().token
+	var posts []struct {
+		hwnd    windowHandle
+		message uint32
+		token   uintptr
+	}
+	host.postNativeCommand = func(hwnd windowHandle, message uint32, _ uintptr, token uintptr) error {
+		posts = append(posts, struct {
+			hwnd    windowHandle
+			message uint32
+			token   uintptr
+		}{hwnd, message, token})
+		return nil
+	}
+
+	host.MarkFrontendShellReady()
+	if len(posts) != 0 {
+		t.Fatalf("early shell readiness posted before HWND/gate start: %#v", posts)
+	}
+	const hwnd = windowHandle(0x4545)
+	host.mu.Lock()
+	host.hwnd = hwnd
+	host.mu.Unlock()
 	host.startStartupShowGate()
 
+	var showPosts int
+	for _, post := range posts {
+		if post.message == wmNativeShow {
+			showPosts++
+		}
+	}
+	if showPosts != 1 {
+		t.Fatalf("posts after gate start = %#v, want one wmNativeShow", posts)
+	}
+	if posts[len(posts)-1].hwnd != hwnd || posts[len(posts)-1].token != earlyToken {
+		t.Fatalf("latched show target = (hwnd=%#x token=%#x), want (%#x, %#x)", posts[len(posts)-1].hwnd, posts[len(posts)-1].token, hwnd, earlyToken)
+	}
 	host.startupMu.Lock()
 	timer := host.startupShowTimer
 	released := host.startupShowReleased
 	host.startupMu.Unlock()
-	if timer != nil {
-		t.Fatal("startup show gate armed after its once-only release")
-	}
-	if !released {
-		t.Fatal("startup show gate did not remember its once-only release")
+	if timer != nil || !released {
+		t.Fatalf("gate after early release = (timer=%v released=%v), want detached/released", timer != nil, released)
 	}
 	if strings.Contains(logger.String(), "frontend_shell_timeout") {
 		t.Fatal("early shell readiness emitted a false timeout warning")
@@ -137,6 +195,7 @@ func TestStartupShowGateCannotArmAfterEarlyRelease(t *testing.T) {
 
 func TestFiredStartupShowTimerIsDetached(t *testing.T) {
 	host, _ := newTestHost(t, Config{ShowTimeout: time.Hour})
+	host.postNativeCommand = func(windowHandle, uint32, uintptr, uintptr) error { return nil }
 	host.startStartupShowGate()
 	host.startupMu.Lock()
 	timer := host.startupShowTimer
@@ -145,7 +204,7 @@ func TestFiredStartupShowTimerIsDetached(t *testing.T) {
 		t.Fatal("startup show gate did not arm")
 	}
 	timer.Stop()
-	host.fireStartupShowGate(timer)
+	host.fireStartupShowGate(timer, host.currentRun())
 	host.startupMu.Lock()
 	retained := host.startupShowTimer
 	host.startupMu.Unlock()

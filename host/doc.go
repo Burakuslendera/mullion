@@ -12,10 +12,11 @@
 // syscall wrappers and needs no CGo toolchain.
 //
 // WebView2 hosting is supported only on Windows/amd64. Windows builds for 386
-// and ARM64 remain compile-portable but Run reports an unsupported-architecture
-// error before loading WebView2. On every non-Windows platform New returns a
-// Host whose Run reports ErrUnsupportedPlatform, so a cross-platform program
-// can compile and degrade rather than fail to build.
+// and ARM64 remain compile-portable but Run reports ErrUnsupportedArchitecture
+// before DPI, runtime discovery, COM, callback, class or window work; callers
+// should distinguish it with errors.Is. On every non-Windows platform New
+// returns a Host whose Run reports ErrUnsupportedPlatform, so a cross-platform
+// program can compile and degrade rather than fail to build.
 //
 // A minimal host:
 //

@@ -3,6 +3,7 @@
 package doctor
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"slices"
@@ -23,7 +24,11 @@ var (
 	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
 	procEnumDisplayMonitors           = user32.NewProc("EnumDisplayMonitors")
 	procGetMonitorInfo                = user32.NewProc("GetMonitorInfoW")
-	procGetDpiForMonitor              = shcore.NewProc("GetDpiForMonitor")
+
+	// Kept injectable so the unsupported-architecture production test proves
+	// Probe returns before allocating the permanent monitor trampoline.
+	newMonitorCallback   = windows.NewCallback
+	procGetDpiForMonitor = shcore.NewProc("GetDpiForMonitor")
 )
 
 const (
@@ -53,6 +58,19 @@ type monitorInfoEx struct {
 
 // Probe gathers the report on this machine.
 func Probe(version string) Report {
+	if err := webview2.ValidateArchitecture(); err != nil {
+		section, _ := describeWebView2Result(webview2.DescribeRuntime, pinnedRuntimePath, expandPath)
+		// Architecture rejection precedes DPI APIs, monitor callbacks, registry,
+		// machine and path probes. DescribeRuntime repeats the same pure gate only
+		// to preserve the export name in the diagnostic.
+		return Report{
+			Mullion:  version,
+			Arch:     runtime.GOARCH,
+			Go:       runtime.Version(),
+			WebView2: section,
+		}
+	}
+
 	// Declared before anything is measured. Windows hands a virtualised
 	// resolution to a process that has not asked for per-monitor awareness, so
 	// an unaware probe reports "1536x864" for a 1920x1080 monitor at 125% - the
@@ -60,16 +78,17 @@ func Probe(version string) Report {
 	// tool rather than a checklist.
 	_, _, _ = procSetProcessDpiAwarenessContext.Call(dpiAwarenessPerMonitorV2)
 
-	return Report{
-		Mullion:  version,
-		OS:       windowsVersion(),
-		Arch:     runtime.GOARCH,
-		Go:       runtime.Version(),
-		WebView2: describeWebView2(),
-		GPUs:     graphicsAdapters(),
-		Monitors: displays(),
-		Homes:    homeSpellings(),
+	report := Report{
+		Mullion: version,
+		OS:      windowsVersion(),
+		Arch:    runtime.GOARCH,
+		Go:      runtime.Version(),
 	}
+	report.WebView2, _ = describeWebView2Result(webview2.DescribeRuntime, pinnedRuntimePath, expandPath)
+	report.GPUs = graphicsAdapters()
+	report.Monitors = displays()
+	report.Homes = homeSpellings()
+	return report
 }
 
 // homeSpellings collects every name the profile directory answers to, for
@@ -124,37 +143,41 @@ func convertPath(path string, convert func(*uint16, *uint16, uint32) (uint32, er
 	return windows.UTF16ToString(buffer)
 }
 
-// describeWebView2 asks the loader itself, rather than reading a version out of
-// the registry. The registry answers "a runtime is installed"; the loader
-// answers "this is the runtime that would be loaded, and it does (or does not)
-// still export the entry point we call". Only the second is a diagnosis.
-func describeWebView2() WebView2Section {
-	return describeWebView2With(webview2.DescribeRuntime)
+func pinnedRuntimePath() string {
+	return strings.TrimSpace(os.Getenv(webview2.BrowserExecutableFolderEnv))
 }
 
-// describeWebView2With keeps the diagnostic mapping headlessly testable. The
-// real callback performs discovery/export inspection; an architecture error
-// returns before those DLL-facing steps and must remain an unusable report.
-func describeWebView2With(describe func() (webview2.RuntimeReport, error)) WebView2Section {
-	section := WebView2Section{
-		PinnedEnv: expandPath(strings.TrimSpace(os.Getenv(webview2.BrowserExecutableFolderEnv))),
+// describeWebView2Result asks the loader itself before consulting any path.
+// The registry can only answer that a runtime is advertised; the loader answers
+// which runtime would be loaded and whether it exports the entry point. Keeping
+// pinned-path access injected makes the unsupported-architecture ordering
+// observable without touching the caller-selected filesystem location.
+func describeWebView2Result(
+	describe func() (webview2.RuntimeReport, error),
+	pinned func() string,
+	resolve func(string) string,
+) (WebView2Section, error) {
+	found, err := describe()
+	section := WebView2Section{ExportName: found.ExportName}
+	if errors.Is(err, webview2.ErrUnsupportedArchitecture) {
+		section.Problem = err.Error()
+		return section, err
 	}
 
-	found, err := describe()
-	section.ExportName = found.ExportName
+	section.PinnedEnv = resolve(pinned())
 	if err != nil {
 		section.Problem = err.Error()
-		return section
+		return section, err
 	}
 
 	section.Found = true
 	section.Version = found.Version
-	section.Folder = expandPath(found.Folder)
+	section.Folder = resolve(found.Folder)
 	section.Source = found.Source
 	section.Fixed = found.Fixed
 	section.ExportFound = found.ExportFound
 	section.ExportProblem = found.ExportProblem
-	return section
+	return section, nil
 }
 
 func windowsVersion() string {
@@ -246,8 +269,8 @@ func displays() []Monitor {
 
 	// NewCallback registers a permanent trampoline: a long-lived process that
 	// called this in a loop would leak one per call. This command measures once
-	// and exits.
-	callback := windows.NewCallback(func(monitor, hdc, clip, data uintptr) uintptr {
+	// and exits; the architecture gate in Probe precedes this allocation.
+	callback := newMonitorCallback(func(monitor, hdc, clip, data uintptr) uintptr {
 		var info monitorInfoEx
 		info.Size = uint32(unsafe.Sizeof(info))
 

@@ -11,15 +11,11 @@ import (
 	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
-func setWindowText(hwnd windowHandle, text string) error {
+func setWindowTextPointer(hwnd windowHandle, text uintptr) error {
 	if hwnd == 0 {
 		return windows.ERROR_INVALID_WINDOW_HANDLE
 	}
-	ptr, err := windows.UTF16PtrFromString(text)
-	if err != nil {
-		return err
-	}
-	result, _, callErr := procSetWindowText.Call(uintptr(hwnd), uintptr(unsafe.Pointer(ptr)))
+	result, _, callErr := procSetWindowText.Call(uintptr(hwnd), text)
 	if result == 0 {
 		return syscallError(callErr)
 	}

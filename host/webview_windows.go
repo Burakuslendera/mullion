@@ -58,6 +58,26 @@ func (host *Host) isWebViewDeferred() bool {
 	return host.config.StartHidden && host.browser == nil
 }
 
+// newWebViewBrowser is the single production constructor used by createWebView.
+// It is headless so the suite can verify the actual Browser callback field,
+// rather than only the callback body: bypassing this constructor would otherwise
+// silently leave WebMessageReceived disconnected while helper tests stayed green.
+func (host *Host) newWebViewBrowser() *webview2.Browser {
+	browser := webview2.New()
+	browser.UserDataFolder = host.config.UserDataFolder
+	browser.AdditionalBrowserArguments = host.config.BrowserArguments
+	browser.ErrorCallback = func(err error) {
+		host.log.Error("mullion: webview2 runtime error, reason=" + logsafe.Reason(err))
+	}
+	browser.WarningCallback = func(err error) {
+		// Tolerated-by-design conditions - an older runtime without an optional
+		// interface - land at Warn, keeping ERROR meaningful (issue #32).
+		host.log.Warn("mullion: webview2 runtime warning, reason=" + logsafe.Reason(err))
+	}
+	browser.MessageCallback = host.webMessageCallback()
+	return browser
+}
+
 // createWebView embeds the control and prepares it for the first navigation.
 //
 // The order below is a contract, not a style choice. Settings, the injected
@@ -67,41 +87,7 @@ func (host *Host) isWebViewDeferred() bool {
 // or forces a second navigation, which shows up as a reload flash.
 func (host *Host) createWebView() error {
 	host.log.Debug("mullion: webview2 instance requested")
-	browser := webview2.New()
-	browser.UserDataFolder = host.config.UserDataFolder
-	browser.AdditionalBrowserArguments = host.config.BrowserArguments
-
-	browser.ErrorCallback = func(err error) {
-		host.log.Error("mullion: webview2 runtime error, reason=" + logsafe.Reason(err))
-	}
-	browser.WarningCallback = func(err error) {
-		// Tolerated-by-design conditions - an older runtime without an optional
-		// interface - land at Warn, keeping ERROR meaningful (issue #32).
-		host.log.Warn("mullion: webview2 runtime warning, reason=" + logsafe.Reason(err))
-	}
-	browser.MessageCallback = func(message string, source string, sender *webview2.ICoreWebView2) {
-		if !host.config.messageSourceAllowed(source) && !host.errorSurfaceMessageAllowed(source) {
-			// The bridge is injected into every document, so a top-level navigation
-			// away from the frontend must not be able to drive Config.Bridge. Drop
-			// the message silently - a foreign origin gets no reply to correlate.
-			host.logRejectedWebMessage(source)
-			return
-		}
-		// A data: source (the error surface, or a hostile data: iframe) is allowed
-		// only the reserved window controls, never Config.Bridge; the trusted
-		// origin gets full access (decisions/0014).
-		response := host.handleWebMessage(message, host.config.messageSourceTrusted(source))
-		if response == "" {
-			return
-		}
-		if sender == nil {
-			host.log.Warn("mullion: bridge response sender unavailable")
-			return
-		}
-		if err := sender.PostWebMessageAsString(response); err != nil {
-			host.log.Warn("mullion: bridge response post failed, reason=" + logsafe.Reason(err))
-		}
-	}
+	browser := host.newWebViewBrowser()
 	if host.config.URL == "" {
 		browser.WebResourceRequestedCallback = func(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs) {
 			host.assets.webResourceRequested(request, args, browser.Environment())
@@ -186,6 +172,39 @@ func (host *Host) createWebView() error {
 	return host.navigateOrTearDown(func() error {
 		return browser.Navigate(host.config.startURL())
 	})
+}
+
+// webMessageCallback is the source-admission body installed by
+// newWebViewBrowser, the production constructor used by createWebView. Keeping
+// classification in this headless closure lets tests drive trusted and fallback
+// messages without a runtime while also asserting the Browser field is wired.
+func (host *Host) webMessageCallback() func(string, string, *webview2.ICoreWebView2) {
+	return func(message string, source string, sender *webview2.ICoreWebView2) {
+		if !host.config.messageSourceAllowed(source) && !host.errorSurfaceMessageAllowed(source) {
+			// CoreWebView2's WebMessageReceived callback currently admits messages
+			// from the top-level document only. A top-level navigation away from
+			// the frontend must not be able to drive Config.Bridge. Drop the
+			// message silently - a foreign origin gets no reply to correlate.
+			host.logRejectedWebMessage(source)
+			return
+		}
+		// A data: top-level source is mullion's error surface and receives only
+		// its caption/drag/resize subset of reserved controls, never readiness,
+		// diagnostics, or Config.Bridge. If frame message receipt is added later,
+		// that narrow subset is also the boundary against a hostile data: iframe
+		// (decisions/0014).
+		response := host.handleWebMessage(message, host.config.messageSourceTrusted(source))
+		if response == "" {
+			return
+		}
+		if sender == nil {
+			host.log.Warn("mullion: bridge response sender unavailable")
+			return
+		}
+		if err := sender.PostWebMessageAsString(response); err != nil {
+			host.log.Warn("mullion: bridge response post failed, reason=" + logsafe.Reason(err))
+		}
+	}
 }
 
 // commitEmbeddedBrowser assigns the freshly embedded browser - unless the

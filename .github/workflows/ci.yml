@@ -60,18 +60,49 @@ jobs:
 
       - run: go build ./...
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -count=1 ./...
 
+      # Execute the production runtime/export diagnostic directly as well as
+      # the machine tests. This still fails if a cached or accidentally removed
+      # test would otherwise turn the required WebView2 check green.
+      - run: go test -count=1 ./internal/webview2 -run '^(TestFindRuntimeOnThisMachine|TestRuntimeExportsTheEntryPointWeCallDirectly)$'
+      - run: go run ./cmd/mullion doctor
+      - run: node scripts/test-bridge.mjs
+
+      # A real 32-bit Windows process runs under WOW64 on the amd64 runner.
+      # These production-entry regressions require no runtime and prove the
+      # architecture gate precedes discovery, DLL, COM, callback, class and HWND
+      # work. ARM64 remains compile-only below because this runner cannot execute
+      # an ARM64 process.
+      - name: execute unsupported Windows/386 production gates under WOW64
+        shell: pwsh
+        run: |
+          $env:GOARCH = '386'
+          go test -count=1 ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture'
+          $doctorOut = Join-Path $env:RUNNER_TEMP "mullion-doctor-$PID.out"
+          $doctorErr = Join-Path $env:RUNNER_TEMP "mullion-doctor-$PID.err"
+          $doctorProcess = Start-Process -FilePath go -ArgumentList @('run', './cmd/mullion', 'doctor') -Wait -PassThru -NoNewWindow -RedirectStandardOutput $doctorOut -RedirectStandardError $doctorErr
+          $doctor = (Get-Content -Raw $doctorOut) + (Get-Content -Raw $doctorErr)
+          Remove-Item $doctorOut, $doctorErr
+          if ($doctorProcess.ExitCode -ne 1) {
+            throw "unsupported Windows/386 doctor exit = $($doctorProcess.ExitCode), want 1`n$doctor"
+          }
+          if ($doctor -notmatch 'windows/amd64') {
+            throw "unsupported Windows/386 doctor did not report the architecture sentinel`n$doctor"
+          }
+          if ($doctor -match 'backdrop callback allocated') {
+            throw "doctor allocated the backdrop callback before its architecture gate`n$doctor"
+          }
       # The Host runs timers on their own goroutines; the race detector is not
       # ceremony here.
-      - run: go test -race ./...
+      - run: go test -count=1 -race ./...
 
       # Plain `go build ./...` never compiles a tagged file. Without these two
       # steps the diagnostic builds rot silently.
       - run: go build -tags mullion_dwm_caption_diag ./...
-      - run: go test -tags mullion_dwm_caption_diag ./...
+      - run: go test -count=1 -tags mullion_dwm_caption_diag ./...
       - run: go build -tags mullion_caption_passthrough_diag ./...
-      - run: go test -tags mullion_caption_passthrough_diag ./...
+      - run: go test -count=1 -tags mullion_caption_passthrough_diag ./...
 
   portable:
     # Non-Windows stubs and unsupported Windows architectures stay
@@ -92,6 +123,7 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+      - run: node scripts/test-bridge.mjs
       - name: build supported Windows runtime target (amd64)
         run: GOOS=windows GOARCH=amd64 go build ./...
       - name: compile unsupported Windows targets (portability only)

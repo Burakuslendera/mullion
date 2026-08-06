@@ -70,7 +70,12 @@ day a range request has to be honoured, this record is due for review.
   purpose - it has grown twice since this record (issues #66 and #100) and a copy
   of it in this file would be the stale half. Read the tables; every row carries
   the URI, the expected path and the expected category.
-- `docs/webview2-and-assets.md`, "Asset serving without a port": the same table,
-  plus the COM stream-lifetime rules that make it work.
+- `docs/assets.md`, "Asset serving without a port": the same table, plus the
+  COM stream-lifetime rules that make it work.
 - No `net.Listen` and no `http.Server` exists anywhere in the host package; the
   grep for them is part of the verification checklist and must stay empty.
+
+
+---
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: repoint the asset boundary and COM stream evidence after the reference-document split.

@@ -16,13 +16,15 @@ pull-request mechanics. The rules below are additional, not alternative.
 | Question | File |
 | --- | --- |
 | How does the host work, end to end? | [docs/architecture.md](./docs/architecture.md) |
-| How does the host talk to WebView2, and how are assets served? | [docs/webview2-and-assets.md](./docs/webview2-and-assets.md) |
+| How does the host talk to WebView2? | [docs/webview2-and-assets.md](./docs/webview2-and-assets.md) |
+| How are assets served without a port? | [docs/assets.md](./docs/assets.md) |
 | Why is the frame / hit-test / DPI code shaped like this? | [docs/frame-and-dpi.md](./docs/frame-and-dpi.md) |
 | Snap, the non-client region, caption behaviour | [docs/snap-and-nonclient-region.md](./docs/snap-and-nonclient-region.md) |
 | Where do those snap / non-client claims come from? | [docs/snap-sources.md](./docs/snap-sources.md) |
 | **Why is it done this way, and what would change that?** | [docs/decisions/](./docs/decisions/) |
 | What was already tried, and why was it abandoned? | [docs/lessons-and-dead-ends.md](./docs/lessons-and-dead-ends.md) |
 | How do I prove a change actually works? | [docs/verification.md](./docs/verification.md) |
+| What makes scripted GUI verification lie? | [docs/gui-verification-traps.md](./docs/gui-verification-traps.md) |
 | What does a bug report have to contain? | [docs/bug-reports.md](./docs/bug-reports.md) |
 | Build, test, style, pull-request expectations | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Frame and visual acceptance rules | [agents/window.md](./agents/window.md) |
@@ -234,3 +236,6 @@ Sign the documents you edit with **your own name**. Never copy another agent's
 signature from an existing footer: a footer records who made *that* change, and
 inheriting someone else's name destroys the only audit trail the notes have.
 Historical signatures are left exactly as they are.
+
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: index the verbatim GUI-verification and asset-serving continuations created when their reference documents reached hard limits.

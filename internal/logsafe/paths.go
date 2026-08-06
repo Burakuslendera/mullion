@@ -23,6 +23,10 @@ func FileName(path string) string {
 }
 
 func sanitizeToken(token string) string {
+	// Locate the trailing punctuation boundary with one backward scan, then
+	// slice the suffix once. Prepending or rebuilding the suffix inside this
+	// loop makes a frontend-controlled punctuation run quadratic: the 64 KiB
+	// regression behind decision 0035 copied roughly 2 GiB.
 	suffixStart := len(token)
 	for suffixStart > 0 {
 		last := token[suffixStart-1]

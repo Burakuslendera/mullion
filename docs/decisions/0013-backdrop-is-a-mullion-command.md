@@ -40,8 +40,10 @@ the backdrop closes itself — the session ends when the subject leaves the
 stage. `-colour #rrggbb` overrides the default dark grey; the parse is strict,
 is the command's entire input surface, and is tested headlessly. The window
 half follows the repository's window rules: per-monitor-v2 declared before the
-HWND exists, a locked OS thread for the message loop, one `NewCallback` at
-package init.
+HWND exists, a locked OS thread for the message loop, and one process-lifetime
+`NewCallback` allocated lazily only when `Show` reaches class creation. The lazy
+boundary is shared with decision 0034: `mullion doctor` imports this package but
+must reject an unsupported process before spending any callback slot.
 
 Three properties are deliberate and security-motivated:
 

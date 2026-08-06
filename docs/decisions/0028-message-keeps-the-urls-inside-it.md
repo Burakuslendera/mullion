@@ -164,16 +164,24 @@ path span, so `watching C:/Users/alice/ https://mullion.local/app` reduces to
 ending in a separator; the split makes that reachable in a message that also
 carries a URL.
 
-**Output no longer collapses in aggregate.** A message carrying many URLs used
-to reduce to a single file name; each run is now bounded but their number is
-not, so a URL-dense message logs proportionally to its length. Nothing caps the
-`window.onerror` string that feeds it.
+**`Message` itself does not impose an aggregate bound.** A message carrying many
+URLs still produces output proportional to its input. Frontend-controlled
+messages no longer call it without a boundary: `Diagnostic` selects bounded
+input and retains the first candidate that the production URL reduction can
+actually emit. Other callers remain governed by their own trust boundary; this
+decision does not silently change all of them.
 
 **Recursion depth is a property to preserve, not an accident.** `Message` → `URL`
 → `Message` is reachable exactly once, and the next hop is guaranteed to be
 scheme-prefixed and therefore to end in `messagePlain`. A future fallback that
 keeps the scheme *and* calls `Message` does not hang: it dies with a stack
 overflow in a couple of seconds, loudly, in whichever test runs first.
+
+**Credentials never survive an accepted URL.** A syntactically valid userinfo
+component may precede the host, but selection and reduction emit only the
+credential-free scheme, whole host and bounded path. A shaped authority that
+cannot fit is rejected and scanning continues, so an oversized decoy cannot
+displace the next complete meaningful URL.
 
 **The scan costs a pass over every message**, guarded by a search for the
 scheme's first byte rather than a prefix test at every position — measured 14×
@@ -235,3 +243,5 @@ line issue #80 was opened about, which before this change read `httpmain.js`;
 both halves of the trade this record makes are visible in one line.
 
 > Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: new record - Message protects the http(s) URLs inside a message by delegating each run to URL (issue #80), which fires and answers the trip-wire decisions/0025 set. Rewritten after an eight-agent audit found the split re-opened 0025's host forgery three ways - a run cut by TAB/LF/CR, a value bounded before it is scanned, and two URLs welded at a folded seam - and four claims in the first version that the code did not support. Verified live the same day: a thrown JS error naming a URL with a token in its query reached the log with the host whole and the query dropped. Corrected on 2026-07-26: the Context cited 0025's trip-wire by a name that no longer resolves, and now notes its rename to TestMessageAndURLAgreeOnABareURL.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: corrected the aggregate-bound consequence after decision 0035, recorded reducibility-based candidate selection, continued scanning after oversized authorities, and made credential-free userinfo handling explicit.
