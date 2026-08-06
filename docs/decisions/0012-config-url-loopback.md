@@ -127,3 +127,5 @@ recursion. Found live in PR #4; tracked as the finding on issue #3, and built by
 - `host/leak_test.go`: `TestNoNetworkListener` re-scoped — listeners banned in every
   file, loopback hosts allowed only in `loopback.go`/`loopback_test.go`.
 - 0002 stays `Accepted`: mullion opens no socket on either path.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

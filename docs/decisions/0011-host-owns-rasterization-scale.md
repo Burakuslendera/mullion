@@ -116,3 +116,5 @@ trivial.
   headless tests prove the value; only a human dragging the window across a
   mixed-DPI boundary proves the wiring. That check is pending on issue #1 and is
   owed before the fix is called done, per `docs/verification.md`.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

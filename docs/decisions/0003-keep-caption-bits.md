@@ -95,3 +95,6 @@ this record stands, and clearing the bits is a regression, not a cleanup.
   `ws_maximizebox=true`.
 - `docs/snap-and-nonclient-region.md` section 9: without `WS_SYSMENU`, the
   right-click menu on a drag region silently does nothing.
+
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

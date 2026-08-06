@@ -80,3 +80,5 @@ this record is superseded by one that describes the prefixed namespace.
     never sees them.
   - `TestBridgeForwardsUnknownMethodsVerbatim` - an application method arrives as
     the original string, not a re-encoded one.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

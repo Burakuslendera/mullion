@@ -78,3 +78,5 @@ recording that the stub is deliberate and not an oversight to be tidied away.
   gates, with the reason stated - "anyone who imports this package from a
   cross-platform program must be able to compile on Linux/macOS, even though the
   window cannot run there".
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

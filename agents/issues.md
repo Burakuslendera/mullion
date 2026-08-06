@@ -207,3 +207,5 @@ tells a reviewer whether they are qualified to review it.
 
 A pull request that changes behaviour without a test is not labelled - it is
 returned. See [AGENTS.md](../AGENTS.md).
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

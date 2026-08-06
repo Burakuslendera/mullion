@@ -164,6 +164,4 @@ under *Evidence*, which no future run repeats.
   from Go's own release documentation rather than observed in this repository.
   Nothing in this record depends on it beyond the paragraph that names it.
 
-> Last updated: 2026-07-29 | Editor: Claude (Opus 5) | Change: new record - the Go 1.22 floor moves out of go.mod and into a stated promise, because it was already deciding an open security gap (os.OpenRoot, issue #103) and serving as 0031's trip-wire while living only in a build file. Measured on go1.22.12 with GOTOOLCHAIN: build, vet and test all pass, and the floor is load-bearing rather than nominal - render_watchdog_windows_test.go uses range-over-int. Records the honest gap too: CI verifies the floor on every run and has never verified the ceiling.
-
-> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: status line set to Superseded by 0033 and a note added at the top naming the two claims 0033 measured false ("the only thing that closes it" in Consequences, "which nothing else can" in Alternatives rejected). An audit corrected that note once: it first named What would change our mind as the location, which is where 0031 carries the same claim, not this record. The body is untouched.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

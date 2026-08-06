@@ -232,10 +232,10 @@ you have verified it, and say plainly when you do not know. Constructive critici
 of a decision — including one you were asked to implement — is expected, not
 tolerated. The full rules are in [agents/policy.md](./agents/policy.md).
 
-Sign the documents you edit with **your own name**. Never copy another agent's
-signature from an existing footer: a footer records who made *that* change, and
-inheriting someone else's name destroys the only audit trail the notes have.
-Historical signatures are left exactly as they are.
+Every Markdown document except the repository-root `README.md` ends with exactly
+one current edit footer, as defined in [agents/notes.md](./agents/notes.md).
+Replace that footer when editing; never append another footer or adopt another
+editor's name. Git history preserves earlier signatures.
 
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: index the verbatim GUI-verification and asset-serving continuations created when their reference documents reached hard limits.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: require one current edit footer per Markdown document, exclude the repository-root README, and rely on Git rather than in-file footer stacks for history.

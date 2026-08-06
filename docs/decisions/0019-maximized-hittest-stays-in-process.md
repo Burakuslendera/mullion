@@ -115,3 +115,5 @@ transitions.
   maximized — the sliver survives the re-route. Primary monitor; the sizing paths
   that produce the sliver are byte-identical to the 0015 code verified live on
   both monitors at `f7c29ac`.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

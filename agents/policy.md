@@ -99,3 +99,5 @@ When a term first appears in a document, say what it does; after that, use it
 exactly and consistently.
 
 Depth is not verbosity. Explain the mechanism, then stop.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

@@ -96,3 +96,5 @@ configuration. It is a bug, not a boundary.
   on the auto-hide edge — on both a primary and a secondary monitor, per
   docs/verification.md. Filed as issue #30 rather than a blind change for exactly
   this reason.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

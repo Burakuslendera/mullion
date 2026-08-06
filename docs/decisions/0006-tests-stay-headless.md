@@ -79,3 +79,5 @@ catches a vtable mistake before it reaches a user.
 - `docs/lessons-and-dead-ends.md` section 11: the finding that injected input never
   arrives at the WebView2 child, and the resulting split between what is
   automatable and what is not.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

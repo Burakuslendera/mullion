@@ -242,6 +242,4 @@ the query's value - `token=s3cr3t` in the thrown string - is gone. That is the
 line issue #80 was opened about, which before this change read `httpmain.js`;
 both halves of the trade this record makes are visible in one line.
 
-> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: new record - Message protects the http(s) URLs inside a message by delegating each run to URL (issue #80), which fires and answers the trip-wire decisions/0025 set. Rewritten after an eight-agent audit found the split re-opened 0025's host forgery three ways - a run cut by TAB/LF/CR, a value bounded before it is scanned, and two URLs welded at a folded seam - and four claims in the first version that the code did not support. Verified live the same day: a thrown JS error naming a URL with a token in its query reached the log with the host whole and the query dropped. Corrected on 2026-07-26: the Context cited 0025's trip-wire by a name that no longer resolves, and now notes its rename to TestMessageAndURLAgreeOnABareURL.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: corrected the aggregate-bound consequence after decision 0035, recorded reducibility-based candidate selection, continued scanning after oversized authorities, and made credential-free userinfo handling explicit.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

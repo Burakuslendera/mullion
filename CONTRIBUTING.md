@@ -177,10 +177,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: the logsafe rule was rewritten — it justified itself with the bug issue #80 fixed, so it told a contributor the right thing for a reason that had stopped being true; a URI takes `logsafe.URL` because URL bounds the value, and a sentence containing one takes `logsafe.Message` (decisions/0028).
-
-> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: the prerequisite states a Go version for the first time. 1.24 is the supported floor and an invariant on the library, not the version this happened to be written on, and it is 1.24 because that is where os.OpenRoot arrives (decisions/0033).
-
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: distinguish the supported Windows/amd64 WebView2 target from compile-only Windows/386 and Windows/ARM64 portability gates (decision 0034).
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: make cross-build commands runnable in PowerShell; add uncached, direct doctor/export, bridge VM, and Windows/386 WOW64 execution gates while keeping ARM64 compile-only (decision 0034).
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

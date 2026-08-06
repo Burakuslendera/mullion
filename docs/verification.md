@@ -374,13 +374,6 @@ Rules:
 The environment a frame bug report needs and the reporting contract live in
 [bug-reports.md](./bug-reports.md); they moved when this file reached its limit.
 
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: define issue #97's live lifecycle retries after bad-title, pre-loop-failure and normal-destruction paths; and update the frontend-error item for issue #88's 2,000-byte diagnostic bound, whose first-complete-URL behavior is headless-tested while real window.onerror delivery remains live-only (decision 0035).
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add uncached runtime checks, direct doctor/export and bridge VM smoke, and real Windows/386 WOW64 architecture-gate execution while keeping ARM64 compile-only.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add issue #97 adversarial sequential-Run verification for tagged private commands, early shell-ready retry, firing timers/deferred workers, already-admitted readiness ordering and HWND-pinned synchronous queries; state the live HWND-recycling uncertainty.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: name the two headless lifecycle locks for process-global Run tokens and Logger re-entry while teardown waits, without changing their mechanism claims.
 
 ## 7. 2026-08-06 post-merge blocker closure audit
 
@@ -390,4 +383,4 @@ The environment a frame bug report needs and the reporting contract live in
 - **Not covered:** the final smoke was process-stopped after readiness rather than closed through the UI; the manual snap/resize/DPI checklist was not repeated. Local `go test -race ./...` could not build because `gcc` is absent; the two Windows CI race lanes passed instead.
 - **`unverified`:** Windows/ARM64 remains compile-only by decision 0034, and physical HWND-value recycling was not forced live; the headless token/HWND adversaries cover both identity halves.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: record the green four-job Go 1.24/stable CI run, both passing Windows race lanes, the render-watchdog race found by CI and repaired with pre-callback generation identity, and the remaining live-check gaps.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

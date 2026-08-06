@@ -147,6 +147,4 @@ WebView2 151.0.4129.59 run delivered 100,000 punctuation bytes through
 complete `https://mullion.localhost/app/main.js?` target without its query
 value, shut down cleanly, and exited 0.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: retain complete bridge diagnostics until the bounded Go boundary, and prevent fallback diagnostics from replacing application watchdog evidence.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: continue after invalid decoys, reserve the selected URL after expanding prefix reduction, match production authority shapes, validate complete paths/userinfo with fixed allocation, and drive trusted, restricted, and allowed-fallback cases through the production callback.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

@@ -83,3 +83,5 @@ non-ASCII guards to a single directory.
 - The guard scope was proved, not assumed: a forbidden needle planted under
   `docs/` (outside `host/`) failed `TestNoUpstreamBrandLeak`, confirming
   `moduleRoot` still scans the whole tree.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

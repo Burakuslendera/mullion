@@ -77,8 +77,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new file - the bug-report contract moved verbatim out of verification.md at the 400-line reference-doc limit, so the cancel-gate checklist item could take what decisions/0027 added to it.
-
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: make doctor reports distinguish the supported Windows/amd64 runtime target from unsupported Windows architectures (decision 0034).
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: state that unsupported-architecture doctor execution stops before pinned-path access and every machine probe (decision 0034).
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

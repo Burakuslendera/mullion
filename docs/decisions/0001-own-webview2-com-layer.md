@@ -99,3 +99,5 @@ documents as subject to change.
   the rest of this list, plus the live acceptance checklist in
   [verification.md](../verification.md), which exercises the same path through
   `examples/basic`.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

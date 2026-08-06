@@ -351,19 +351,4 @@ production gates under Windows/386 WOW64; ARM64 is compile-only. Non-Windows
 `Run` returns `ErrUnsupportedPlatform`; no portable window abstraction is
 attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: docs-vs-code accuracy pass — step 6 lists the sixth callback (new window requested, 0022), and the bridge section states the origin gate and the real reply behaviour (a malformed or restricted-source request gets a log line and no reply, not `ok: false`). Then the threading model gained the second apartment it had been missing: the system-browser launch runs on a bounded set of per-launch goroutines with their own STA (issue #74, 0029), which is also why Config.Logger states a concurrency contract — this file enumerated the cross-thread rules without that one.
-
-> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: the render-watchdog counters now say what they count and what they do not. They are bucketed from the Content-Type mullion answered with, which comes from the name (decisions/0031), so images, fonts, JSON, wasm and anything application/octet-stream are counted nowhere and a successfully served asset in that class prints no log line at all. Healthy counts therefore do not mean the assets arrived. The suppression applies only under 400; a failed request is always logged, WARN for 4xx and ERROR for 5xx.
-
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: narrow WebView2 hosting support to Windows/amd64 and distinguish runtime support from compile portability (decision 0034).
-
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: make teardown ownership complete for every host and backdrop loop exit, clear HWND/browser references at WM_DESTROY, make startup-show release race-free, and define sequential same-Host reuse (issue #97).
-
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: document the 2,000-byte frontend logging and retained-diagnostic boundary, complete-first-URL rule, detached asset names and unchanged raw Config.Bridge payload (decision 0035).
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: correct the frontend logging boundary to continue past invalid URL decoys, remove accepted userinfo credentials, and stream fully validated paths with fixed allocation.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: define issue #97 process-global Run-token plus HWND identity for every private command, immediate concurrent-Run rejection even during teardown drain, counted and Logger-reentrant ordering, early shell-ready latching, and originating-Run ownership; document issue #88's production source classifier and full-candidate diagnostic validation.
-
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document the lazy callback/public sentinel/doctor ordering guarantees and distinguish Windows/386 execution evidence from ARM64 compile portability (decision 0034).
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

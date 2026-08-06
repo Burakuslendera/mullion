@@ -358,5 +358,3 @@ MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 The only dependency is `golang.org/x/sys` (BSD 3-Clause). Nothing else is
 vendored, embedded or redistributed — including the WebView2 Runtime, which is a
 system component that mullion locates and calls into.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document the public unsupported-architecture sentinel, side-effect-free production gate, and execution-versus-compile portability boundary; index the asset-serving reference split at its hard limit.

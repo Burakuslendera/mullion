@@ -98,6 +98,4 @@ the most useful part.
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
 
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: indexed decisions 0034 and 0035 for the Windows/amd64 support boundary and the finite frontend diagnostic boundary.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: retain decision 0034 as the canonical architecture-gate record after its lazy-callback, public-sentinel, doctor-ordering, and WOW64 evidence update.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

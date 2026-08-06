@@ -169,6 +169,4 @@ requirement.
 
 ---
 
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: accept the conservative windows/amd64-only WebView2 hosting boundary, retain clearly labelled compile portability for unsupported Windows architectures, and require hardware-backed ABI evidence before widening support.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: make callback tables and the backdrop callback lazy behind command/architecture decisions, expose the public host sentinel, count forbidden DPI/discovery calls, gate doctor path and machine probes, and execute the real Windows/386 doctor entry under WOW64.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

@@ -104,3 +104,5 @@ Two specific traps worth naming in any report:
 If a change makes one of the rules above obsolete, that is a Tier 3 rule change: it
 needs explicit human approval and the evidence that retired the rule. Propose it;
 do not quietly edit it out.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

@@ -79,15 +79,15 @@ a trap: it reads as authoritative and there is no way to discover that it is not
   is now empty.
 - Do not copy the same evidence into two files. Link to it. Two copies diverge, and
   then neither can be trusted.
-- End each document with a footer naming the last edit and its author, in your own
-  name — for example:
+- End every Markdown document except the repository-root `README.md` with exactly
+  one footer naming the last edit and its author, in your own name:
 
   ```
   > Last updated: <date> | Editor: <your name> | Change: <one line, what and why>
   ```
 
-  Never overwrite an existing signature with your own, and never adopt someone
-  else's.
+  Replace the existing footer when editing; never append a second footer or adopt
+  another editor's name. Git history preserves earlier signatures.
 
 ## Taking in external code or tools
 
@@ -134,3 +134,6 @@ governed by the tiered authority in [AGENTS.md](../AGENTS.md): mechanical hygien
 is yours to do, an evidence-backed rewrite is allowed if you cite the evidence, and
 deleting a rule or touching the protected core needs a human. If you are not sure
 which tier applies, it is the highest one.
+
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: define the footer as single current-state metadata, exclude the repository-root README, and prevent append-only signature stacks because Git already preserves edit history.

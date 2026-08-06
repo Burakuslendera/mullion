@@ -42,8 +42,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: index bug-reports.md, split out of verification.md at the 400-line reference-doc limit. Then logging-dead-ends.md, split out of lessons-and-dead-ends.md at the same limit: the data: source and sanitiser dead ends, which are the two about what the host may truthfully say in a log line.
-
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: state the Windows/amd64 runtime-support boundary without conflating it with cross-build portability (decision 0034).
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: index the GUI scripting traps and asset-serving references split verbatim at their source documents' hard limits.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.

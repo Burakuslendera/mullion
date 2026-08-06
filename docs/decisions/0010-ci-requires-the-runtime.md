@@ -95,3 +95,5 @@ regression surfaces within a week even if nobody pushes.
   that added the probe.
 - Locally, where a runtime is present, `MULLION_REQUIRE_WEBVIEW2=1 go test ./...`
   passes — the machine tests run rather than skip.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

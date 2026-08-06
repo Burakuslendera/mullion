@@ -78,3 +78,5 @@ compare here is a guess wearing a number.
   gates pinch zoom the same way.
 - `docs/webview2-and-assets.md` ("the version floor lives in the loader, not in
   the runtime") and `docs/snap-and-nonclient-region.md` section 4.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

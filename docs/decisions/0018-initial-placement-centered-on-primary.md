@@ -90,3 +90,5 @@ degraded position, never a failed launch.
 - Headless: the `TestCenteredPlacement*` suite in
   `host/placement_windows_test.go` pins scaling, centering, negative-origin
   work areas, the zero-DPI fallback, oversize clamping and the log format.
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.

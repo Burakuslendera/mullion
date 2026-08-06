@@ -124,3 +124,6 @@ does at startup.
   `TestFormatNeverPrintsTheHomeDirectory` — the first live run of the command
   printed a user's 8.3 short path (`...~1`) into a block written to be pasted in
   public, and the redaction now covers both spellings Windows hands out.
+
+
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
