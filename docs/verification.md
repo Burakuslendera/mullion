@@ -384,10 +384,10 @@ The environment a frame bug report needs and the reporting contract live in
 
 ## 7. 2026-08-06 post-merge blocker closure audit
 
-- **Automated:** formatting, build, vet, `-unsafeptr`, uncached full tests, both diagnostic-tag build/test pairs, bridge VM, leak scan, Windows/386 production gates, and Linux/amd64 plus Windows/386/ARM64 builds passed.
-- **A/B:** restoring the teardown wait, pre-gate DPI call, eager backdrop callback, post-reduction URL displacement, or disconnected production message callback made its named regression fail; each repaired version passed.
+- **Automated:** formatting, build, vet, `-unsafeptr`, uncached full tests, both diagnostic-tag build/test pairs, bridge VM, leak scan, Windows/386 production gates, and Linux/amd64 plus Windows/386/ARM64 builds passed. GitHub Actions run `31060250331` passed all four Go 1.24/stable Windows/portable jobs; both Windows jobs passed `go test -count=1 -race ./...`, including the render-watchdog generation repair exposed by the preceding CI run.
+- **A/B:** restoring the teardown wait, pre-gate DPI call, eager backdrop callback, post-reduction URL displacement, disconnected production message callback, or the render watchdog's callback-before-identity assignment made its named regression or race check fail; each repaired version passed.
 - **Live:** `mullion doctor` found WebView2 151.0.4129.59; `examples/basic` reached shell-ready, window-visible, application `Ping`, navigation-completed and frontend-ready with zero session warnings/errors on the two-monitor 125%/100% setup.
-- **Not covered:** the final smoke was process-stopped after readiness rather than closed through the UI; the manual snap/resize/DPI checklist was not repeated. Local `go test -race ./...` could not build because `gcc` is absent; the Windows CI race lane owns that check.
+- **Not covered:** the final smoke was process-stopped after readiness rather than closed through the UI; the manual snap/resize/DPI checklist was not repeated. Local `go test -race ./...` could not build because `gcc` is absent; the two Windows CI race lanes passed instead.
 - **`unverified`:** Windows/ARM64 remains compile-only by decision 0034, and physical HWND-value recycling was not forced live; the headless token/HWND adversaries cover both identity halves.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: record the post-merge blocker closure commands, A/B mutations, final live bridge smoke, explicit local race-toolchain gap, and remaining architecture/HWND uncertainties.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: record the green four-job Go 1.24/stable CI run, both passing Windows race lanes, the render-watchdog race found by CI and repaired with pre-callback generation identity, and the remaining live-check gaps.
