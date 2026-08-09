@@ -114,7 +114,7 @@ func (browser *Browser) handleNavigationStarting(args *ICoreWebView2NavigationSt
 	// it remain borrowed only for this synchronous invocation.
 	if err := args.PutCancel(true); err != nil {
 		browser.reportWarning(errors.Join(
-			errors.New("NavigationStarting.PutCancel navigation "+strconv.FormatUint(id, 10)),
+			errors.New("NavigationStarting.PutCancel "+navigationIDField(id, idErr)),
 			err,
 		))
 		return
@@ -122,6 +122,13 @@ func (browser *Browser) handleNavigationStarting(args *ICoreWebView2NavigationSt
 	if browser.NavigationCancelledCallback != nil {
 		browser.NavigationCancelledCallback(observation)
 	}
+}
+
+func navigationIDField(id uint64, getterErr error) string {
+	if getterErr != nil {
+		return "id=unavailable"
+	}
+	return "id=" + strconv.FormatUint(id, 10)
 }
 
 func (browser *Browser) handleNavigationCompleted(args *ICoreWebView2NavigationCompletedEventArgs) {

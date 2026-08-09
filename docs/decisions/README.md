@@ -26,7 +26,7 @@ These files are that record.
 | [0003](./0003-keep-caption-bits.md) | The frameless frame keeps `WS_CAPTION` and `WS_SYSMENU` | Accepted |
 | [0004](./0004-host-answers-window-controls.md) | The host answers the window control methods; `Config.Bridge` is optional | Accepted |
 | [0005](./0005-queryinterface-not-version.md) | Capability detection is `QueryInterface`, never a version compare | Accepted |
-| [0006](./0006-tests-stay-headless.md) | No test creates a window | Accepted |
+| [0006](./0006-tests-stay-headless.md) | No test creates a window | Superseded by [0039](./0039-public-run-preflight-stays-headless.md) |
 | [0007](./0007-non-windows-stub.md) | Other platforms compile and return `ErrUnsupportedPlatform` | Accepted |
 | [0008](./0008-doctor-is-a-go-command.md) | The environment report is a Go command, not a script | Accepted |
 | [0009](./0009-public-package-at-host.md) | The public package lives at /host, not the module root | Accepted |
@@ -58,7 +58,9 @@ These files are that record.
 | [0035](./0035-frontend-diagnostics-are-bounded.md) | Frontend-controlled diagnostics are bounded before reduction and retention | Accepted |
 | [0036](./0036-one-source-plan-defines-origin.md) | One source plan defines the frontend origin | Accepted |
 | [0037](./0037-event-values-preserve-getter-provenance.md) | Event values preserve getter provenance before granting fallback authority | Accepted |
-| [0038](./0038-terminal-policy-owns-error-reporting.md) | Terminal policy owns each error report | Accepted |
+| [0038](./0038-terminal-policy-owns-error-reporting.md) | Terminal policy owns each error report | Accepted, public pre-inner boundary refined by [0040](./0040-public-preflight-errors-belong-to-callers.md) |
+| [0039](./0039-public-run-preflight-stays-headless.md) | Public Run preflight stays headless | Accepted; supersedes [0006](./0006-tests-stay-headless.md) |
+| [0040](./0040-public-preflight-errors-belong-to-callers.md) | Public preflight errors belong to callers | Accepted; refines [0038](./0038-terminal-policy-owns-error-reporting.md) |
 
 ## When to write one
 
@@ -101,4 +103,4 @@ the most useful part.
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: index the source-plan, event-provenance and reporting-ownership decisions and route their refinements forward.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: index the refined headless Run exception and caller-owned public preflight boundary, with forward status links from decisions 0006 and 0038.

@@ -16,6 +16,7 @@ package webview2
 // escaping panic kills the process from inside a Chromium stack frame.
 
 import (
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -241,6 +242,95 @@ func TestHandlerRefcountLifecycle(t *testing.T) {
 	if got := liveServerCount(); got != baseline {
 		t.Errorf("live servers after teardown = %d, want %d (back to baseline: no leak)", got, baseline)
 	}
+}
+
+func TestAddEventTransfersExactlyOneReferenceToTheRuntime(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		baseline := liveServerCount()
+		handler := NewWebMessageReceivedHandler(func(*ICoreWebView2, *ICoreWebView2WebMessageReceivedEventArgs) {})
+		this := uintptr(handler)
+		server := serverFor(this)
+		if server == nil {
+			t.Fatal("constructor did not publish the handler root")
+		}
+		t.Cleanup(func() {
+			for range 3 {
+				if serverFor(this) == nil {
+					return
+				}
+				ReleaseHandler(handler)
+			}
+		})
+
+		var observedHandler, observedRoot bool
+		var observedRefs int32
+		err := addEvent(handler, func(got unsafe.Pointer) (EventRegistrationToken, error) {
+			observedHandler = got == handler
+			observedRoot = serverFor(uintptr(got)) != nil
+			observedRefs = atomic.LoadInt32(&server.refs)
+			handlerVtbl := *(*unsafe.Pointer)(got)
+			callCOMSlot(handlerVtbl, 1, uintptr(got))
+			return 0, nil
+		})
+
+		if err != nil {
+			t.Fatalf("addEvent returned %v, want nil", err)
+		}
+		if !observedHandler || !observedRoot || observedRefs != 1 {
+			t.Fatalf("registration observed handler=%v root=%v refs=%d, want the constructor's live one-reference object", observedHandler, observedRoot, observedRefs)
+		}
+		if got := atomic.LoadInt32(&server.refs); got != 1 {
+			t.Fatalf("refs after successful addEvent = %d, want only the runtime reference", got)
+		}
+		if serverFor(this) == nil {
+			t.Fatal("successful addEvent removed the root while the runtime still owns the handler")
+		}
+
+		handlerVtbl := *(*unsafe.Pointer)(handler)
+		callCOMSlot(handlerVtbl, 2, this)
+		if serverFor(this) != nil {
+			t.Fatal("runtime Release did not remove the handler root")
+		}
+		if got := liveServerCount(); got != baseline {
+			t.Fatalf("live servers after runtime Release = %d, want baseline %d", got, baseline)
+		}
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		baseline := liveServerCount()
+		handler := NewProcessFailedHandler(func(*ICoreWebView2, *ICoreWebView2ProcessFailedEventArgs) {})
+		this := uintptr(handler)
+		server := serverFor(this)
+		if server == nil {
+			t.Fatal("constructor did not publish the handler root")
+		}
+		t.Cleanup(func() { ReleaseHandler(handler) })
+		wantErr := errors.New("registration failed")
+		var observedRoot bool
+		var observedRefs int32
+
+		err := addEvent(handler, func(got unsafe.Pointer) (EventRegistrationToken, error) {
+			observedRoot = got == handler && serverFor(uintptr(got)) != nil
+			observedRefs = atomic.LoadInt32(&server.refs)
+			return 0, wantErr
+		})
+
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("addEvent error = %v, want %v", err, wantErr)
+		}
+		if !observedRoot || observedRefs != 1 {
+			t.Fatalf("failed registration observed root=%v refs=%d, want the constructor's live one-reference object", observedRoot, observedRefs)
+		}
+		if got := atomic.LoadInt32(&server.refs); got != 0 {
+			t.Fatalf("refs after failed addEvent = %d, want 0 (no runtime reference)", got)
+		}
+		if serverFor(this) != nil {
+			t.Fatal("failed addEvent left the handler rooted")
+		}
+		if got := liveServerCount(); got != baseline {
+			t.Fatalf("live servers after failed addEvent = %d, want baseline %d", got, baseline)
+		}
+	})
 }
 
 // Invoke must reach the Go callback with the arguments typed, and report S_OK.

@@ -66,7 +66,7 @@ func (host *Host) rememberCancelledNavigationObserved(identity navigationIdentit
 		// they never confer restoration authority. Preserve the known-zero /
 		// unavailable tag so overlapping callbacks cannot cross-spend credits.
 		if host.cancelledNavAnonymous >= cancelledNavSlots {
-			host.log.Warn("mullion: cancelled navigation forgotten, ledger full and it has no id")
+			host.log.Warn("mullion: cancelled navigation forgotten, ledger full, " + navigationIdentityField(identity))
 			return
 		}
 		host.cancelledNavAnonymous++

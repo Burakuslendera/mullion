@@ -4,6 +4,7 @@ package webview2
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -321,21 +322,59 @@ func TestNewWindowAndProcessObservationsPreserveGetterFailures(t *testing.T) {
 
 func TestFailedEventSettersDoNotNotifyTheHost(t *testing.T) {
 	t.Run("PutCancel", func(t *testing.T) {
-		args := newFakeNavigationStartingArgs(t, &fakeComState{putResult: eFail})
-		browser := New()
-		browser.NavigationStartingCallback = func(NavigationStartingObservation) bool { return true }
-		var callbacks int
-		browser.NavigationCancelledCallback = func(NavigationStartingObservation) { callbacks++ }
-		var warnings []error
-		browser.WarningCallback = func(err error) { warnings = append(warnings, err) }
+		const getterFailure = uintptr(0x80004012)
+		for _, tc := range []struct {
+			name               string
+			navigationIDResult uintptr
+			setterFailure      uintptr
+			wantIdentity       string
+			rejectIdentity     string
+		}{
+			{"failed navigation id getter", getterFailure, 0x80004051, "id=unavailable", "id=0"},
+			{"successful zero navigation id", sOK, 0x80004052, "id=0", "id=unavailable"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				state := &fakeComState{
+					navigationID:       0,
+					navigationIDResult: tc.navigationIDResult,
+					putResult:          tc.setterFailure,
+				}
+				args := newFakeNavigationStartingArgs(t, state)
+				browser := New()
+				browser.NavigationStartingCallback = func(NavigationStartingObservation) bool { return true }
+				var callbacks int
+				browser.NavigationCancelledCallback = func(NavigationStartingObservation) { callbacks++ }
+				var warnings []error
+				browser.WarningCallback = func(err error) {
+					if state.puts != 1 {
+						t.Fatalf("warning ran before PutCancel recorded its failure: puts=%d", state.puts)
+					}
+					warnings = append(warnings, err)
+				}
 
-		browser.handleNavigationStarting(args)
+				browser.handleNavigationStarting(args)
 
-		if callbacks != 0 {
-			t.Fatal("failed PutCancel notified the host that cancellation succeeded")
-		}
-		if len(warnings) != 1 || !strings.Contains(warnings[0].Error(), "NavigationStarting.PutCancel") {
-			t.Fatalf("warnings = %v, want one contextual PutCancel failure", warnings)
+				if callbacks != 0 {
+					t.Fatal("failed PutCancel notified the host that cancellation succeeded")
+				}
+				if len(warnings) != 1 {
+					t.Fatalf("warnings = %v, want exactly one PutCancel failure", warnings)
+				}
+				warning := warnings[0].Error()
+				for _, want := range []string{
+					"NavigationStarting.PutCancel",
+					tc.wantIdentity,
+					fmt.Sprintf("0x%08X", uint32(tc.setterFailure)),
+				} {
+					if !strings.Contains(warning, want) {
+						t.Fatalf("warning = %q, want it to contain %q", warning, want)
+					}
+				}
+				if strings.Contains(warning, tc.rejectIdentity) {
+					t.Fatalf("warning = %q, must not contain %q", warning, tc.rejectIdentity)
+				}
+				requireObservationHRESULT(t, warnings[0], tc.setterFailure)
+			})
 		}
 	})
 

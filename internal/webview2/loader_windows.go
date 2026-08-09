@@ -81,7 +81,13 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 	if err != nil {
 		return nil, err
 	}
+	return createEnvironmentWithProc(opts, found, loaded.createEnviron)
+}
 
+// createEnvironmentWithProc is the native-call portion of
+// CreateEnvironmentWithOptions. Keeping discovery outside this function makes
+// the ABI boundary testable without loading an installed WebView2 runtime.
+func createEnvironmentWithProc(opts Options, found resolved, createEnviron ComProc) (*Environment, error) {
 	// The completion handler arrives as a window message, so the thread that
 	// dispatches it must be the thread that made the call. Locking is cheap
 	// insurance: the caller (the host's UI thread) is already locked, and
@@ -103,12 +109,14 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 
 	var userDataFolder *uint16
 	if opts.UserDataFolder != "" {
-		if userDataFolder, err = windows.UTF16PtrFromString(opts.UserDataFolder); err != nil {
+		var err error
+		userDataFolder, err = windows.UTF16PtrFromString(opts.UserDataFolder)
+		if err != nil {
 			return nil, fmt.Errorf("webview2: user data folder: %w", err)
 		}
 	}
 
-	hr, _, _ := loaded.createEnviron.Call(
+	hr, _, _ := createEnviron.Call(
 		1, // checkRunningInstance: join an already-running runtime for this user
 		// data folder instead of failing. Two mullion windows in one process, or
 		// a second process sharing the profile, are normal.
@@ -146,6 +154,14 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 // Like CreateEnvironment, this pumps messages until the completion handler
 // fires, and must run on the window's own thread.
 func (e *Environment) CreateController(parent windows.Handle) (*IUnknown, error) {
+	return e.createControllerWithTimeout(parent, DefaultTimeout)
+}
+
+// createControllerWithTimeout contains the native-call portion of
+// CreateController. Production always supplies DefaultTimeout; a shorter bound
+// lets headless tests exercise abandonment without waiting for runtime startup
+// timeouts.
+func (e *Environment) createControllerWithTimeout(parent windows.Handle, timeout time.Duration) (*IUnknown, error) {
 	if e == nil || e.unknown == nil {
 		return nil, errors.New("webview2: environment is not open")
 	}
@@ -172,7 +188,7 @@ func (e *Environment) CreateController(parent windows.Handle) (*IUnknown, error)
 		return nil, fmt.Errorf("webview2: CreateCoreWebView2Controller: %w", err)
 	}
 
-	result, err := waitFor(handler.done, DefaultTimeout, "the WebView2 controller")
+	result, err := waitFor(handler.done, timeout, "the WebView2 controller")
 	if err != nil {
 		handler.abandon()
 		return nil, err

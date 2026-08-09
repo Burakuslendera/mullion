@@ -171,26 +171,64 @@ func TestLedgerReportsWhatItForgets(t *testing.T) {
 	}
 }
 
-// The id-less half is bounded the same way and says so the same way. It used to
-// saturate in silence, so a dropped cancel there had nothing at all to attribute
-// it to - while the other half warned.
-func TestIdlessLedgerAlsoReportsWhatItForgets(t *testing.T) {
-	host, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+// The anonymous half is bounded the same way and preserves whether a saturated
+// credit had a known zero id or an unavailable id. It used to saturate in
+// silence, so a dropped cancel there had nothing at all to attribute it to -
+// while the exact-id half warned.
+func TestAnonymousLedgerReportsKnownZeroAndUnavailableOverflow(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		identity       navigationIdentity
+		wantIdentity   string
+		rejectIdentity string
+		wantUnknown    int
+	}{
+		{"known zero", knownNavigationIdentity(0), "id=0", "id=unavailable", 0},
+		{"unavailable", navigationIdentity{}, "id=unavailable", "id=0", cancelledNavSlots},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			capture := &captureLogger{}
+			logger := &reentrantLogger{captureLogger: capture}
+			host := New(Config{StartHidden: true, PinNavigationToOrigin: true, Logger: logger})
+			stubExternalOpen(host)
 
-	for i := 0; i < cancelledNavSlots; i++ {
-		cancelNavigation(host, "https://evil.example/", 0, true)
-	}
-	if strings.Contains(logger.String(), "cancelled navigation forgotten") {
-		t.Fatalf("the id-less half reported an eviction before it was full:\n%s", logger.String())
-	}
+			for range cancelledNavSlots {
+				host.rememberCancelledNavigationObserved(tc.identity)
+			}
+			if strings.Contains(logger.String(), "cancelled navigation forgotten") {
+				t.Fatalf("the anonymous ledger reported an overflow before it was full:\n%s", logger.String())
+			}
 
-	cancelNavigation(host, "https://evil.example/", 0, true)
+			var warningSawBoundedState bool
+			logger.onWarn = func() {
+				warningSawBoundedState = true
+				if host.cancelledNavAnonymous != cancelledNavSlots ||
+					host.cancelledNavUnknown != tc.wantUnknown {
+					t.Fatalf("warning observed anonymous counts = total %d, unknown %d; want total %d, unknown %d",
+						host.cancelledNavAnonymous, host.cancelledNavUnknown, cancelledNavSlots, tc.wantUnknown)
+				}
+			}
+			host.rememberCancelledNavigationObserved(tc.identity)
+			if !warningSawBoundedState {
+				t.Fatal("anonymous overflow did not report its bounded state")
+			}
 
-	if !strings.Contains(logger.String(), "cancelled navigation forgotten, ledger full and it has no id") {
-		t.Fatalf("the id-less half saturated in silence:\n%s", logger.String())
-	}
-	if host.cancelledNavAnonymous != cancelledNavSlots {
-		t.Fatalf("id-less count = %d, want %d", host.cancelledNavAnonymous, cancelledNavSlots)
+			logged := logger.String()
+			if count := strings.Count(logged, "cancelled navigation forgotten"); count != 1 {
+				t.Fatalf("overflow warnings = %d, want exactly 1:\n%s", count, logged)
+			}
+			if !strings.Contains(logged, "cancelled navigation forgotten, ledger full, "+tc.wantIdentity) {
+				t.Fatalf("anonymous ledger overflow lacks %s:\n%s", tc.wantIdentity, logged)
+			}
+			if strings.Contains(logged, tc.rejectIdentity) {
+				t.Fatalf("anonymous ledger overflow reports %s instead of %s:\n%s",
+					tc.rejectIdentity, tc.wantIdentity, logged)
+			}
+			if host.cancelledNavAnonymous != cancelledNavSlots || host.cancelledNavUnknown != tc.wantUnknown {
+				t.Fatalf("anonymous counts = total %d, unknown %d; want total %d, unknown %d",
+					host.cancelledNavAnonymous, host.cancelledNavUnknown, cancelledNavSlots, tc.wantUnknown)
+			}
+		})
 	}
 }
 
