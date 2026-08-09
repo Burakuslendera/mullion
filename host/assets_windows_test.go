@@ -15,10 +15,13 @@ import (
 
 const testVirtualHost = defaultVirtualHost
 
-var testOrigin = "https://" + testVirtualHost
+var (
+	testOrigin      = "https://" + testVirtualHost
+	testAssetOrigin = newCanonicalOrigin("https", testVirtualHost, "")
+)
 
 func newTestAssetProvider(assets fs.FS) assetProvider {
-	return newAssetProvider(assets, newLogSink(NopLogger{}), testVirtualHost, newNativeDiagnostics())
+	return newAssetProvider(assets, newLogSink(NopLogger{}), testAssetOrigin, newNativeDiagnostics())
 }
 
 func TestResolveAssetPath(t *testing.T) {
@@ -40,7 +43,7 @@ func TestResolveAssetPath(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			request, gotErr := resolveAssetRequest(testVirtualHost, test.uri)
+			request, gotErr := resolveAssetRequest(testAssetOrigin, test.uri)
 			got := ""
 			if gotErr == 0 {
 				got = request.path
@@ -52,18 +55,27 @@ func TestResolveAssetPath(t *testing.T) {
 	}
 }
 
-// TestResolveAssetRequestHostIsConfigured locks the fix for a latent bug: the
-// origin the WebView navigates to and the host this allow-list accepts used to
-// be two independent literals. They now both come from Config.VirtualHost, so a
-// custom host must be accepted and the default must not.
-func TestResolveAssetRequestHostIsConfigured(t *testing.T) {
-	const custom = "example.internal"
-	got, status := resolveAssetRequest(custom, "https://"+custom+"/index.html")
-	if status != 0 || got.path != "index.html" {
-		t.Fatalf("custom virtual host rejected: %q, %d", got.path, status)
+func TestResolveAssetRequestUsesCanonicalOriginSemantics(t *testing.T) {
+	custom := newCanonicalOrigin("https", "example.internal", "")
+	for _, raw := range []string{
+		"https://example.internal/index.html",
+		"https://EXAMPLE.INTERNAL/index.html",
+		"https://example.internal:443/index.html",
+		"https://example.internal:0443/index.html",
+	} {
+		got, status := resolveAssetRequest(custom, raw)
+		if status != 0 || got.path != "index.html" {
+			t.Fatalf("%q rejected: %q, %d", raw, got.path, status)
+		}
 	}
-	if _, status := resolveAssetRequest(custom, testOrigin+"/index.html"); status != http.StatusForbidden {
-		t.Fatalf("default host accepted under a custom virtual host: %d", status)
+	for _, raw := range []string{
+		"https://example.internal:444/index.html",
+		testOrigin + "/index.html",
+		"https://user:secret@example.internal/index.html",
+	} {
+		if _, status := resolveAssetRequest(custom, raw); status != http.StatusForbidden {
+			t.Fatalf("%q accepted under custom origin: %d", raw, status)
+		}
 	}
 }
 
@@ -174,7 +186,7 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, gotStatus := resolveAssetRequest(testVirtualHost, test.uri)
+			got, gotStatus := resolveAssetRequest(testAssetOrigin, test.uri)
 			if got.path != test.wantPath || got.category != test.wantCategory || gotStatus != test.wantStatus {
 				t.Fatalf("resolveAssetRequest() = {%q %q}, %d, want {%q %q}, %d", got.path, got.category, gotStatus, test.wantPath, test.wantCategory, test.wantStatus)
 			}
@@ -192,7 +204,7 @@ func TestResolveAssetRequestServesNonASCIIName(t *testing.T) {
 	// A two-character CJK name (U+65E5 U+672C) plus ".html", built from runes so
 	// this source stays ASCII, requested percent-encoded as its UTF-8 bytes.
 	want := string(rune(0x65e5)) + string(rune(0x672c)) + ".html"
-	got, status := resolveAssetRequest(testVirtualHost, testOrigin+"/%e6%97%a5%e6%9c%ac.html")
+	got, status := resolveAssetRequest(testAssetOrigin, testOrigin+"/%e6%97%a5%e6%9c%ac.html")
 	if got.path != want || got.category != "asset" || status != 0 {
 		t.Fatalf("resolveAssetRequest() = {%q %q}, %d, want {%q %q}, 0", got.path, got.category, status, want, "asset")
 	}
@@ -450,7 +462,7 @@ func TestAssetBoundaryDoesNotFilterDeviceNames(t *testing.T) {
 		names = append(names, "com"+string(superscript), "lpt"+string(superscript))
 	}
 	for _, name := range names {
-		request, status := resolveAssetRequest(testVirtualHost, testOrigin+"/"+name)
+		request, status := resolveAssetRequest(testAssetOrigin, testOrigin+"/"+name)
 		if status != 0 || request.category != "asset" {
 			t.Fatalf("%q = {%q %q}, %d, want it handed on as an asset", name, request.path, request.category, status)
 		}

@@ -12,10 +12,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ICoreWebView2EnvironmentOptions. Taken from the WebView2 SDK's WebView2.h
-// (MIDL_INTERFACE declaration), which is the authoritative source: an interface
-// ID is an identity, and a wrong one means the runtime silently refuses the
-// object.
+// ICoreWebView2EnvironmentOptions. Taken from Microsoft.Web.WebView2 SDK
+// 1.0.4129.50 build/native/include/WebView2.h (MIDL_INTERFACE declaration),
+// which is the authoritative source: an interface ID is an identity, and a wrong
+// one means the runtime silently refuses the object.
 var iidEnvironmentOptions = windows.GUID{
 	Data1: 0x2fde08a8, Data2: 0x1e9a, Data3: 0x4766,
 	Data4: [8]byte{0x8c, 0x05, 0x95, 0xa9, 0xce, 0xb9, 0xd1, 0xc5},
@@ -56,6 +56,10 @@ type Options struct {
 	Timeout time.Duration
 }
 
+// environmentOptionsVtbl is the flattened C vtable from that same SDK header.
+// Its field order is the ABI: the runtime dispatches by numeric slot, not by Go
+// name. The ABI manifest pins every offset/IID and the numeric-slot test calls
+// each runtime-facing getter through its literal slot.
 type environmentOptionsVtbl struct {
 	IUnknownVtbl
 	GetAdditionalBrowserArguments             ComProc

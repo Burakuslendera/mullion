@@ -3,11 +3,13 @@
 package host
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Burakuslendera/mullion/internal/logsafe"
+	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
 // TestBridgeHandlesWindowControlsWithoutAConfiguredBridge is the whole point of
@@ -236,7 +238,12 @@ func TestWebMessageCallbackKeepsFallbackOutOfTrustedAdmission(t *testing.T) {
 			return ""
 		},
 	})
-	host.errorSurfaceActive = true
+	host.errorSurfaceURL = "data:text/html,surface"
+	noteFail(host, 0)
+	issueCurrentErrorSurface(t, host)
+	if !host.noteSurfaceNavigationStarting("", 0) {
+		t.Fatal("production fallback setup did not claim the successful empty source")
+	}
 	browser := host.newWebViewBrowser()
 	if browser.MessageCallback == nil {
 		t.Fatal("production Browser constructor left MessageCallback disconnected")
@@ -244,8 +251,8 @@ func TestWebMessageCallbackKeepsFallbackOutOfTrustedAdmission(t *testing.T) {
 	callback := browser.MessageCallback
 	applicationCall := `{"id":"app","method":"GetSecret","args":[]}`
 
-	callback(applicationCall, "", nil)
-	callback(`{"id":"ready","method":"`+methodReady+`","args":[]}`, "", nil)
+	callback(webview2.WebMessageObservation{Message: applicationCall}, nil)
+	callback(webview2.WebMessageObservation{Message: `{"id":"ready","method":"` + methodReady + `","args":[]}`}, nil)
 	if bridgeCalls != 0 {
 		t.Fatal("fallback source reached Config.Bridge through the production callback")
 	}
@@ -255,14 +262,54 @@ func TestWebMessageCallbackKeepsFallbackOutOfTrustedAdmission(t *testing.T) {
 	if fallbackReady {
 		t.Fatal("fallback source changed readiness through the production callback")
 	}
-	callback(`{"id":"drag","method":"`+methodStartDrag+`","args":[]}`, "", nil)
+	callback(webview2.WebMessageObservation{Message: `{"id":"drag","method":"` + methodStartDrag + `","args":[]}`}, nil)
 	if !strings.Contains(logger.String(), "titlebar drag requested") {
 		t.Fatal("production callback rejected an allowed fallback window control")
 	}
 
-	callback(applicationCall, host.config.trustedOrigin(), nil)
+	callback(webview2.WebMessageObservation{
+		Message: applicationCall,
+		Source:  host.source.origin.text,
+	}, nil)
 	if bridgeCalls != 1 {
 		t.Fatalf("trusted source bridge calls = %d, want 1", bridgeCalls)
+	}
+}
+
+func TestWebMessageCallbackDropsFailedSourceBeforeEveryDispatcher(t *testing.T) {
+	var bridgeCalls int
+	host, logger := newTestHost(t, Config{
+		StartHidden: true,
+		Bridge: func(string) string {
+			bridgeCalls++
+			return ""
+		},
+	})
+	host.errorSurfaceURL = "data:text/html,surface"
+	noteFail(host, 0)
+	issueCurrentErrorSurface(t, host)
+	if !host.noteSurfaceNavigationStarting("", 0) {
+		t.Fatal("fallback generation was not claimed")
+	}
+	callback := host.newWebViewBrowser().MessageCallback
+	callback(webview2.WebMessageObservation{
+		Message:   `{"id":"close","method":"` + methodClose + `","args":[]}`,
+		SourceErr: errors.New("source unavailable"),
+	}, nil)
+	callback(webview2.WebMessageObservation{
+		Message:   `{"id":"app","method":"GetSecret","args":[]}`,
+		SourceErr: errors.New("source unavailable"),
+	}, nil)
+
+	if bridgeCalls != 0 {
+		t.Fatalf("failed source reached Config.Bridge %d times", bridgeCalls)
+	}
+	logText := logger.String()
+	if strings.Contains(logText, "quit requested") {
+		t.Fatal("failed source executed WindowClose")
+	}
+	if got := strings.Count(logText, "event=WebMessageReceived, getter=GetSource"); got != 2 {
+		t.Fatalf("source diagnostics = %d, want one per failed event:\n%s", got, logText)
 	}
 }
 

@@ -21,19 +21,18 @@ import (
 // and asks for the surface, and the surface's own start is claimed under id.
 func armAndClaim(t *testing.T, host *Host, foreignID, surfaceID uint64) {
 	t.Helper()
-	host.errorSurfaceURL = "data:text/html,surface"
 	if !noteFail(host, foreignID) {
 		t.Fatal("the arming failure must ask for the surface to be shown")
 	}
+	issueCurrentErrorSurface(t, host)
 	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, surfaceID) {
 		t.Fatal("the surface's own navigation start must be claimed while the arming is pending")
 	}
 }
 
 // The claim is double-gated: nothing is claimed before the host decides to
-// navigate to the surface, a foreign http(s) start inside the window passes
-// through unclaimed, and the tolerated data:-reporting variants all claim -
-// exactly once.
+// navigate to the surface, a foreign start inside the window passes through
+// unclaimed, and only the exact URL or a successfully read empty URI claims.
 func TestErrorSurfaceClaimsOnlyItsOwnNavigationStart(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -41,7 +40,6 @@ func TestErrorSurfaceClaimsOnlyItsOwnNavigationStart(t *testing.T) {
 	}{
 		{"exact data: URL", "data:text/html,surface"},
 		{"empty (issue #56's erasure, if NavigationStarting shares it)", ""},
-		{"truncated data: form", "data:text/html,other-shape"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			host, _ := newTestHost(t, Config{})
@@ -50,20 +48,38 @@ func TestErrorSurfaceClaimsOnlyItsOwnNavigationStart(t *testing.T) {
 			if host.noteSurfaceNavigationStarting(tc.uri, 3) {
 				t.Fatal("no start may be claimed before the surface is armed")
 			}
-			noteFail(host, 0) // arm: the claim window opens
+			noteFail(host, 0)
+			issueCurrentErrorSurface(t, host) // the production commit opens the claim window
 			if host.noteSurfaceNavigationStarting("https://evil.example/", 4) {
 				t.Fatal("a foreign http(s) start racing the surface must not be claimed")
 			}
 			if !host.noteSurfaceNavigationStarting(tc.uri, 5) {
 				t.Fatal("the surface's own start must be claimed")
 			}
-			if host.errorSurfaceNavID != 5 {
-				t.Fatalf("claimed navigation id = %d, want 5", host.errorSurfaceNavID)
+			if host.errorSurfaceNav != knownNavigationIdentity(5) {
+				t.Fatalf("claimed navigation identity = %+v, want known value 5", host.errorSurfaceNav)
 			}
 			if host.noteSurfaceNavigationStarting(tc.uri, 6) {
 				t.Fatal("the claim must happen exactly once per arming")
 			}
 		})
+	}
+}
+
+func TestErrorSurfaceRejectsInexactAndUnreadableStarts(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	host.errorSurfaceURL = "data:text/html,surface"
+	noteFail(host, 0)
+	issueCurrentErrorSurface(t, host)
+
+	if host.noteSurfaceNavigationStarting("data:text/html,other-shape", 4) {
+		t.Fatal("an arbitrary data: start must not claim the fallback generation")
+	}
+	if host.noteSurfaceNavigationStartingKnown("", false, 5) {
+		t.Fatal("a failed URI read must not claim the fallback generation")
+	}
+	if host.errorSurfaceActive {
+		t.Fatal("a rejected start must not activate fallback message admission")
 	}
 }
 
@@ -173,10 +189,11 @@ func TestErrorSurfaceLateCancelDoesNotDisturbANewArming(t *testing.T) {
 	if !noteFail(host, 8) {
 		t.Fatal("a fresh failure after the foreign document must arm the next surface generation")
 	}
+	issueCurrentErrorSurface(t, host)
 	if noteCancel(host, 6) {
 		t.Fatal("generation one's late cancel must not re-navigate")
 	}
-	if !host.noteSurfaceNavigationStarting("data:text/html,surface", 9) {
+	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 9) {
 		t.Fatal("generation two's own start must still be claimable: the stale cancel must not have closed its claim window")
 	}
 	if noteOK(host, 9) {
@@ -198,6 +215,7 @@ func TestErrorSurfaceIdentifiedCompletionsBeforeTheClaimAreForeign(t *testing.T)
 	if !noteFail(host, 5) {
 		t.Fatal("the arming failure must ask for the surface to be shown")
 	}
+	issueCurrentErrorSurface(t, host)
 	if noteOK(host, 7) {
 		t.Fatal("an identified foreign success must not trigger a surface navigation")
 	}
@@ -243,7 +261,8 @@ func TestErrorSurfaceNavigateFailureUnwindsTheArming(t *testing.T) {
 	if !noteFail(host, 5) {
 		t.Fatal("the arming failure must ask for the surface to be shown")
 	}
-	host.noteSurfaceNavigateFailed()
+	plan := issueCurrentErrorSurface(t, host)
+	host.noteSurfaceNavigateFailed(plan)
 
 	if host.errorSurfaceMessageAllowed("") {
 		t.Fatal("an arming whose Navigate never started must not keep the empty source admitted")

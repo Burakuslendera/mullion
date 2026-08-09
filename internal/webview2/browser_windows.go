@@ -9,6 +9,7 @@ package webview2
 // browser_surface_windows.go.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,47 +19,66 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// Event observations preserve each COM getter's value and error separately.
+// A zero value is therefore never evidence that a failed getter returned it.
+type WebMessageObservation struct {
+	Message   string
+	Source    string
+	SourceErr error
+}
+
+type NavigationStartingObservation struct {
+	URI                string
+	URIErr             error
+	NavigationID       uint64
+	NavigationIDErr    error
+	IsUserInitiated    bool
+	IsUserInitiatedErr error
+	IsRedirected       bool
+	IsRedirectedErr    error
+}
+
+type NavigationCompletedObservation struct {
+	IsSuccess         bool
+	IsSuccessErr      error
+	WebErrorStatus    WebErrorStatus
+	WebErrorStatusErr error
+	NavigationID      uint64
+	NavigationIDErr   error
+}
+
+type NewWindowRequestedObservation struct {
+	URI                string
+	URIErr             error
+	IsUserInitiated    bool
+	IsUserInitiatedErr error
+}
+
+type ProcessFailedObservation struct {
+	Kind    ProcessFailedKind
+	KindErr error
+}
+
 // Browser is one WebView2 control embedded in a host window.
 //
-// It owns the environment, the controller and the CoreWebView2 behind them, and
-// it turns the six COM events the host cares about into plain Go callbacks.
-//
-// A Browser is bound to the thread that called Embed: WebView2 requires a
-// single-threaded apartment and delivers every event on that thread's message
-// loop. The host already locks its OS thread and pumps the loop, so callbacks
-// arrive there and may touch the window directly.
+// A Browser is bound to the thread that called Embed. WebView2 delivers every
+// event on that thread's message loop, and every named adapter below invokes its
+// host callback synchronously while sender and event args remain borrowed.
 type Browser struct {
 	// Callbacks. Set them before Embed; they are registered during Embed and
 	// must not change afterwards.
-	MessageCallback              func(message string, source string, sender *ICoreWebView2)
+	MessageCallback              func(WebMessageObservation, *ICoreWebView2)
 	WebResourceRequestedCallback func(request *ICoreWebView2WebResourceRequest, args *ICoreWebView2WebResourceRequestedEventArgs)
 	// NavigationStartingCallback fires when a top-level navigation begins.
-	// navigationID is the runtime's identity for it; the matching completion
-	// reports the same id, which is what lets the host attribute completions
-	// to the navigation that caused them (decisions/0021). A redirect fires
-	// this again with the same id and isRedirected set. Returning true cancels
-	// the navigation - the runtime abandons it and the current document stays;
-	// that is the navigation-cancel gate (decisions/0023).
-	NavigationStartingCallback func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool
-	// NavigationCancelledCallback fires after a navigation the callback above
-	// asked to cancel has actually been cancelled - put_Cancel returned success.
-	// It is where a host commits to the cancel: remembering the id so the
-	// resulting completion is not read as a load failure, and handing the target
-	// somewhere else. Doing that work from the callback above instead would
-	// commit to a cancel that may not have taken, which is issue #73: the
-	// document loads anyway, the target opens twice, and the completion of a
-	// navigation that succeeded is consumed as though it had been abandoned.
-	// The split mirrors the PutHandled guard on NewWindowRequested
-	// (decisions/0022), which has always worked this way.
-	NavigationCancelledCallback func(uri string, navigationID uint64, isUserInitiated bool)
-	NavigationCompletedCallback func(success bool, status WebErrorStatus, navigationID uint64)
-	ProcessFailedCallback       func(kind ProcessFailedKind)
-	// NewWindowRequestedCallback fires when content asks for a new window
-	// (window.open, a target=_blank link). The runtime's default new window is
-	// always suppressed first; the host decides what to do with the URI - a
-	// single-window host routes it to the system browser (issue #6). isUserInitiated
-	// counts host-API-driven opens as true too, as with navigation starting.
-	NewWindowRequestedCallback func(uri string, isUserInitiated bool)
+	// Returning true asks the adapter to cancel the navigation.
+	NavigationStartingCallback func(NavigationStartingObservation) bool
+	// NavigationCancelledCallback fires only after put_Cancel succeeds.
+	NavigationCancelledCallback func(NavigationStartingObservation)
+	NavigationCompletedCallback func(NavigationCompletedObservation)
+	ProcessFailedCallback       func(ProcessFailedObservation)
+	// NewWindowRequestedCallback fires after the runtime's default new window
+	// has been successfully suppressed.
+	NewWindowRequestedCallback func(NewWindowRequestedObservation)
 	ErrorCallback              func(err error)
 	// WarningCallback receives conditions the browser tolerates by design - an
 	// older runtime answering E_NOINTERFACE for an optional interface - as
@@ -84,6 +104,9 @@ type Browser struct {
 // New returns an unembedded Browser.
 func New() *Browser { return &Browser{} }
 
+// reportError is for terminal failures with no error return path: event adapter
+// failures and secondary teardown. A Browser method that returns an error must
+// return it without calling this; the host owns the one contextual report.
 func (browser *Browser) reportError(err error) {
 	if err != nil && browser.ErrorCallback != nil {
 		browser.ErrorCallback(err)
@@ -105,20 +128,17 @@ func (browser *Browser) reportWarning(err error) {
 func (browser *Browser) Embed(parent uintptr) error {
 	userData, err := browser.userDataFolder()
 	if err != nil {
-		browser.reportError(err)
 		return err
 	}
 
 	environment, err := CreateEnvironment(userData, browser.AdditionalBrowserArguments)
 	if err != nil {
-		browser.reportError(err)
 		return err
 	}
 
 	controllerUnknown, err := environment.CreateController(windows.Handle(parent))
 	if err != nil {
 		environment.Release()
-		browser.reportError(err)
 		return err
 	}
 
@@ -131,13 +151,13 @@ func (browser *Browser) Embed(parent uintptr) error {
 	if err != nil {
 		// CreateController handed us an owned reference. Close and release it
 		// before bailing, or it is orphaned: browser.controller is not assigned
-		// until below, so ShuttingDown could never reclaim it.
+		// until below, so ShuttingDown could never reclaim it. Close failure is
+		// secondary and cannot be returned without hiding the primary failure.
 		if closeErr := controller.Close(); closeErr != nil {
-			browser.reportError(closeErr)
+			browser.reportError(errors.Join(errors.New("close controller after GetCoreWebView2 failure"), closeErr))
 		}
 		asUnknown(controller).Release()
 		environment.Release()
-		browser.reportError(err)
 		return err
 	}
 
@@ -168,7 +188,6 @@ func (browser *Browser) Embed(parent uintptr) error {
 // "a registration failure tears the browser down" is checkable headlessly.
 func (browser *Browser) registerEventsOrTearDown(register func() error) error {
 	if err := register(); err != nil {
-		browser.reportError(err)
 		browser.ShuttingDown()
 		return err
 	}

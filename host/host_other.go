@@ -9,13 +9,17 @@ package host
 // Every method is present and every signature matches the Windows build - see
 // api_contract.go, which enforces that at compile time.
 type Host struct {
-	config Config
+	config    Config
+	source    sourcePlan
+	sourceErr error
 }
 
 // New prepares a host. On this platform the host cannot open a window; Run
 // reports ErrUnsupportedPlatform.
 func New(config Config) *Host {
-	return &Host{config: config.normalise()}
+	normalised := config.normalise()
+	source, sourceErr := buildSourcePlan(normalised)
+	return &Host{config: normalised, source: source, sourceErr: sourceErr}
 }
 
 // Run reports ErrUnsupportedPlatform. Check with errors.Is.

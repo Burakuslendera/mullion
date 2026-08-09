@@ -87,9 +87,7 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 			name:    "a failure while the surface is on screen re-arms and warns",
 			newHost: newSurfaceHost,
 			preamble: func(t *testing.T, host *Host) {
-				if !noteFail(host, 0) {
-					t.Fatal("the arming failure must ask for the surface to be shown")
-				}
+				armAndClaim(t, host, 0, 0)
 				if noteOK(host, 0) {
 					t.Fatal("the surface's own load must not trigger another navigation")
 				}
@@ -105,7 +103,7 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 			name:    "an abort mullion served itself is expected and handled",
 			newHost: func(t *testing.T) (*Host, *captureLogger) { return newTestHost(t, Config{}) },
 			preamble: func(t *testing.T, host *Host) {
-				host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3)
+				host.noteAndGateNavigation(host.source.origin.text+"/index.html?in=1", 3)
 			},
 			complete: func(host *Host) bool { return noteFail(host, 3) },
 			want:     "level=DEBUG msg=mullion: navigation aborted, not arming the error surface, status=9, id=3",
@@ -141,16 +139,17 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 				if !noteFail(host, 0) {
 					t.Fatal("the arming failure must ask for the surface to be shown")
 				}
+				issueCurrentErrorSurface(t, host)
 			},
 			complete: func(host *Host) bool { return noteFail(host, 0) },
-			want:     "level=WARN msg=mullion: unattributed navigation failure absorbed while the error surface loads, status=9, id=0",
+			want:     "level=WARN msg=mullion: unattributed navigation failure absorbed while the error surface loads, status=9, id=unavailable",
 		},
 		{
 			// The unattributed absorb is reachable with an identified
-			// completion: the surface's own start was claimed under an id the
-			// runtime could not supply, so nothing later can be attributed
-			// against it. This is why the word "unattributed" carries the
-			// distinction and the id cannot.
+			// completion: the surface's own start was observed with id zero,
+			// which is provenance but not an exact identity, so nothing later
+			// can be attributed against it. This is why the word
+			// "unattributed" carries the distinction and the id cannot.
 			name:    "an unattributable absorb says so even when the completion has an id",
 			newHost: newSurfaceHost,
 			preamble: func(t *testing.T, host *Host) {
@@ -158,6 +157,7 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 				if !noteFail(host, 0) {
 					t.Fatal("the arming failure must ask for the surface to be shown")
 				}
+				issueCurrentErrorSurface(t, host)
 				if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 0) {
 					t.Fatal("the surface's own start must be claimed, id or no id")
 				}
@@ -183,6 +183,7 @@ func TestNavigationFailureIsReportedOnceAtItsClassifiedLevel(t *testing.T) {
 				if !noteFail(host, 0) {
 					t.Fatal("the arming failure must ask for the surface to be shown")
 				}
+				issueCurrentErrorSurface(t, host)
 			},
 			complete: func(host *Host) bool { return noteOK(host, 0) },
 		},
@@ -276,7 +277,7 @@ func TestSuppressedAbortsDoNotInflateSessionWarnCount(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 
 	for id := uint64(1); id <= 6; id++ {
-		host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", id)
+		host.noteAndGateNavigation(host.source.origin.text+"/index.html?in=1", id)
 		if noteFail(host, id) {
 			t.Fatalf("suppressed abort %d asked for the fallback surface", id)
 		}

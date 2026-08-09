@@ -4,9 +4,12 @@ package webview2
 
 import (
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // Lifetime tests for the loader's completion handlers. The first is about the
@@ -17,19 +20,162 @@ import (
 // - invoked is exactly what the runtime's Invoke trampoline calls - against fake
 // IUnknowns, so no WebView2 runtime and no window are involved.
 
+func TestCompletionVtblLayout(t *testing.T) {
+	var v completionVtbl
+	checkVtbl(t, "completionVtbl", unsafe.Sizeof(v), 4, []slot{
+		{"QueryInterface", unsafe.Offsetof(v.QueryInterface), 0},
+		{"AddRef", unsafe.Offsetof(v.AddRef), 1},
+		{"Release", unsafe.Offsetof(v.Release), 2},
+		{"Invoke", unsafe.Offsetof(v.Invoke), 3},
+	})
+}
+
+func TestCompletedHandlerObjectStartsWithItsVtable(t *testing.T) {
+	var object completedHandler
+	var server comServer
+	if got := unsafe.Offsetof(object.server); got != 0 {
+		t.Fatalf("completedHandler.server offset = %d, want 0", got)
+	}
+	if got := unsafe.Offsetof(server.vtbl); got != 0 {
+		t.Fatalf("comServer.vtbl offset = %d, want 0", got)
+	}
+}
+
+func TestCompletionConstructorsRegisterSemanticIID(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		new  func() *completedHandler
+		iid  windows.GUID
+	}{
+		{"environment", newEnvironmentCompletedHandler, iidEnvironmentCompletedHandler},
+		{"controller", newControllerCompletedHandler, iidControllerCompletedHandler},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := tc.new()
+			defer handler.release()
+			server := serverFor(handler.this)
+			if server == nil {
+				t.Fatal("completion handler was not registered")
+			}
+			if server.vtbl != uintptr(unsafe.Pointer(&completedVtable)) {
+				t.Errorf("vtable = %#x, want shared completion vtable %#x", server.vtbl, uintptr(unsafe.Pointer(&completedVtable)))
+			}
+			if server.iid != tc.iid {
+				t.Errorf("IID = %+v, want %+v", server.iid, tc.iid)
+			}
+		})
+	}
+}
+
+func TestCompletionQueryInterfaceArgumentsAndRefcount(t *testing.T) {
+	handler := newEnvironmentCompletedHandler()
+	defer handler.release()
+	server := serverFor(handler.this)
+	if server == nil {
+		t.Fatal("completion handler was not registered")
+	}
+	unknown := (*IUnknown)(unsafe.Pointer(handler))
+
+	for _, iid := range []windows.GUID{IIDIUnknown, iidEnvironmentCompletedHandler} {
+		pointer, err := unknown.QueryInterface(&iid)
+		if err != nil {
+			t.Fatalf("QueryInterface(%s): %v", iid.String(), err)
+		}
+		if uintptr(pointer) != handler.this {
+			t.Errorf("QueryInterface(%s) returned %#x, want %#x", iid.String(), uintptr(pointer), handler.this)
+		}
+		unknown.Release()
+	}
+	unsupported := windows.GUID{Data1: 0xdeadbeef}
+	if pointer, err := unknown.QueryInterface(&unsupported); err == nil || pointer != nil {
+		t.Fatalf("QueryInterface(unsupported) = %p, %v; want nil, error", pointer, err)
+	}
+
+	before := atomic.LoadInt32(&server.refs)
+	var out uintptr = 1
+	if hr := callCOMSlot(
+		unsafe.Pointer(&completedVtable),
+		0,
+		handler.this,
+		0,
+		uintptr(unsafe.Pointer(&out)),
+	); hr != ePointer {
+		t.Errorf("QueryInterface(null IID) = %#x, want E_POINTER", hr)
+	}
+	if out != 0 {
+		t.Errorf("QueryInterface(null IID) wrote %#x, want null", out)
+	}
+	if hr := callCOMSlot(
+		unsafe.Pointer(&completedVtable),
+		0,
+		handler.this,
+		uintptr(unsafe.Pointer(&IIDIUnknown)),
+		0,
+	); hr != ePointer {
+		t.Errorf("QueryInterface(null out) = %#x, want E_POINTER", hr)
+	}
+	if got := atomic.LoadInt32(&server.refs); got != before {
+		t.Errorf("refcount after invalid QueryInterface calls = %d, want %d", got, before)
+	}
+	if got := unknown.AddRef(); got != 2 {
+		t.Fatalf("AddRef = %d, want 2", got)
+	}
+	if got := unknown.Release(); got != 1 {
+		t.Fatalf("Release = %d, want 1", got)
+	}
+}
+
+func TestCompletionInvokeDispatchesAtLiteralSlotThree(t *testing.T) {
+	handler := newTestCompletedHandler(t)
+	object, state := newFakeUnknown(t)
+
+	if hr := callCOMSlot(
+		unsafe.Pointer(&completedVtable),
+		3,
+		handler.this,
+		sOK,
+		uintptr(unsafe.Pointer(object)),
+	); hr != sOK {
+		t.Fatalf("slot 3 (Invoke) = %#x, want S_OK", hr)
+	}
+	result := <-handler.done
+	if result.result != object {
+		t.Fatalf("slot 3 delivered %p, want %p", result.result, object)
+	}
+	if state.addRefs != 1 {
+		t.Fatalf("slot 3 AddRefs = %d, want 1", state.addRefs)
+	}
+	result.result.Release()
+	runtime.KeepAlive(object)
+}
+
+func TestCompletionInvokeHandlesNullArguments(t *testing.T) {
+	handler := newTestCompletedHandler(t)
+	if hr := callCOMSlot(unsafe.Pointer(&completedVtable), 3, handler.this, sOK, 0); hr != sOK {
+		t.Fatalf("slot 3 (Invoke, null result) = %#x, want S_OK", hr)
+	}
+	result := <-handler.done
+	if result.result != nil {
+		t.Fatalf("slot 3 (Invoke, null result) delivered %p, want nil", result.result)
+	}
+	if _, err := completionResult(result, "controller"); err == nil {
+		t.Fatal("null result reported with S_OK must be rejected")
+	}
+	if hr := callCOMSlot(unsafe.Pointer(&completedVtable), 3, 0, sOK, 0); hr != eFail {
+		t.Fatalf("slot 3 (Invoke, null this) = %#x, want E_FAIL", hr)
+	}
+}
+
 func newTestCompletedHandler(t *testing.T) *completedHandler {
 	t.Helper()
-	handler := newCompletedHandler(uintptr(unsafe.Pointer(&completedVtable)), iidControllerCompletedHandler)
+	handler := newControllerCompletedHandler()
 	t.Cleanup(handler.release)
 	return handler
 }
 
 func TestCompletedHandlerIsReleasedNotLeaked(t *testing.T) {
 	before := liveServerCount()
-	handler := newCompletedHandler(
-		uintptr(unsafe.Pointer(&completedVtable)),
-		iidEnvironmentCompletedHandler,
-	)
+	handler := newEnvironmentCompletedHandler()
 	if liveServerCount() != before+1 {
 		t.Fatal("the handler was not registered")
 	}

@@ -1,6 +1,6 @@
 # 0014. The injected bridge acts only on messages from the trusted origin
 
-**Status:** Accepted; both halves of the follow-up landed - new-window routing as [0022](./0022-new-windows-to-system-browser.md), the opt-in navigation-cancel gate as [0023](./0023-navigation-cancel-gate.md)
+**Status:** Accepted; both halves of the follow-up landed - new-window routing as [0022](./0022-new-windows-to-system-browser.md), the opt-in navigation-cancel gate as [0023](./0023-navigation-cancel-gate.md); fallback source authority is refined by [0037](./0037-event-values-preserve-getter-provenance.md)
 
 ## Context
 
@@ -115,4 +115,4 @@ Node's built-in `vm` and locks complete diagnostic forwarding. Issue #6 carries
 the original origin-gate analysis and reproduction reasoning; issue #88 carries
 the fallback evidence-retention follow-up.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document top-level-only message receipt, restrict fallback methods to caption/drag/resize, and preserve application watchdog evidence.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: route fallback source authority forward to 0037 without rewriting this historical decision.

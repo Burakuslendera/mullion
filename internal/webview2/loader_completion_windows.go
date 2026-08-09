@@ -9,14 +9,16 @@ package webview2
 import (
 	"fmt"
 	"sync"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
-// The IIDs below are the two callback interfaces we implement. They are
-// taken from the WebView2 SDK's WebView2.h (MIDL_INTERFACE declarations),
-// which is the authoritative source: an interface ID is an identity, and a
-// wrong one means the runtime silently refuses to call us back.
+// The IIDs below are the two callback interfaces we implement. They are taken
+// from Microsoft.Web.WebView2 SDK 1.0.4129.50
+// build/native/include/WebView2.h (MIDL_INTERFACE declarations), which is the
+// authoritative source: an interface ID is an identity, and a wrong one means
+// the runtime silently refuses to call us back.
 var (
 	// ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
 	iidEnvironmentCompletedHandler = windows.GUID{
@@ -30,6 +32,9 @@ var (
 	}
 )
 
+// completionVtbl is IUnknown plus Invoke at literal slot 3. WebView2 dispatches
+// through that numeric slot; layout tests pin the offset and the completion
+// dispatch test calls slot 3 rather than mirroring this field name.
 type completionVtbl struct {
 	IUnknownVtbl
 	Invoke ComProc
@@ -57,11 +62,20 @@ type completedHandler struct {
 
 // completedVtable is shared by both completion handlers. ensureCOMVtables
 // builds it once, after runtime discovery has accepted the process architecture.
-// The handlers differ only in the IID registered below.
+// The semantic constructors below own the vtable/IID pairing; their private
+// helper only contains the common allocation and registration plumbing.
 // completedVtable's storage lives in comserver_windows.go with the other shared
 // callback tables.
 
-func newCompletedHandler(vtable uintptr, iid windows.GUID) *completedHandler {
+func newEnvironmentCompletedHandler() *completedHandler {
+	return newCompletedHandler(iidEnvironmentCompletedHandler)
+}
+
+func newControllerCompletedHandler() *completedHandler {
+	return newCompletedHandler(iidControllerCompletedHandler)
+}
+
+func newCompletedHandler(iid windows.GUID) *completedHandler {
 	if !ensureCOMVtables() {
 		return nil
 	}
@@ -69,7 +83,7 @@ func newCompletedHandler(vtable uintptr, iid windows.GUID) *completedHandler {
 	// own message pump: a send that blocked would deadlock the thread that is
 	// supposed to receive it.
 	handler := &completedHandler{done: make(chan completion, 1)}
-	handler.this = handler.server.register(vtable, iid, handler)
+	handler.this = handler.server.register(uintptr(unsafe.Pointer(&completedVtable)), iid, handler)
 	return handler
 }
 

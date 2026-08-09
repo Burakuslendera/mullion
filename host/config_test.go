@@ -102,16 +102,16 @@ func TestConfigRejectsInvalidJSNamespace(t *testing.T) {
 	}
 }
 
-// TestConfigOriginIsSingleSource locks the fix for a latent bug in the code this
-// package grew out of: the navigation target and the asset allow-list were two
-// separate literals, so changing one silently 403'd every asset.
 func TestConfigOriginIsSingleSource(t *testing.T) {
-	config := Config{VirtualHost: "acme.internal"}.normalise()
-	if config.origin() != "https://acme.internal" {
-		t.Fatalf("origin() = %q", config.origin())
+	plan, err := buildSourcePlan(Config{VirtualHost: "Acme.Internal"}.normalise())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if config.startURL() != "https://acme.internal/index.html" {
-		t.Fatalf("startURL() = %q", config.startURL())
+	if plan.origin.text != "https://acme.internal" {
+		t.Fatalf("origin = %q", plan.origin.text)
+	}
+	if plan.startURL != "https://acme.internal/index.html" || plan.filterPattern != "https://acme.internal/*" {
+		t.Fatalf("source wiring = start %q, filter %q", plan.startURL, plan.filterPattern)
 	}
 }
 

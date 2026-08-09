@@ -57,10 +57,10 @@ func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 // noteNavigationCancelled's, and runs only once the runtime has confirmed the
 // cancel (issue #73, decisions/0027). What it decides is the same containment as
 // NewWindowRequested (issue #6, decisions/0023). With the gate off (the default)
-// navigationOffOrigin is false for every uri, so this returns false and cancels
-// nothing.
+// sourcePlan.navigationOffOrigin is false for every uri, so this returns false
+// and cancels nothing.
 func (host *Host) shouldCancelNavigation(uri string) bool {
-	return host.config.navigationOffOrigin(uri)
+	return host.source.navigationOffOrigin(uri, host.config.PinNavigationToOrigin)
 }
 
 // noteNavigationCancelled commits to a cancel the runtime has confirmed: it
@@ -82,11 +82,23 @@ func (host *Host) shouldCancelNavigation(uri string) bool {
 // navigation, and nothing downstream can tell. It is the one drop worth a
 // warning; the webview2 layer reports the underlying getter failure alongside it.
 func (host *Host) noteNavigationCancelled(uri string, navigationID uint64, isUserInitiated bool) {
-	host.rememberCancelledNavigation(navigationID)
+	host.noteNavigationCancelledObserved(
+		uri,
+		knownNavigationIdentity(navigationID),
+		isUserInitiated,
+	)
+}
+
+func (host *Host) noteNavigationCancelledObserved(
+	uri string,
+	identity navigationIdentity,
+	isUserInitiated bool,
+) {
+	host.rememberCancelledNavigationObserved(identity)
 	switch {
 	case uri == "":
-		host.log.Warn("mullion: navigation cancelled off origin, target unreadable, id=" +
-			formatUint64(navigationID))
+		host.log.Warn("mullion: navigation cancelled off origin, target unreadable, " +
+			navigationIdentityField(identity))
 	case isExternalBrowserSafe(uri):
 		host.log.Debug("mullion: navigation cancelled off origin, routed to system browser, user_initiated=" +
 			strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.URL(uri))

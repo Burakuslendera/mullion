@@ -83,6 +83,30 @@ func TestIdlessCancelIsStillRecognised(t *testing.T) {
 	}
 }
 
+func TestKnownZeroAndUnavailableCancelCreditsDoNotCrossMatch(t *testing.T) {
+	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+	host.rememberCancelledNavigationObserved(navigationIdentity{})
+
+	if host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 0) {
+		t.Fatal("known-zero completion spent an unavailable-id cancellation credit")
+	}
+	if host.cancelledNavAnonymous != 1 || host.cancelledNavUnknown != 1 {
+		t.Fatalf("mismatched completion changed anonymous ledger: total=%d unknown=%d",
+			host.cancelledNavAnonymous, host.cancelledNavUnknown)
+	}
+	if !host.noteGateCancelledOutcomeObserved(
+		false,
+		webview2.WebErrorStatusOperationCanceled,
+		navigationIdentity{},
+	) {
+		t.Fatal("unavailable-id completion did not spend its own credit")
+	}
+	if host.cancelledNavAnonymous != 0 || host.cancelledNavUnknown != 0 {
+		t.Fatalf("matched completion did not drain anonymous ledger: total=%d unknown=%d",
+			host.cancelledNavAnonymous, host.cancelledNavUnknown)
+	}
+}
+
 // Without an id the only evidence is the status, so the id-less branch is
 // narrowed to the one a cancel is documented to produce. An ordinary failure
 // with no id is a real failure and must still reach the machine - the fallback

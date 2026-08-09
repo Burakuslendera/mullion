@@ -244,8 +244,8 @@ func TestHandlerRefcountLifecycle(t *testing.T) {
 }
 
 // Invoke must reach the Go callback with the arguments typed, and report S_OK.
-// Calling straight through the vtable is exactly what the runtime does, so this
-// exercises the real windows.NewCallback trampoline without a browser.
+// Use literal slot 3 rather than the Invoke field name: the latter would follow
+// a reordered declaration and let the ABI regression stay green.
 func TestHandlerInvokeDispatch(t *testing.T) {
 	var called int
 	var gotSender *ICoreWebView2
@@ -258,7 +258,7 @@ func TestHandlerInvokeDispatch(t *testing.T) {
 	})
 	defer ReleaseHandler(handler)
 
-	hr, _, _ := eventHandlerVtable.Invoke.Call(uintptr(handler), 0, 0)
+	hr := callCOMSlot(unsafe.Pointer(&eventHandlerVtable), 3, uintptr(handler), 0, 0)
 	if hr != sOK {
 		t.Errorf("Invoke = %#x, want S_OK", hr)
 	}

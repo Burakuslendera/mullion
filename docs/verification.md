@@ -60,18 +60,18 @@ every method after it, and the result is not `E_NOINTERFACE` — it is a call th
 the wrong function pointer, i.e. a crash or memory corruption inside the browser
 process, at the point of first use. **A green build proves nothing about a vtable.**
 
-The gate is therefore a test, and it must stay one:
-
-- Every vtable's slot offsets are pinned with `unsafe.Offsetof`, every interface ID is
-  pinned byte for byte, and the settings chain's total slot count (39) is asserted
-  against the sum of its links. Change a struct in any of the `interfaces_*` files and the test
-  tells you immediately; ship it untested and the user finds out.
-- These tests need **no WebView2 runtime and no window** — they are assertions about
-  struct layout — so they run in the same headless suite as everything else. Keep them
-  there.
-- The reference for any change is Microsoft's MIDL-generated `WebView2.h` / `WebView2.idl`
-  from the SDK package. **The MS Learn reference pages list members alphabetically and
-  must never be used to derive an ABI.**
+The default gate stays headless and deterministic:
+- Runtime-owned manifests pin every flattened vtable slot/size; canonical-string
+  tests pin every declared IID literal. Go-owned handler, environment-options and
+  completion manifests call each runtime-facing entry point by numeric slot.
+- `TestCOMABIInventoryCompleteness` fails on an unclassified production vtable,
+  COM object representation or GUID literal. It is a completeness alarm; the
+  layout/identity/dispatch tests prove the classified entries.
+- The authority is Microsoft.Web.WebView2 NuGet `1.0.4129.50`:
+  `build/native/include/WebView2.h` for C vtable order and root `WebView2.idl`
+  for UUIDs/declaration order. Alphabetised Learn pages are not ABI evidence.
+- None of these checks needs a WebView2 runtime or window. Do not add a runtime
+  smoke to the default suite; live execution remains the separate acceptance gate.
 
 ### The test suite is headless — keep it that way
 
@@ -386,15 +386,15 @@ The environment a frame bug report needs and the reporting contract live in
 [bug-reports.md](./bug-reports.md); they moved when this file reached its limit.
 
 ## 7. 2026-08-06 verification records
-
-- **Automated:** formatting, build, vet, `-unsafeptr`, uncached full tests, both diagnostic-tag build/test pairs, bridge VM, leak scan, Windows/386 production gates, and Linux/amd64 plus Windows/386/ARM64 builds passed. GitHub Actions run `31060250331` passed all four Go 1.24/stable Windows/portable jobs; both Windows jobs passed `go test -count=1 -race ./...`, including the render-watchdog generation repair exposed by the preceding CI run.
-- **A/B:** restoring the teardown wait, pre-gate DPI call, eager backdrop callback, post-reduction URL displacement, disconnected production message callback, or the render watchdog's callback-before-identity assignment made its named regression or race check fail; each repaired version passed.
-- **Live:** `mullion doctor` found WebView2 151.0.4129.59; `examples/basic` reached shell-ready, window-visible, application `Ping`, navigation-completed and frontend-ready with zero session warnings/errors on the two-monitor 125%/100% setup.
-- **Not covered:** the final smoke was process-stopped after readiness rather than closed through the UI; the manual snap/resize/DPI checklist was not repeated. Local `go test -race ./...` could not build because `gcc` is absent; the two Windows CI race lanes passed instead.
-- **`unverified`:** Windows/ARM64 remains compile-only by decision 0034, and physical HWND-value recycling was not forced live; the headless token/HWND adversaries cover both identity halves.
-- **Issues #96/#120 automated:** Go 1.24 and current-toolchain focused tests, formatting, build, vet, uncached full tests, bridge VM, both diagnostic-tag build/test pairs, Linux/amd64 and Windows/amd64/386/ARM64 gates, and leak scan passed. GitHub Actions run `31101143512` passed all four Go 1.24/stable Windows/portable jobs, including `-race` in both Windows jobs.
-- **Issues #96/#120 A/B:** replacing the call-site pointer conversion with a precomputed `uintptr` made `TestNewMemoryStreamPinsContentAtSyscallBoundary` fail; removing the `UINT` bound made `TestSHCreateMemStreamSizeRejectsValuesOutsideUINT/one_past_UINT` fail. Restoring each repair made both tests pass, and the compiler-safe direct backdrop defer left both focused packages green, on Go 1.24 and the current toolchain.
-- **Issues #96/#120 live:** `mullion doctor` found WebView2 151.0.4129.59. `examples/basic` served all three embedded assets, completed `Ping`, navigation and frontend readiness with zero warnings/errors, and a live capture showed the rendered restored window.
-- **Issues #96/#120 not covered:** local `-race` could not build because `gcc` is absent; CI supplied both Windows race runs. The demo was process-stopped after readiness rather than closed through the UI; no frame/snap/DPI behaviour changed, so that manual checklist was not repeated.
-- **Issues #96/#120 `unverified`:** a real 4-GiB asset was not allocated or requested; the rejection is proved at the scalar size boundary without reaching Win32.
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: lock issues #96 and #120 at the headless compiler and native-width boundaries while keeping Win32 entry points out of the test suite.
+- **Earlier P0 automated/A/B:** formatting, build, vet, `-unsafeptr`, uncached tests, diagnostic tags, bridge VM, leak scan, Windows/386 gates and portable builds passed; GitHub Actions `31060250331` passed Go 1.24/stable and both race lanes. Restoring the teardown wait, pre-gate DPI call, eager backdrop callback, post-reduction URL displacement, disconnected message callback or pre-fix watchdog ordering made its named check fail.
+- **Earlier P0 live:** WebView2 151.0.4129.59 reached shell-ready, visible, `Ping`, navigation-completed and frontend-ready with zero warnings/errors on 125%/100% monitors.
+- **Earlier P0 not covered / `unverified`:** the process was stopped rather than UI-closed; snap/resize/DPI was not repeated; local race lacked `gcc` but CI covered it; Windows/ARM64 stayed compile-only and physical `HWND` recycling was not forced.
+- **Issues #96/#120 automated/A/B:** Go 1.24/current focused and full gates, diagnostic tags, bridge VM, portable builds and leak scan passed; Actions `31101143512` passed all jobs/race lanes. Reintroducing the precomputed `uintptr` or removing the `UINT` bound made its named regression fail.
+- **Issues #96/#120 live:** WebView2 151.0.4129.59 served three assets and reached `Ping`, navigation and readiness with zero warnings/errors; a capture showed the rendered restored window.
+- **Issues #96/#120 not covered / `unverified`:** local race lacked `gcc`; the demo was process-stopped; frame checks were unchanged; a real 4-GiB asset was not allocated, so only the scalar Win32 boundary was exercised.
+- **Issues #86/#104/#110 automated:** Go 1.24 and current uncached suites, formatting, build, vet, both diagnostic-tag pairs, bridge VM, 100 repeated environment-options numeric-slot calls, Linux/amd64 and Windows/amd64/386/ARM64 gates, and the leak scan passed.
+- **Issues #86/#104/#110 A/B:** removing the current-plan guard let a stale outer completion call `Navigate`; collapsing unavailable navigation IDs into known zero broke both production provenance tests; removing the exact `startURL` capability cancelled the credentialed initial navigation. Each named regression failed. Earlier, initial-start disarm broke visible-page abort restoration until suspension became departure-scoped, and removing `//go:uintptrescapes` made the numeric-slot harness fail 3/20 runs while the repaired harness passed 100/100.
+- **Issues #86/#104/#110 live:** `mullion doctor` found WebView2 151.0.4129.72 and its direct export; `examples/basic` registered the canonical embedded filter before scripts/navigation, served all three assets, completed `Ping`, navigation and readiness with zero warnings/errors, and a capture showed the restored shell on the current 1920x1080 125% single-monitor setup.
+- **Issues #86/#104/#110 not covered:** local `-race` could not build because `gcc` is absent; failed event getters and filter-registration failure remain deterministic fault-seam tests; the demo was process-stopped rather than UI-closed and the frame/snap/DPI checklist was not repeated.
+- **Issues #86/#104/#110 `unverified`:** the runtime's empty-source representation for a fallback `data:` document and its NavigationStarting URI for a credentialed `Config.URL` were not observed live (partial credential/path rewriting would fail closed); fault getters were not injected into a live runtime, and Windows/ARM64 remains compile-only by decision 0034.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: record source-plan, event-provenance, single-reporting and Go-owned ABI verification with explicit live gaps.

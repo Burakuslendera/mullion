@@ -32,7 +32,7 @@ func TestErrorSurfaceAbortDoesNotArmWhenAssetsAreServedInProcess(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 	// The start the completion below belongs to - issue #72's sequence. The gate
 	// is off in this config, so this only records the target.
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html?in=1", 3)
+	host.noteAndGateNavigation(host.source.origin.text+"/index.html?in=1", 3)
 
 	if noteFail(host, 3) {
 		t.Fatal("an aborted navigation must not ask for the fallback surface when mullion serves the assets itself")
@@ -53,13 +53,13 @@ func TestErrorSurfaceAbortStillArmsWhenTheCallerServesTheURL(t *testing.T) {
 	host, _ := newSurfaceHost(t)
 	// The start has to be recorded, or the exemption is refused on the id and
 	// this test would pass with the mode condition deleted.
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3)
+	host.noteAndGateNavigation(host.source.origin.text+"/index.html", 3)
 
 	if !noteFail(host, 3) {
 		t.Fatal("an aborted navigation against a caller-served URL must still show the fallback surface")
 	}
-	if !host.errorSurfaceMessageAllowed("") {
-		t.Fatal("the arming must admit the empty source the surface posts from")
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("arming must remain pending until the surface start is claimed")
 	}
 }
 
@@ -69,7 +69,7 @@ func TestErrorSurfaceOtherFailuresStillArmInProcess(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	// Recorded so this reaches the status check: without a start the exemption
 	// is refused on the id and the assertion below would hold either way.
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3)
+	host.noteAndGateNavigation(host.source.origin.text+"/index.html", 3)
 
 	if !host.noteNavigationOutcome(false, statusNone, 3) {
 		t.Fatal("only an abort is benign in process; another failure must still arm")
@@ -102,8 +102,8 @@ func TestErrorSurfaceAbortOffOriginStillArms(t *testing.T) {
 	if !noteFail(host, 3) {
 		t.Fatal("an aborted off-origin navigation must still show the fallback surface")
 	}
-	if !host.errorSurfaceMessageAllowed("") {
-		t.Fatal("the arming must admit the empty source the surface posts from")
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("arming must remain pending until the surface start is claimed")
 	}
 }
 
@@ -112,8 +112,8 @@ func TestErrorSurfaceAbortOffOriginStillArms(t *testing.T) {
 // *it* was going - so it falls through and arms, the safe direction.
 func TestErrorSurfaceAbortWithAStaleIdStillArms(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/a.html", 3)
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/b.html", 4)
+	host.noteAndGateNavigation(host.source.origin.text+"/a.html", 3)
+	host.noteAndGateNavigation(host.source.origin.text+"/b.html", 4)
 
 	if !noteFail(host, 3) {
 		t.Fatal("an abort whose id is not the last start's must arm")
@@ -125,9 +125,9 @@ func TestErrorSurfaceAbortWithAStaleIdStillArms(t *testing.T) {
 //
 // This comment used to claim the test catches a widening of the abort exemption
 // into noteSurfaceOwnOutcome. It does not, and the audit behind decisions/0026
-// measured it: no start is recorded here, so host.navStartID is 0 while the
-// completion carries id 5, and benignAbort refuses on the id before the status
-// is ever consulted - the inserted branch is dead in this test and the suite
+// measured it: no start identity is recorded here while the completion carries
+// known id 5, and benignAbort refuses before the status is ever consulted - the
+// inserted branch is dead in this test and the suite
 // stays green. What actually makes that widening harmless is a property of the
 // surface, not of this test: errorPageURL is always a data: URL, and the seal is
 // only reachable once noteSurfaceNavigationStarting claimed a start matching it,
@@ -140,6 +140,7 @@ func TestErrorSurfaceSealsInProcessToo(t *testing.T) {
 	if !host.noteNavigationOutcome(false, statusNone, 5) {
 		t.Fatal("the arming failure must ask for the surface to be shown")
 	}
+	issueCurrentErrorSurface(t, host)
 	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 6) {
 		t.Fatal("the surface's own start must be claimed")
 	}
@@ -155,16 +156,17 @@ func TestErrorSurfaceSealsInProcessToo(t *testing.T) {
 	}
 }
 
-// The suppression is a no-op besides its log line, and that has to stay true:
-// the surface itself can be on screen when an abort arrives - its Retry aborting
-// is exactly issue #72's loop - and dropping the admission there would kill the
-// visible surface's caption buttons, which is the issue #56 symptom.
+// A Retry start suspends controls while its destination is unresolved, then a
+// positively classified benign abort restores them because the fallback remains
+// the visible document. Restoring at start would admit the departing document;
+// never restoring would leave the visible surface's caption buttons dead.
 func TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	host.errorSurfaceURL = "data:text/html,surface"
 	if !host.noteNavigationOutcome(false, statusNone, 1) {
 		t.Fatal("the arming failure must ask for the surface to be shown")
 	}
+	issueCurrentErrorSurface(t, host)
 	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 2) {
 		t.Fatal("the surface's own start must be claimed")
 	}
@@ -173,12 +175,97 @@ func TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted(t *testing.T) {
 	}
 
 	// The surface is the document on screen. Its Retry aborts in process.
-	host.noteAndGateNavigation(host.config.trustedOrigin()+"/index.html", 3)
+	host.noteAndGateNavigation(host.source.origin.text+"/index.html", 3)
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the Retry start kept controls live before its completion classified the departure")
+	}
+	if !host.errorSurfaceSuspended {
+		t.Fatal("the Retry start did not preserve a restorable visible-surface suspension")
+	}
 	if noteFail(host, 3) {
 		t.Fatal("the aborted Retry must not re-navigate")
 	}
 	if !host.errorSurfaceMessageAllowed("") {
 		t.Fatal("the visible surface must keep its admission, or its caption buttons go dead")
+	}
+}
+
+func TestGateCancelledDepartureRestoresVisibleSurfaceAdmission(t *testing.T) {
+	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+	host.errorSurfaceURL = "data:text/html,surface"
+	if !host.noteNavigationOutcome(false, statusNone, 1) {
+		t.Fatal("the arming failure must ask for the surface to be shown")
+	}
+	issueCurrentErrorSurface(t, host)
+	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 2) {
+		t.Fatal("the surface's own start must be claimed")
+	}
+	noteOK(host, 2)
+
+	if !cancelNavigation(host, "https://evil.example/", 7, true) {
+		t.Fatal("the foreign departure was not cancelled")
+	}
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("the cancelled departure kept controls live before confirmation")
+	}
+	if !host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 7) {
+		t.Fatal("the confirmed cancellation was not consumed")
+	}
+	if !host.errorSurfaceMessageAllowed("") {
+		t.Fatal("confirmed cancellation did not restore the still-visible surface")
+	}
+}
+
+func TestOlderCancelledDepartureCannotRestoreNewerSuspension(t *testing.T) {
+	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
+	host.noteNavigationOutcome(false, statusNone, 1)
+	issueCurrentErrorSurface(t, host)
+	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 2) {
+		t.Fatal("the surface's own start must be claimed")
+	}
+	noteOK(host, 2)
+
+	if !cancelNavigation(host, "https://evil.example/first", 7, true) ||
+		!cancelNavigation(host, "https://evil.example/second", 8, true) {
+		t.Fatal("foreign departures were not cancelled")
+	}
+	if !host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 7) {
+		t.Fatal("older confirmed cancellation was not consumed")
+	}
+	if host.errorSurfaceMessageAllowed("") || !host.errorSurfaceSuspended {
+		t.Fatal("older cancellation restored admission reserved for the newer departure")
+	}
+	if !host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 8) {
+		t.Fatal("newer confirmed cancellation was not consumed")
+	}
+	if !host.errorSurfaceMessageAllowed("") || host.errorSurfaceSuspended {
+		t.Fatal("matching newer cancellation did not restore the visible surface")
+	}
+}
+
+func TestGenericDepartureFailureClearsVisibleSurfaceSuspension(t *testing.T) {
+	host, _ := newSurfaceHost(t)
+	host.errorSurfaceURL = "data:text/html,surface"
+	if !host.noteNavigationOutcome(false, statusNone, 1) {
+		t.Fatal("the arming failure must ask for the surface to be shown")
+	}
+	issueCurrentErrorSurface(t, host)
+	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 2) {
+		t.Fatal("the surface's own start must be claimed")
+	}
+	noteOK(host, 2)
+
+	host.noteAndGateNavigation(host.source.origin.text+"/index.html", 3)
+	if !host.errorSurfaceSuspended || host.errorSurfaceMessageAllowed("") {
+		t.Fatal("departure did not suspend the visible fallback before completion")
+	}
+	if !noteFail(host, 3) {
+		t.Fatal("a genuine external-source failure must show a new fallback generation")
+	}
+	issueCurrentErrorSurface(t, host)
+	if host.errorSurfaceSuspended || host.errorSurfaceActive || !host.errorSurfacePending {
+		t.Fatalf("generic failure retained the old suspension: suspended=%t active=%t pending=%t",
+			host.errorSurfaceSuspended, host.errorSurfaceActive, host.errorSurfacePending)
 	}
 }
 
@@ -230,10 +317,10 @@ func TestGateCancelledCompletionDoesNotArmTheSurface(t *testing.T) {
 // so it never cancels mullion's own fallback page (issue #6, decisions/0023).
 func TestNoteAndGateNavigationNeverCancelsTheSurface(t *testing.T) {
 	host, _ := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
-	host.errorSurfaceURL = "data:text/html,surface"
-	host.errorSurfacePending = true
+	host.noteNavigationOutcome(false, statusNone, 1)
+	issueCurrentErrorSurface(t, host)
 
-	// The surface's own start reported as an empty URI (a GetUri failure or the
+	// The surface's own start successfully reported as an empty URI (the
 	// runtime erasing the data: URI) is claimed, and must NOT be cancelled even
 	// though "" is off-origin to the gate.
 	if host.noteAndGateNavigation("", 4) {

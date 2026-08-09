@@ -15,7 +15,7 @@ func (host *Host) ensureWebView(source string) error {
 
 // ensureWebViewWith is ensureWebView with the embed injected, so the
 // single-flight contract is unit-testable without a live runtime (the same
-// seam registerEventsOrTearDown and navigateOrTearDown use).
+// seam registerEventsOrTearDown and committedBrowserStepOrTearDown use).
 //
 // Embed pumps the message loop, so a message dispatched mid-embed can land
 // right back here with host.browser still nil. The webViewEmbedding flag makes
@@ -27,15 +27,14 @@ func (host *Host) ensureWebViewWith(source string, create func() error) error {
 	if host.browser != nil {
 		return nil
 	}
+	// Returned errors are not reported here: the Run or Show path that can
+	// return them owns the one terminal diagnostic (decision 0038). Logging in
+	// both layers makes one failed filter registration look like two failures.
 	if host.windowDestroyed {
-		err := errors.New("window already destroyed")
-		host.log.Warn("mullion: webview create refused, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
-		return err
+		return errors.New("window already destroyed")
 	}
 	if host.webViewEmbedding {
-		err := errors.New("webview embed already in flight")
-		host.log.Warn("mullion: webview create refused, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
-		return err
+		return errors.New("webview embed already in flight")
 	}
 	host.webViewEmbedding = true
 	defer func() { host.webViewEmbedding = false }()
@@ -48,7 +47,6 @@ func (host *Host) ensureWebViewWith(source string, create func() error) error {
 	// runtime: everything below this line needs a live WebView2.
 	host.installHandlerPanicLogging()
 	if err := create(); err != nil {
-		host.log.Error("mullion: webview2 embed failed, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
 		return err
 	}
 	return nil
@@ -75,6 +73,113 @@ func (host *Host) newWebViewBrowser() *webview2.Browser {
 		host.log.Warn("mullion: webview2 runtime warning, reason=" + logsafe.Reason(err))
 	}
 	browser.MessageCallback = host.webMessageCallback()
+	browser.NavigationStartingCallback = func(observation webview2.NavigationStartingObservation) bool {
+		// Resolve the document boundary before any getter diagnostic can re-enter
+		// through the embedder's Logger and dispatch an empty-source message.
+		// Preserve the getter tag through the whole transition: zero is a value,
+		// not a substitute for an unavailable navigation identity.
+		cancel := host.noteAndGateNavigationKnown(
+			observation.URI,
+			observation.URIErr == nil,
+			observation.NavigationIDErr == nil,
+			observation.NavigationID,
+		)
+		host.reportEventGetterFailure("NavigationStarting", "GetUri", observation.URIErr)
+		host.reportEventGetterFailure("NavigationStarting", "GetNavigationID", observation.NavigationIDErr)
+		host.reportEventGetterFailure("NavigationStarting", "GetIsUserInitiated", observation.IsUserInitiatedErr)
+		host.reportEventGetterFailure("NavigationStarting", "GetIsRedirected", observation.IsRedirectedErr)
+		if observation.URIErr == nil && observation.NavigationIDErr == nil &&
+			observation.IsUserInitiatedErr == nil && observation.IsRedirectedErr == nil {
+			host.logNavigationStarting(
+				observation.URI,
+				observation.NavigationID,
+				observation.IsUserInitiated,
+				observation.IsRedirected,
+			)
+		}
+		return cancel
+	}
+	browser.NavigationCancelledCallback = func(observation webview2.NavigationStartingObservation) {
+		identity := navigationIdentity{
+			known: observation.NavigationIDErr == nil,
+			value: observation.NavigationID,
+		}
+		if observation.URIErr != nil || observation.IsUserInitiatedErr != nil {
+			host.rememberCancelledNavigationObserved(identity)
+			return
+		}
+		host.noteNavigationCancelledObserved(
+			observation.URI,
+			identity,
+			observation.IsUserInitiated,
+		)
+	}
+	browser.NavigationCompletedCallback = func(observation webview2.NavigationCompletedObservation) {
+		hasGetterFailure := observation.IsSuccessErr != nil ||
+			observation.WebErrorStatusErr != nil ||
+			observation.NavigationIDErr != nil
+		if hasGetterFailure {
+			action := host.noteUnclassifiableNavigationCompletion(
+				observation.IsSuccessErr == nil,
+				observation.IsSuccess,
+				observation.WebErrorStatusErr == nil,
+				observation.WebErrorStatus,
+				observation.NavigationIDErr == nil,
+				observation.NavigationID,
+			)
+			host.reportEventGetterFailure("NavigationCompleted", "GetIsSuccess", observation.IsSuccessErr)
+			host.reportEventGetterFailure("NavigationCompleted", "GetWebErrorStatus", observation.WebErrorStatusErr)
+			host.reportEventGetterFailure("NavigationCompleted", "GetNavigationID", observation.NavigationIDErr)
+			if action != unclassifiableCompletionSucceeded {
+				return
+			}
+			if observation.NavigationIDErr == nil {
+				host.log.Debug("mullion: navigation completed, id=" + formatUint64(observation.NavigationID))
+			} else {
+				host.log.Debug("mullion: navigation completed, id=unavailable")
+			}
+			host.syncWebViewBounds("navigation_completed")
+			host.warnIf("navigation diagnostic eval", browser.Eval(host.js.navigationEval))
+			return
+		}
+		if host.noteGateCancelledOutcome(
+			observation.IsSuccess,
+			observation.WebErrorStatus,
+			observation.NavigationID,
+		) {
+			return
+		}
+		// Classification creates only a revocable plan. Logger and COM calls
+		// below may pump the STA loop; a nested start, success, or
+		// unclassifiable completion invalidates this token so the outer callback
+		// cannot issue a stale fallback navigation (issue #86).
+		errorSurfacePlan := host.planNavigationOutcome(
+			observation.IsSuccess,
+			observation.WebErrorStatus,
+			observation.NavigationID,
+		)
+		host.log.Debug("mullion: navigation completed, id=" + formatUint64(observation.NavigationID))
+		host.syncWebViewBounds("navigation_completed")
+		host.warnIf("navigation diagnostic eval", browser.Eval(host.js.navigationEval))
+		if errorSurfacePlan != noErrorSurfacePlan {
+			host.showErrorSurface(browser, errorSurfacePlan)
+		}
+	}
+	browser.ProcessFailedCallback = func(observation webview2.ProcessFailedObservation) {
+		if observation.KindErr != nil {
+			host.reportEventGetterFailure("ProcessFailed", "GetProcessFailedKind", observation.KindErr)
+			return
+		}
+		host.log.Error("mullion: webview2 process failed, kind=" + formatInt32(int32(observation.Kind)))
+	}
+	browser.NewWindowRequestedCallback = func(observation webview2.NewWindowRequestedObservation) {
+		host.reportEventGetterFailure("NewWindowRequested", "GetUri", observation.URIErr)
+		host.reportEventGetterFailure("NewWindowRequested", "GetIsUserInitiated", observation.IsUserInitiatedErr)
+		if observation.URIErr != nil || observation.IsUserInitiatedErr != nil {
+			return
+		}
+		host.routeNewWindow(observation.URI, observation.IsUserInitiated)
+	}
 	return browser
 }
 
@@ -88,44 +193,10 @@ func (host *Host) newWebViewBrowser() *webview2.Browser {
 func (host *Host) createWebView() error {
 	host.log.Debug("mullion: webview2 instance requested")
 	browser := host.newWebViewBrowser()
-	if host.config.URL == "" {
+	if host.source.embedded {
 		browser.WebResourceRequestedCallback = func(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs) {
 			host.assets.webResourceRequested(request, args, browser.Environment())
 		}
-	}
-	browser.NavigationStartingCallback = func(uri string, navigationID uint64, isUserInitiated bool, isRedirected bool) bool {
-		host.logNavigationStarting(uri, navigationID, isUserInitiated, isRedirected)
-		return host.noteAndGateNavigation(uri, navigationID)
-	}
-	browser.NavigationCancelledCallback = func(uri string, navigationID uint64, isUserInitiated bool) {
-		host.noteNavigationCancelled(uri, navigationID, isUserInitiated)
-	}
-	browser.NavigationCompletedCallback = func(success bool, status webview2.WebErrorStatus, navigationID uint64) {
-		if host.noteGateCancelledOutcome(success, status, navigationID) {
-			// The PinNavigationToOrigin gate cancelled this navigation: nothing
-			// committed, the current document stays, and the target was routed to
-			// the system browser. It must not be reported as a failure, resynced,
-			// re-evaluated or fed to the error-surface machine (decisions/0023).
-			return
-		}
-		// A failure is handed down unlogged: which line it deserves, and at what
-		// level, is what handleNavigationOutcome's machine decides, and it
-		// reports the failure itself once it knows (issue #79, decisions/0026).
-		// A generic warning here could only guess, and it guessed wrong for
-		// every suppression the machine owns - a benign abort, a superseded
-		// surface Navigate, an absorbed straggler - which is what put
-		// deliberately suppressed events into the warn count. The gate's cancel
-		// above escaped it only by being resolved before this line.
-		host.log.Debug("mullion: navigation completed, id=" + formatUint64(navigationID))
-		host.syncWebViewBounds("navigation_completed")
-		host.warnIf("navigation diagnostic eval", browser.Eval(host.js.navigationEval))
-		host.handleNavigationOutcome(browser, success, status, navigationID)
-	}
-	browser.ProcessFailedCallback = func(kind webview2.ProcessFailedKind) {
-		host.log.Error("mullion: webview2 process failed, kind=" + formatInt32(int32(kind)))
-	}
-	browser.NewWindowRequestedCallback = func(uri string, isUserInitiated bool) {
-		host.routeNewWindow(uri, isUserInitiated)
 	}
 
 	host.log.Debug("mullion: webview2 embed requested")
@@ -133,6 +204,11 @@ func (host *Host) createWebView() error {
 		return errors.Join(errors.New("embed webview2"), err)
 	}
 	if err := host.commitEmbeddedBrowser(browser); err != nil {
+		return err
+	}
+	if err := host.registerAssetFilterOrTearDown(func(pattern string, context webview2.WebResourceContext) error {
+		return browser.AddWebResourceRequestedFilter(pattern, context)
+	}); err != nil {
 		return err
 	}
 	host.log.Debug("mullion: webview2 embedded")
@@ -147,17 +223,6 @@ func (host *Host) createWebView() error {
 	host.syncRasterizationScale("embed", dpiForWindow(host.window()))
 	host.syncWebViewBounds("embed")
 
-	if host.config.URL == "" {
-		host.log.Debug("mullion: webresource filter registered")
-		host.warnIf("web resource filter", browser.AddWebResourceRequestedFilter(host.config.origin()+"/*", webview2.WebResourceContextAll))
-		host.log.Debug("mullion: asset serving ready, source=embedded-fs")
-	} else {
-		// Config.URL is set: the caller serves the origin, so there is nothing to
-		// intercept. The injected scripts below still run - they are per-navigation
-		// and origin-independent - so the bridge and window controls work either way.
-		host.log.Debug("mullion: asset serving skipped, source=external-url")
-	}
-
 	// The bridge script installs the namespace the other three scripts use, so
 	// it must be injected first.
 	host.warnIf("bridge script", browser.Init(host.js.bridge))
@@ -169,8 +234,8 @@ func (host *Host) createWebView() error {
 	host.applyTabStripStartup(browser)
 	host.log.Debug("mullion: navigate requested")
 	host.startRenderWatchdog()
-	return host.navigateOrTearDown(func() error {
-		return browser.Navigate(host.config.startURL())
+	return host.committedBrowserStepOrTearDown(func() error {
+		return browser.Navigate(host.source.startURL)
 	})
 }
 
@@ -178,22 +243,23 @@ func (host *Host) createWebView() error {
 // newWebViewBrowser, the production constructor used by createWebView. Keeping
 // classification in this headless closure lets tests drive trusted and fallback
 // messages without a runtime while also asserting the Browser field is wired.
-func (host *Host) webMessageCallback() func(string, string, *webview2.ICoreWebView2) {
-	return func(message string, source string, sender *webview2.ICoreWebView2) {
-		if !host.config.messageSourceAllowed(source) && !host.errorSurfaceMessageAllowed(source) {
-			// CoreWebView2's WebMessageReceived callback currently admits messages
-			// from the top-level document only. A top-level navigation away from
-			// the frontend must not be able to drive Config.Bridge. Drop the
-			// message silently - a foreign origin gets no reply to correlate.
+func (host *Host) webMessageCallback() func(webview2.WebMessageObservation, *webview2.ICoreWebView2) {
+	return func(observation webview2.WebMessageObservation, sender *webview2.ICoreWebView2) {
+		if observation.SourceErr != nil {
+			host.reportEventGetterFailure("WebMessageReceived", "GetSource", observation.SourceErr)
+			return
+		}
+		source := observation.Source
+		if !host.source.messageSourceAllowed(source) && !host.errorSurfaceMessageAllowed(source) {
+			// A top-level navigation away from the frontend must not be able to
+			// drive Config.Bridge. A foreign origin gets no reply to correlate.
 			host.logRejectedWebMessage(source)
 			return
 		}
-		// A data: top-level source is mullion's error surface and receives only
-		// its caption/drag/resize subset of reserved controls, never readiness,
-		// diagnostics, or Config.Bridge. If frame message receipt is added later,
-		// that narrow subset is also the boundary against a hostile data: iframe
-		// (decisions/0014).
-		response := host.handleWebMessage(message, host.config.messageSourceTrusted(source))
+		response := host.handleWebMessage(
+			observation.Message,
+			host.source.messageSourceTrusted(source),
+		)
 		if response == "" {
 			return
 		}
@@ -205,6 +271,14 @@ func (host *Host) webMessageCallback() func(string, string, *webview2.ICoreWebVi
 			host.log.Warn("mullion: bridge response post failed, reason=" + logsafe.Reason(err))
 		}
 	}
+}
+
+func (host *Host) reportEventGetterFailure(event, getter string, err error) {
+	if err == nil {
+		return
+	}
+	host.log.Error("mullion: webview2 event getter failed, event=" + event +
+		", getter=" + getter + ", reason=" + logsafe.Reason(err))
 }
 
 // commitEmbeddedBrowser assigns the freshly embedded browser - unless the
@@ -227,29 +301,32 @@ func (host *Host) commitEmbeddedBrowser(browser *webview2.Browser) error {
 	return nil
 }
 
-// navigateOrTearDown starts the first navigation and, on failure, undoes the
-// embed commit before returning the error.
-//
-// By this point createWebView has assigned host.browser, and the only code that
-// releases the browser's COM references - Browser.ShuttingDown - runs from the
-// WM_DESTROY case of the window procedure. On the initial embed path a Navigate
-// failure propagates out of Run before the message loop ever starts, so
-// WM_DESTROY is never dispatched, Run's deferred CoUninitialize executes with
-// the environment, controller and core still referenced, and the WebView2
-// browser child process is orphaned. Tearing down here - watchdog stopped,
-// host.browser uncommitted, ShuttingDown while the HWND is still alive - closes
-// that path, and leaves ensureWebView free to embed a fresh browser if the
-// caller retries (a nil-ed host.browser is what its guard checks).
-//
-// navigate is a parameter so the failure contract is unit-testable without a
-// live runtime, exactly like registerEventsOrTearDown on the in-Embed error
-// path (internal/webview2/browser_windows.go): the real release counts need a
-// runtime, but "a Navigate failure uncommits and tears down" is checkable
-// headlessly. The browser is read from host.browser rather than taken as a
-// parameter, so the committed field is the single source of truth: a second
-// caller could otherwise tear down one browser while uncommitting another.
-func (host *Host) navigateOrTearDown(navigate func() error) error {
-	if err := navigate(); err != nil {
+// registerAssetFilterOrTearDown makes the embedded request filter a mandatory
+// post-commit step. A failure uncommits and shuts down the browser before any
+// settings, scripts, watchdog or navigation can run.
+func (host *Host) registerAssetFilterOrTearDown(register func(string, webview2.WebResourceContext) error) error {
+	if !host.source.embedded {
+		host.log.Debug("mullion: asset serving skipped, source=external-url")
+		return nil
+	}
+	err := host.committedBrowserStepOrTearDown(func() error {
+		return register(host.source.filterPattern, webview2.WebResourceContextAll)
+	})
+	if err != nil {
+		return errors.Join(errors.New("register web resource filter"), err)
+	}
+	host.log.Debug("mullion: webresource filter registered")
+	host.log.Debug("mullion: asset serving ready, source=embedded-fs")
+	return nil
+}
+
+// committedBrowserStepOrTearDown runs a required operation against the browser
+// committed in host.browser. On failure it stops the watchdog, uncommits the
+// browser and calls ShuttingDown, leaving a later sequential embed free to retry.
+// The committed field is deliberately the single source of truth so a caller
+// cannot tear down one browser while uncommitting another.
+func (host *Host) committedBrowserStepOrTearDown(step func() error) error {
+	if err := step(); err != nil {
 		browser := host.browser
 		host.stopRenderWatchdog()
 		host.browser = nil

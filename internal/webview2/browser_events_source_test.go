@@ -51,7 +51,7 @@ func handlerSource(t *testing.T, open, close string) string {
 
 func navigationStartingSource(t *testing.T) string {
 	t.Helper()
-	return handlerSource(t, "NewNavigationStartingHandler(", "NewNavigationCompletedHandler(")
+	return handlerSource(t, "func (browser *Browser) handleNavigationStarting(", "func (browser *Browser) handleNavigationCompleted(")
 }
 
 func TestNavigationStartingCancelsBeforeItTellsTheHost(t *testing.T) {
@@ -95,36 +95,5 @@ func TestTheHostIsToldAboutACancelInExactlyOnePlace(t *testing.T) {
 	source := sourceComment.ReplaceAllString(string(data), "")
 	if got := strings.Count(source, "NavigationCancelledCallback("); got != 1 {
 		t.Fatalf("NavigationCancelledCallback is called %d times in this file, want exactly 1 - the guard above reads only the NavigationStarting handler, so a second call site is unchecked", got)
-	}
-}
-
-// Both getters report their failures. The id already did; the URI did not, and
-// an unreadable URI is not cosmetic - it reaches a host gate as the empty
-// string, which is no origin's, so the gate decides against a navigation it
-// could not read (issue #73). Each is asserted in its own span, because a count
-// over the whole handler also counts put_Cancel's report and is satisfied by
-// keeping one getter's and dropping the other's.
-func TestNavigationStartingReportsBothGetterFailures(t *testing.T) {
-	body := navigationStartingSource(t)
-
-	for _, span := range []struct {
-		what  string
-		open  string
-		close string
-	}{
-		{"the URI getter", "uri, err := args.GetUri()", "id, err := args.GetNavigationID()"},
-		{"the navigation-id getter", "id, err := args.GetNavigationID()", "args.GetIsUserInitiated()"},
-	} {
-		start := strings.Index(body, span.open)
-		if start < 0 {
-			t.Fatalf("%s no longer keeps its error: %q not found", span.what, span.open)
-		}
-		end := strings.Index(body[start:], span.close)
-		if end < 0 {
-			t.Fatalf("cannot bound %s's span: %q not found after it", span.what, span.close)
-		}
-		if !strings.Contains(body[start:start+end], "browser.reportWarning(err)") {
-			t.Fatalf("%s captures its error and then discards it", span.what)
-		}
 	}
 }

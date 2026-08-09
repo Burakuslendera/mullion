@@ -30,11 +30,10 @@ func (host *Host) Show() error {
 		return err
 	}
 	if result == 0 {
-		err := errors.New("native show did not become visible")
-		if stillOriginatingRun {
-			host.log.Warn("mullion: show failed, reason=" + logsafe.Reason(err))
-		}
-		return err
+		// wmNativeShow's UI-thread handler has already reported why it could not
+		// become visible. The public caller owns the returned error, not a second
+		// generic log entry (decision 0038).
+		return errors.New("native show did not become visible")
 	}
 	return nil
 }
@@ -151,8 +150,15 @@ func (host *Host) sendRunCommand(admission runAdmission, message uint32, wParam 
 }
 
 func (host *Host) showFromMessage() bool {
+	return host.showFromMessageWithEnsure(host.ensureWebView)
+}
+
+// showFromMessageWithEnsure keeps the terminal reporting boundary headless-testable.
+// A create error cannot be returned through SendMessage's integer result, so this
+// UI-thread handler owns its one report; Show only returns the public error.
+func (host *Host) showFromMessageWithEnsure(ensure func(string) error) bool {
 	host.log.Debug("mullion: show applying")
-	if err := host.ensureWebView("show"); err != nil {
+	if err := ensure("show"); err != nil {
 		host.log.Error("mullion: show failed, reason=" + logsafe.Reason(err))
 		return false
 	}

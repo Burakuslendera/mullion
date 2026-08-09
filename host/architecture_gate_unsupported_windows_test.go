@@ -59,4 +59,16 @@ func TestUnsupportedArchitectureHostRunReturnsPublicSentinelBeforeNativeStartup(
 	if host.running || host.hwnd != 0 || host.wndProc != 0 || host.instance != 0 {
 		t.Fatalf("unsupported Run reached native startup state: running=%t hwnd=%#x wndProc=%#x instance=%#x", host.running, host.hwnd, host.wndProc, host.instance)
 	}
+
+	invalidSourceHost := New(Config{VirtualHost: "127.1"})
+	if invalidSourceHost.sourceErr == nil {
+		t.Fatal("invalid source did not retain its source-plan error")
+	}
+	err = invalidSourceHost.Run()
+	if !errors.Is(err, ErrUnsupportedArchitecture) || strings.Contains(err.Error(), "Config.VirtualHost") {
+		t.Fatalf("invalid-source Run error = %v, want architecture sentinel before source error", err)
+	}
+	if dpiCalls != 0 || discoveryCalls != 0 {
+		t.Fatalf("invalid-source unsupported host reached native startup: DPI %d, discovery %d", dpiCalls, discoveryCalls)
+	}
 }

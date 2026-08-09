@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 
@@ -18,7 +17,7 @@ import (
 type assetProvider struct {
 	assets      fs.FS
 	log         *logSink
-	virtualHost string
+	origin      canonicalOrigin
 	diagnostics *nativeDiagnostics
 }
 
@@ -36,14 +35,11 @@ type assetRequest struct {
 	category string
 }
 
-func newAssetProvider(assets fs.FS, log *logSink, virtualHost string, diagnostics *nativeDiagnostics) assetProvider {
+func newAssetProvider(assets fs.FS, log *logSink, origin canonicalOrigin, diagnostics *nativeDiagnostics) assetProvider {
 	if log == nil {
 		log = newLogSink(NopLogger{})
 	}
-	if virtualHost == "" {
-		virtualHost = defaultVirtualHost
-	}
-	return assetProvider{assets: assets, log: log, virtualHost: virtualHost, diagnostics: diagnostics}
+	return assetProvider{assets: assets, log: log, origin: origin, diagnostics: diagnostics}
 }
 
 // webResourceRequested answers one intercepted request out of the fs.FS. Serving
@@ -55,10 +51,8 @@ func newAssetProvider(assets fs.FS, log *logSink, virtualHost string, diagnostic
 // window - so the cost was resolving the synthetic host name, not answering the
 // request. The default moved to a name under the TLD RFC 6761 reserves for
 // loopback, which measured 47-141 ms instead and took issue #77's aborts with it.
-// The reasoning, the exact name, the six negatives it took to get there and what
-// the change cost the no-port guard are on Config.VirtualHost, in
-// docs/decisions/0030 and in docs/assets.md. A caller that overrides
-// Config.VirtualHost with a name outside that TLD gets the wait back.
+// The reasoning and measurements live in decision 0030 and docs/assets.md.
+// Callers that select a name outside that TLD retain the resolver wait.
 func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs, environment *webview2.ICoreWebView2Environment) {
 	if request == nil {
 		provider.log.Warn("mullion: asset request unavailable")
@@ -117,7 +111,7 @@ func (provider *assetProvider) logAssetResponseError(response assetResponse) {
 }
 
 func (provider *assetProvider) resolve(rawURI string) assetResponse {
-	request, status := resolveAssetRequest(provider.virtualHost, rawURI)
+	request, status := resolveAssetRequest(provider.origin, rawURI)
 	if status != 0 {
 		return errorAssetResponse(status, request)
 	}
@@ -150,18 +144,18 @@ func (provider *assetProvider) resolve(rawURI string) assetResponse {
 }
 
 // resolveAssetRequest maps a request URI to an asset path, or to the HTTP status
-// that rejects it. The virtual host is passed in rather than read from a package
-// constant so that the request filter, the navigation target and this allow-list
-// cannot drift apart: all three derive from Config.VirtualHost.
-func resolveAssetRequest(virtualHost, rawURI string) (assetRequest, int) {
-	parsed, err := url.Parse(rawURI)
+// that rejects it. The same canonical origin value drives this admission, the
+// request filter, navigation and bridge trust. Host case and explicit default
+// ports therefore have exactly the same semantics at every boundary.
+func resolveAssetRequest(origin canonicalOrigin, rawURI string) (assetRequest, int) {
+	candidate, parsed, err := parseCanonicalHTTPOrigin(rawURI)
 	if err != nil {
 		return assetRequest{path: "invalid", category: "invalid"}, http.StatusBadRequest
 	}
-	if parsed.Scheme != "https" {
+	if candidate.scheme != origin.scheme {
 		return assetRequest{path: "wrong_scheme", category: "wrong_scheme"}, http.StatusForbidden
 	}
-	if parsed.Host != virtualHost {
+	if parsed.User != nil || candidate.host != origin.host || candidate.port != origin.port {
 		return assetRequest{path: "wrong_host", category: "wrong_host"}, http.StatusForbidden
 	}
 	if containsBackslashColonOrControl(parsed.Path) || hasTraversalSegment(parsed.Path) {

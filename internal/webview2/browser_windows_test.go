@@ -24,6 +24,8 @@ import (
 func TestRegisterEventsFailureTearsDownBrowser(t *testing.T) {
 	browser := New()
 	wantErr := errors.New("register failed")
+	var reports int
+	browser.ErrorCallback = func(error) { reports++ }
 
 	err := browser.registerEventsOrTearDown(func() error { return wantErr })
 
@@ -32,6 +34,9 @@ func TestRegisterEventsFailureTearsDownBrowser(t *testing.T) {
 	}
 	if !browser.IsShuttingDown() {
 		t.Fatal("a registerEvents failure must tear the browser down, or the environment, controller and core leak")
+	}
+	if reports != 0 {
+		t.Fatalf("returned registration failure was internally reported %d times, want 0", reports)
 	}
 }
 
@@ -44,8 +49,42 @@ func TestRegisterEventsSuccessKeepsBrowser(t *testing.T) {
 	if err := browser.registerEventsOrTearDown(func() error { return nil }); err != nil {
 		t.Fatalf("registerEventsOrTearDown err = %v, want nil", err)
 	}
+
 	if browser.IsShuttingDown() {
 		t.Fatal("a successful embed must not tear the browser down")
+	}
+}
+func TestReturnedSurfaceOperationFailuresAreNotInternallyReported(t *testing.T) {
+	core, coreState := newFakeSurfaceCore(t, eFail)
+	controller, controllerState := newFakeSurfaceController(t, eFail)
+	browser := New()
+	browser.core = core
+	browser.controller = controller
+	var reports int
+	browser.ErrorCallback = func(error) { reports++ }
+
+	operations := []struct {
+		name string
+		run  func() error
+	}{
+		{"Navigate", func() error { return browser.Navigate("https://example.test/") }},
+		{"Init", func() error { return browser.Init("void 0") }},
+		{"Eval", func() error { return browser.Eval("void 0") }},
+		{"Show", browser.Show},
+		{"Hide", browser.Hide},
+	}
+	for _, operation := range operations {
+		t.Run(operation.name, func(t *testing.T) {
+			if err := operation.run(); err == nil {
+				t.Fatal("operation returned nil, want the fake HRESULT failure")
+			}
+		})
+	}
+	if reports != 0 {
+		t.Fatalf("returned operation failures were internally reported %d times, want 0", reports)
+	}
+	if got := coreState.operationCalls + controllerState.operationCalls; got != len(operations) {
+		t.Fatalf("COM calls = %d, want %d", got, len(operations))
 	}
 }
 

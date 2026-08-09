@@ -43,9 +43,7 @@ func (browser *Browser) Navigate(url string) error {
 	if core == nil {
 		return errors.New("webview2: navigate before embed")
 	}
-	err := core.Navigate(url)
-	browser.reportError(err)
-	return err
+	return core.Navigate(url)
 }
 
 // Init registers a script to run in every document before any page script.
@@ -54,9 +52,7 @@ func (browser *Browser) Init(script string) error {
 	if core == nil {
 		return errors.New("webview2: init before embed")
 	}
-	err := core.AddScriptToExecuteOnDocumentCreated(script, nil)
-	browser.reportError(err)
-	return err
+	return core.AddScriptToExecuteOnDocumentCreated(script, nil)
 }
 
 // Eval runs a script in the current document.
@@ -65,9 +61,7 @@ func (browser *Browser) Eval(script string) error {
 	if core == nil {
 		return errors.New("webview2: eval before embed")
 	}
-	err := core.ExecuteScript(script, nil)
-	browser.reportError(err)
-	return err
+	return core.ExecuteScript(script, nil)
 }
 
 // Show makes the control visible.
@@ -80,9 +74,7 @@ func (browser *Browser) Show() error {
 	if controller == nil {
 		return errors.New("webview2: show before embed")
 	}
-	err := controller.PutIsVisible(true)
-	browser.reportError(err)
-	return err
+	return controller.PutIsVisible(true)
 }
 
 // Hide makes the control invisible.
@@ -91,9 +83,7 @@ func (browser *Browser) Hide() error {
 	if controller == nil {
 		return errors.New("webview2: hide before embed")
 	}
-	err := controller.PutIsVisible(false)
-	browser.reportError(err)
-	return err
+	return controller.PutIsVisible(false)
 }
 
 // NotifyParentWindowPositionChanged tells the control its host moved. Without

@@ -36,15 +36,17 @@ type Host struct {
 	// command can prove both session and handle ownership in one snapshot.
 	activeRunToken uintptr
 
-	config   Config
-	log      *logSink
-	js       jsScripts
-	mu       sync.RWMutex
-	hwnd     windowHandle
-	instance windowHandle
-	wndProc  uintptr
-	assets   assetProvider
-	browser  *webview2.Browser
+	config    Config
+	source    sourcePlan
+	sourceErr error
+	log       *logSink
+	js        jsScripts
+	mu        sync.RWMutex
+	hwnd      windowHandle
+	instance  windowHandle
+	wndProc   uintptr
+	assets    assetProvider
+	browser   *webview2.Browser
 
 	// webViewEmbedding and windowDestroyed guard the in-flight embed. Embed
 	// pumps the message loop for up to a minute, so messages dispatched
@@ -89,19 +91,27 @@ type Host struct {
 	// document (issue #56, measured live on 150.0.4078.65 at both the event args
 	// and the core), so the fallback error surface cannot be recognised by its
 	// source; the host tracks it by navigation state, correlated by the
-	// runtime's navigation id where available:
+	// runtime's navigation identity where available:
 	//
 	//   - errorSurfaceActive admits the surface's empty-source web messages. It
 	//     arms when the surface is navigated to - before its load completes,
 	//     because the injected diagnostics post from document creation - and
-	//     disarms when a navigation away from it commits or its own load
-	//     genuinely fails.
-	//   - errorSurfacePending is set from the decision to navigate to the
-	//     surface until its NavigationStarting is claimed; the claim is what
-	//     learns the surface's navigation id.
-	//   - errorSurfaceNavID is that id (0 = not known), which lets
-	//     noteNavigationOutcome attribute completions positively instead of
-	//     counting them (issue #68's defect class).
+	//     suspends as soon as a later top-level navigation starts.
+	//   - errorSurfaceSuspended remembers that the fallback remains the visible
+	//     document while that departure is unresolved. Only a positively
+	//     attributed benign abort or confirmed gate cancellation for
+	//     errorSurfaceDeparture may restore admission.
+	//   - errorSurfacePlan is the latest classified fallback action. Its
+	//     monotonic serial lets the completion callback reject an outer action
+	//     invalidated by a re-entrant event before Navigate is issued.
+	//   - errorSurfacePending is set only immediately before Navigate and
+	//     remains set until that issued generation's NavigationStarting
+	//     consumes the one claim. errorSurfacePendingGeneration retains the
+	//     issued token until completion so a synchronous Navigate error can
+	//     revoke exactly the generation it attempted.
+	//   - errorSurfaceNav is that identity. Its known tag keeps a legitimate
+	//     zero distinct from a failed GetNavigationID call instead of granting
+	//     the latter zero's authority (issue #86).
 	//   - errorSurfaceLoading marks the surface's own load in flight, and is
 	//     also the order-based fallback's window when identity is unavailable.
 	//   - errorSurfaceURL is the exact data: URL last navigated to, which the
@@ -109,11 +119,16 @@ type Host struct {
 	//
 	// All are read and written only on the UI thread (the navigation and
 	// web-message callbacks), like host.browser.
-	errorSurfaceActive  bool
-	errorSurfacePending bool
-	errorSurfaceNavID   uint64
-	errorSurfaceLoading bool
-	errorSurfaceURL     string
+	errorSurfaceActive            bool
+	errorSurfaceSuspended         bool
+	errorSurfaceDeparture         navigationIdentity
+	errorSurfacePlanSerial        uint64
+	errorSurfacePlan              errorSurfacePlan
+	errorSurfacePending           bool
+	errorSurfacePendingGeneration errorSurfacePlan
+	errorSurfaceNav               navigationIdentity
+	errorSurfaceLoading           bool
+	errorSurfaceURL               string
 
 	// cancelledNavIDs are the ids of top-level navigations the
 	// PinNavigationToOrigin gate cancelled and whose completions have not
@@ -137,25 +152,23 @@ type Host struct {
 	// either way the dropped navigation reverts to the pre-issue-73 behaviour,
 	// which is why the eviction is reported.
 	cancelledNavIDs [cancelledNavSlots]uint64
-	// cancelledNavAnonymous counts cancelled navigations the runtime gave no id
-	// for. Identity is what the set above matches on, and without it the only
-	// thing left is order: an id-less OperationCanceled completion arriving
-	// while one of these is outstanding is taken as its cleanup, the same
-	// order-based fallback decision 0020 makes for the error surface. Bounded by
-	// the same slot count, and reaching the bound is reported like the other
-	// half's eviction, because nothing but a matching completion removes one.
+	// cancelledNavAnonymous counts cancelled navigations which cannot be
+	// matched by a unique non-zero id. Known zero and an unavailable id both
+	// receive bounded cleanup credits, while cancelledNavUnknown preserves
+	// their provenance so their completions cannot cross-spend those credits.
 	cancelledNavAnonymous int
+	cancelledNavUnknown   int
 
-	// navStartID is the id of the last top-level navigation the runtime reported
-	// starting, and navStartInOrigin whether that navigation targeted the trusted
-	// origin. They answer the one question a completion cannot: where its
-	// navigation was going, which is what decides whether an aborted one could
-	// have failed for real (benignAbort, decisions/0024). One slot is enough
-	// because the pair is only ever read for the completion whose id still
-	// matches: a completion for any older navigation finds a different id and
-	// falls through to the ordinary failure path, which is the safe direction.
+	// navStart is the tagged identity of the last top-level navigation the
+	// runtime reported starting, and navStartInOrigin whether that navigation
+	// targeted the trusted origin. They answer the one question a completion
+	// cannot: where its navigation was going, which is what decides whether an
+	// aborted one could have failed for real (benignAbort, decisions/0024). One
+	// slot is enough because the pair is only ever read for a completion whose
+	// exact non-zero identity still matches; older or anonymous completions
+	// fall through to the ordinary failure path, which is the safe direction.
 	// UI thread only.
-	navStartID       uint64
+	navStart         navigationIdentity
 	navStartInOrigin bool
 
 	// openExternal, when set, replaces the ShellExecute call that hands a URL to
@@ -202,21 +215,21 @@ var (
 
 // New prepares a host. It does not create a window; Run does that.
 //
-// The process-architecture decision comes first: unsupported builds retain the
-// error for Run and perform no native setup. On supported amd64, process DPI
-// awareness is applied here rather than in Run because PER_MONITOR_AWARE_V2 must
-// be set before the process owns any HWND, including hidden helper windows from
-// unrelated libraries, and before any WebView2 child exists. Any DPI failure is
-// stored and reported from Run.
+// Source validation comes before native setup. An invalid embedded virtual host
+// or caller-served URL is retained for Run's portable preflight, and no process
+// DPI call is made for a host that can never proceed to runtime discovery.
 func New(config Config) *Host {
 	normalised := config.normalise()
+	source, sourceErr := buildSourcePlan(normalised)
 	architectureErr := webview2.ValidateArchitecture()
 	var dpiAwarenessErr error
-	if architectureErr == nil {
+	if sourceErr == nil && architectureErr == nil {
 		dpiAwarenessErr = applyProcessDPIAwareness()
 	}
 	return &Host{
 		config:            normalised,
+		source:            source,
+		sourceErr:         sourceErr,
 		log:               newLogSink(normalised.Logger),
 		js:                normalised.jsScripts(),
 		architectureErr:   architectureErr,
@@ -268,13 +281,18 @@ func (host *Host) beginRun() error {
 	}
 	host.sysMenuLast = sysMenuSnapshot{}
 	host.errorSurfaceActive = false
+	host.errorSurfaceSuspended = false
+	host.errorSurfaceDeparture = navigationIdentity{}
+	host.errorSurfacePlan = noErrorSurfacePlan
 	host.errorSurfacePending = false
-	host.errorSurfaceNavID = 0
+	host.errorSurfacePendingGeneration = noErrorSurfacePlan
+	host.errorSurfaceNav = navigationIdentity{}
 	host.errorSurfaceLoading = false
 	host.errorSurfaceURL = ""
 	host.cancelledNavIDs = [cancelledNavSlots]uint64{}
 	host.cancelledNavAnonymous = 0
-	host.navStartID = 0
+	host.cancelledNavUnknown = 0
+	host.navStart = navigationIdentity{}
 	host.navStartInOrigin = false
 
 	host.renderMu.Lock()
@@ -421,6 +439,9 @@ func (host *Host) Run() error {
 		if err := runtimeStartupError(host.architectureErr); err != nil {
 			return err
 		}
+		if host.sourceErr != nil {
+			return host.sourceErr
+		}
 		return continueAfterRuntimeDiscovery(
 			discoverWebViewRuntime,
 			func(webViewVersion string) {
@@ -476,46 +497,37 @@ func (host *Host) runAfterRuntimeDiscovery() (runErr error) {
 	loopStarted := false
 	lastStage := "startup"
 	defer func() {
-		if !loopStarted && runErr != nil {
-			host.log.Error("mullion: message loop pre-start failure, stage=" + logsafe.Message(lastStage) + ", reason=" + logsafe.Reason(runErr))
-		}
+		host.reportMessageLoopPreStartFailure(loopStarted, lastStage, runErr)
 	}()
 
 	if dpiErr != nil {
-		host.log.Error("mullion: dpi awareness init failed, reason=" + logsafe.Reason(dpiErr))
 		return dpiErr
 	}
 	lastStage = "mullion: dpi awareness applied"
 	host.log.Debug("mullion: dpi awareness applied, context=per_monitor_v2")
 
 	if err := host.initializeCOM(); err != nil {
-		host.log.Error("mullion: com init failed, reason=" + logsafe.Reason(err))
 		return err
 	}
 	defer windows.CoUninitialize()
 	lastStage = "mullion: com init"
 	host.log.Debug("mullion: com init")
 
-	if err := validateURL(host.config.URL); err != nil {
-		host.log.Error("mullion: config url invalid, reason=" + logsafe.Reason(err))
-		return err
-	}
 	// Always logged, both states, so a pasted log shows where the frontend came
-	// from without anyone having to ask (see the Config.URL triage note in
-	// docs/verification.md).
-	host.log.Info(assetSourceSummary(host.config))
-	if host.config.URL == "" {
+	// from without anyone having to ask. The summary was reduced to the canonical
+	// origin when New built the source plan; no caller-owned path or query enters
+	// this line.
+	host.log.Info(host.source.summary)
+	if host.source.embedded {
 		if host.config.Assets == nil {
 			err := errors.New("asset fs unavailable")
-			host.log.Error("mullion: asset serving failed, reason=" + logsafe.Reason(err))
 			return err
 		}
-		host.assets = newAssetProvider(host.config.Assets, host.log, host.config.VirtualHost, host.diagnostics)
+		host.assets = newAssetProvider(host.config.Assets, host.log, host.source.origin, host.diagnostics)
 	}
 
 	host.log.Debug("mullion: window create requested")
 	if err := host.createWindow(); err != nil {
-		host.log.Error("mullion: hwnd create failed, reason=" + logsafe.Reason(err))
 		return err
 	}
 	defer unregisterWindowClass(host.config.ClassName, host.instance)
@@ -549,6 +561,16 @@ func (host *Host) runAfterRuntimeDiscovery() (runErr error) {
 	host.log.Debug("mullion: message loop entering")
 	loopStarted = true
 	return host.messageLoop()
+}
+
+// reportMessageLoopPreStartFailure is the terminal owner for errors returned
+// before Run enters the message loop. Lower layers return those errors without
+// logging them, so one failed native stage produces one terminal report
+// (decision 0038).
+func (host *Host) reportMessageLoopPreStartFailure(loopStarted bool, lastStage string, err error) {
+	if !loopStarted && err != nil {
+		host.log.Error("mullion: message loop pre-start failure, stage=" + logsafe.Message(lastStage) + ", reason=" + logsafe.Reason(err))
+	}
 }
 
 // runtimeStartupError translates the internal architecture cause to the public

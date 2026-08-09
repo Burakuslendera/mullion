@@ -13,10 +13,10 @@
 //	interfaces_webresource_windows.go  request, requested-event args, response
 //	interfaces_events_windows.go       message/navigation/process-failed args
 //
-// Every layout in this family is derived from Microsoft's official WebView2 SDK
-// (Microsoft.Web.WebView2, build/native/include/WebView2.h and WebView2.idl),
-// which is the MIDL-generated C ABI. Nothing is copied from a third-party Go
-// binding.
+// Every layout in this family is derived from Microsoft's official
+// Microsoft.Web.WebView2 SDK 1.0.4129.50
+// (build/native/include/WebView2.h and root WebView2.idl), which is the
+// MIDL-generated C ABI. Nothing is copied from a third-party Go binding.
 //
 // # ABI contract (read before touching any vtable struct in this family)
 //

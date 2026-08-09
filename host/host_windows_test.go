@@ -3,6 +3,7 @@
 package host
 
 import (
+	"errors"
 	"runtime"
 	"strings"
 	"testing"
@@ -11,6 +12,25 @@ import (
 
 	"github.com/Burakuslendera/mullion/internal/webview2"
 )
+
+func TestRunPreStartFailureHasOneTerminalReporter(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	wantErr := errors.New("dpi setup failed")
+	host.dpiAwarenessErr = wantErr
+
+	err := host.runAfterRuntimeDiscovery()
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("runAfterRuntimeDiscovery err = %v, want %v", err, wantErr)
+	}
+	logText := logger.String()
+	if got := strings.Count(logText, wantErr.Error()); got != 1 {
+		t.Fatalf("failure reason reports = %d, want exactly 1:\n%s", got, logText)
+	}
+	if got := strings.Count(logText, "level=ERROR"); got != 1 {
+		t.Fatalf("terminal error lines = %d, want exactly 1:\n%s", got, logText)
+	}
+}
 
 // DPI awareness latches once per process, so a second enable used to come back
 // as ERROR_ACCESS_DENIED even though the process was already in exactly the
