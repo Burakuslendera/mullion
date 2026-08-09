@@ -119,6 +119,10 @@ type Config struct {
 	// source for both the request filter and the origin allow-list.
 	// Default "mullion.localhost", so the origin is https://mullion.localhost and
 	// the request filter is registered for that origin exactly.
+	// New ASCII-lowercases valid host names and rejects URL/authority syntax,
+	// malformed labels, Unicode U-labels, escapes and IPv6 zones before native
+	// startup. Underscores and canonical IP literals remain accepted for
+	// compatibility. This field is ignored when URL selects an external source.
 	//
 	// Nothing mullion does resolves this name - WebResourceRequested intercepts
 	// the request and Assets answers it in process - so it need not exist
@@ -337,34 +341,6 @@ func (config Config) hitTestMetrics() hitTestMetrics {
 		TitlebarHeight: config.HitTestTitlebarHeight,
 		ControlsWidth:  config.HitTestCaptionControlsWidth,
 	}
-}
-
-// origin is the scheme+host the WebView loads and the only origin the asset
-// provider serves. Deriving it here keeps the request filter and the allow-list
-// from drifting apart.
-func (config Config) origin() string {
-	return "https://" + config.VirtualHost
-}
-
-func (config Config) startURL() string {
-	if config.URL != "" {
-		return config.URL
-	}
-	return config.origin() + "/index.html"
-}
-
-// servesAssetsInProcess reports whether mullion answers the frontend's own
-// requests, from the embedded fs.FS through WebResourceRequested, rather than
-// the caller serving them over a loopback socket (Config.URL).
-//
-// It is the condition that decides what an aborted navigation means: with no
-// socket in the path there is no endpoint that can be unreachable, so a
-// ConnectionAborted completion cannot be "could not load" - it is an abort of a
-// navigation the runtime superseded or restarted (issue #72, decisions/0024).
-// With Config.URL set the same status is exactly a dead endpoint (measured live,
-// issue #68), and the fallback surface is what it exists for.
-func (config Config) servesAssetsInProcess() bool {
-	return config.URL == ""
 }
 
 // validJSNamespace enforces ^[a-z][a-z0-9]*$. The constraint is not cosmetic:

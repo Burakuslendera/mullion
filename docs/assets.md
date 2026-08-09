@@ -13,11 +13,20 @@ and answers every request inside `WebResourceRequestedCallback`. Nothing binds a
 socket; the request never leaves the process. Because that callback is the only
 authority, it is also the only place the boundary can be enforced:
 
+The filter and callback do not reconstruct that origin. `New` creates one
+canonical source plan and the filter pattern, `assetProvider` origin check,
+initial navigation, bridge gate, Retry target and source log all consume it
+([decision 0036](./decisions/0036-one-source-plan-defines-origin.md)). Registering
+the embedded filter is mandatory after the Browser commit: failure immediately
+uncommits and shuts down that Browser before settings, scripts, watchdog or
+navigation, then returns for the terminal host policy to report once. No request
+path runs without its filter.
+
 | Condition | Result |
 | --- | --- |
 | URI does not parse | `400` |
 | scheme is not `https` | `403` |
-| host is not the configured virtual host | `403` |
+| host or effective port differs from the planned embedded origin | `403` |
 | path has a `.` or `..` segment, **or any segment ending in a dot or a space** (`notes.txt.`, `sub./x`) — Windows' DOS-to-NT conversion strips those, so the name would not be the file | `403` |
 | path contains a backslash, a colon or a control byte (incl. `%5c`, `%00`) | `403` |
 | path is not a valid `fs.FS` name (`fs.ValidPath` — raw invalid UTF-8 among others) | `403` |
@@ -126,12 +135,18 @@ points the WebView at an origin the caller serves themselves — a local dev ser
 a runtime that already speaks HTTP — instead. It is empty by default, so the no-port
 guarantee is unchanged.
 
-**mullion still opens no socket.** The caller runs the server; mullion only navigates
-to it. When `Config.URL` is set, the `WebResourceRequested` filter is not registered
-and the boundary matrix above does not run — the caller's server owns those concerns.
-The injected scripts still run on every navigation, so `window.<ns>` (the bridge and
-window controls) works on the caller's origin too, and on the fallback page a failed
-navigation shows in place of Edge's chromeless error screen (`host/errorpage.go`).
+**mullion still opens no socket.** The caller runs the server; mullion only
+navigates to it. `Config.URL` is parsed once into the same source plan: its
+canonical HTTP(S) loopback origin drives bridge admission, later navigation
+policy, Retry and the redacted source log while its path/query/fragment remain on
+the initial navigation. The exact configured start URL alone is a
+navigation-authorized capability; userinfo retained there never proves origin
+identity for another navigation or bridge message. When `Config.URL` is set, the
+`WebResourceRequested` filter is not registered and the boundary matrix above
+does not run — the caller's server owns those concerns.
+The injected scripts still run on every navigation, so `window.<ns>` works on
+the caller's origin; a failed load shows Mullion's controllable fallback instead
+of Edge's chromeless error screen (`host/errorpage.go`).
 
 That difference also decides what a *failed* navigation means. With `Config.URL`
 set there is a socket in the path, so an aborted load can be a dead endpoint — the
@@ -346,4 +361,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document the SHCreateMemStream UINT body limit and fail-closed handling from issue #120.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: tie filtering and external startup authorization to one source plan, including effective-port equality and mandatory filter teardown.

@@ -29,6 +29,18 @@ and no local HTTP surface reachable by any other process on the machine.
 Each step depends on state the previous one established, and several of those
 dependencies are process-wide and irreversible.
 
+`New` first normalises configuration and builds one immutable frontend source
+plan, then checks the process architecture. The plan canonicalises the origin
+once and supplies navigation, embedded request filter, asset checks, bridge
+admission, navigation gate, fallback Retry and source logging. A credentialed
+external start URL is an exact navigation-only plan capability; it never becomes
+reusable origin proof
+([decision 0036](./decisions/0036-one-source-plan-defines-origin.md)). On
+supported Windows, an invalid `VirtualHost` or `URL` prevents even the process
+DPI call; `Run` returns that source error before runtime discovery, COM, class or
+`HWND` work. On unsupported Windows, the architecture sentinel remains `Run`'s
+first result even when the source is also invalid.
+
 1. **`SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)` — before any window
    exists.** DPI awareness is a per-process property that Windows latches the first
    time the process creates a window. Any `HWND` created earlier — a message-only
@@ -243,16 +255,24 @@ The first eight are the window controls. The last four are the signals the injec
 scripts send back: the show gate (`shellReady`), the render watchdog (`ready`), and
 the frontend diagnostics (`phase`, `diagnostic`).
 
-Everything else is handed to `Config.Bridge` as the raw request JSON; it returns the raw
-response JSON, or `""` to stay silent. `Bridge` may be nil — window controls
-(`window.mullion.window.minimise()` and friends) work before the application has
-implemented a single bridge method. The production WebView callback classifies
-the source before dispatch
-([decisions/0014](./decisions/0014-bridge-origin-at-dispatch.md)): only the trusted
-origin reaches `Config.Bridge`; the active `data:` fallback reaches the reserved
-window controls alone, and its readiness, diagnostics and non-reserved calls —
-like every message from a foreign origin — are dropped with **no reply to
-correlate**. An unknown method with a bridge configured is the application's to
+Everything else is handed to `Config.Bridge` as the raw request JSON; it returns
+the raw response JSON, or `""` to stay silent. `Bridge` may be nil — trusted-origin
+window controls still work before the application implements a bridge method.
+The event adapter preserves each COM getter's value and HRESULT separately; a
+failed source getter is reported and stops before any dispatcher. Source-plan
+origin matching gates `Config.Bridge`
+([decisions/0014](./decisions/0014-bridge-origin-at-dispatch.md)).
+
+The fallback is a separate generation-bound capability, never a `data:` origin
+allow-list ([decision 0037](./decisions/0037-event-values-preserve-getter-provenance.md)).
+A failure makes one generation pending; only a successfully read exact generated
+URL or empty URI on its NavigationStarting claims it as active. The next start
+suspends controls immediately; only the matching confirmed cancel or benign abort
+restores the still-visible page, and unclassifiable completion state fails closed.
+That active fallback receives exactly six reserved methods — start drag, start
+resize, minimise, toggle maximise, query maximised and close — but never readiness,
+diagnostics or `Config.Bridge`. Rejected messages receive no reply to correlate.
+An unknown trusted-origin method with a bridge configured is the application's to
 answer; with none, it yields `ok: false`. A malformed request is logged and
 dropped, never a panic.
 
@@ -351,4 +371,4 @@ production gates under Windows/386 WOW64; ARM64 is compile-only. Non-Windows
 `Run` returns `ErrUnsupportedPlatform`; no portable window abstraction is
 attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document source-plan preflight, exact startup capability, and HRESULT-preserving generation-bound fallback admission.

@@ -1,6 +1,15 @@
 # 0027. A navigation cancel is committed only after the runtime has performed it
 
-**Status:** Accepted
+**Status:** Accepted; getter provenance and exact restoration after confirmed cancel are refined by [0037](./0037-event-values-preserve-getter-provenance.md)
+
+## Contents
+
+- [Context](#context)
+- [Decision](#decision)
+- [Alternatives rejected](#alternatives-rejected)
+- [Consequences](#consequences)
+- [What would change our mind](#what-would-change-our-mind)
+- [Evidence](#evidence)
 
 ## Context
 
@@ -266,4 +275,4 @@ What could not be exercised live is the failure this record is mostly about:
 `put_Cancel` returning an error has never been observed and cannot be provoked
 from outside.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - a cancel is committed only after put_Cancel succeeds, outstanding cancels are a bounded ledger rather than one slot, and an unreadable target is cancelled loudly (issue #73, closing the fail-open half of 0023). Rewritten the same day after an eight-agent audit: the ledger evicts on occupancy and logs after it writes, both halves report what they drop, and four claims the first draft inherited or invented - the startup-show-gate chain, 0021's probe as evidence for concurrent cancels, the id-less branch's safety, and the double-open being gone - are withdrawn or corrected. Audited again the same day: the Evidence above named one test file where the ledger's half lives in a second one, and the host's source guard was neither comment-stripped nor scoped to the whole condition - two mutants passed it green, and both are now killed.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: route cancel provenance forward to 0037 and add the required navigation index without changing the historical decision.

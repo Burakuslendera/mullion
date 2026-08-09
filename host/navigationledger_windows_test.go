@@ -136,6 +136,7 @@ func TestTheLedgerIsConsultedWhateverTheSurfaceIsDoing(t *testing.T) {
 	if !host.noteNavigationOutcome(false, statusNone, 13) {
 		t.Fatal("the arming failure must ask for the surface to be shown")
 	}
+	issueCurrentErrorSurface(t, host)
 	if !host.errorSurfaceLoading {
 		t.Fatal("the surface must be in flight for this case to mean anything")
 	}

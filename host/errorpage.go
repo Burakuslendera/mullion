@@ -28,21 +28,18 @@ import (
 // but not the readiness and diagnostic helpers injected alongside them; those
 // belong to the failed application's watchdog evidence (decisions/0014).
 
-// errorPageURL renders the fallback surface as a data:text/html URL for failedURL.
+// errorPageURL renders the fallback surface as a data:text/html URL for the
+// source plan's canonical retry target. That target is already origin-only, so a
+// token a caller placed in Config.URL never reaches either the page or Retry.
 //
-// It shows ONLY the redacted origin of failedURL - urlOrigin drops the path, query
-// and fragment - so a token a caller placed in Config.URL never reaches the page.
-// Retry re-navigates to that origin; for the common Config.URL (no path) the origin
-// IS the original URL, and a path-bearing Config.URL retries the origin root, which
-// keeps the promise that the page discloses nothing but the origin.
-//
-// The whole document is percent-encoded (url.PathEscape) into the data: payload, and
-// every interpolated value is HTML-escaped first, so the two encodings compose: the
-// browser percent-decodes the payload and the HTML parser then sees exactly the
-// escaped document. Config.JSNamespace is validated to ^[a-z][a-z0-9]*$ by normalise,
-// so it is safe to interpolate into the script and attribute names unescaped.
-func errorPageURL(config Config, failedURL string) string {
-	origin := html.EscapeString(urlOrigin(failedURL))
+// The whole document is percent-encoded (url.PathEscape) into the data: payload,
+// and every interpolated value is HTML-escaped first, so the two encodings
+// compose: the browser percent-decodes the payload and the HTML parser then sees
+// exactly the escaped document. Config.JSNamespace is validated to
+// ^[a-z][a-z0-9]*$ by normalise, so it is safe to interpolate into the script and
+// attribute names unescaped.
+func errorPageURL(config Config, retryTarget string) string {
+	origin := html.EscapeString(retryTarget)
 	replacer := strings.NewReplacer(
 		"__NS__", config.JSNamespace,
 		"__TITLEBAR_H__", strconv.Itoa(int(config.TitlebarHeight)),

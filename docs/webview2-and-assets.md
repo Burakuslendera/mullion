@@ -4,7 +4,9 @@
 
 - [Talking to WebView2 without a third-party binding](#talking-to-webview2-without-a-third-party-binding)
   - [Finding the runtime, and skipping the loader DLL](#finding-the-runtime-and-skipping-the-loader-dll)
+  - [The Go-owned ABI is explicit](#the-go-owned-abi-is-explicit)
   - [Event handlers are COM objects we implement](#event-handlers-are-com-objects-we-implement)
+  - [Reporting follows return ownership](#reporting-follows-return-ownership)
 
 This document describes how the host talks to WebView2 without a third-party
 binding. It moved verbatim out of [architecture.md](./architecture.md) — the
@@ -78,6 +80,36 @@ with it. The consequence is a rule, and it is the important one on this page:
 > `ICoreWebView2Controller3`, and the rest — is reached this way, and a missing one is a
 > recoverable condition, not an error.
 
+### The Go-owned ABI is explicit
+
+The binding has two deterministic ABI manifests. Runtime-owned interface tests
+pin every flattened vtable slot/size, while canonical-string rows pin every IID
+literal the binding declares. For Go-owned COM objects — event handlers,
+environment options and completion handlers — the manifest pins the
+vtable-at-offset-zero representation, full vtable layout and canonical IID.
+Dispatch tests then exercise the runtime-facing entry points by literal slot:
+event and completion `Invoke` at slot 3, and each implemented
+environment-options getter and setter at its declared slot.
+
+The loader has three additional trip-wires because name-mirroring tests would
+miss them. `Environment.CreateController` dispatches through the complete
+`ICoreWebView2EnvironmentVtbl`, never a private prefix that could drift from it.
+Separate semantic constructors bind environment and controller completions to
+their own IIDs. The numeric-call helper retains `//go:uintptrescapes`: it forwards
+stack addresses through a `uintptr` wrapper, so removing that directive can leave
+a callback holding the pre-growth stack address.
+
+`TestCOMABIInventoryCompleteness` scans every production Go filename, including
+architecture-specific suffixes, and inventories each vtable declaration, COM
+object representation and GUID literal. It is only an alarm for unclassified
+ABI: adding a manifest row does not prove correctness; the corresponding literal
+layout, identity and dispatch or lifetime behavior must also be tested.
+The authority is Microsoft.Web.WebView2 NuGet `1.0.4129.50`:
+`build/native/include/WebView2.h` for flattened C vtables and root `WebView2.idl`
+for UUIDs and declaration order. These checks are deterministic and need neither
+a runtime nor a window
+([decision 0001](./decisions/0001-own-webview2-com-layer.md)).
+
 ### Event handlers are COM objects we implement
 
 `add_WebMessageReceived`, `add_WebResourceRequested`, `add_NavigationStarting`,
@@ -110,18 +142,32 @@ window and routes an http/https target to the system browser (decisions/0022).
   turn into a dead window. `S_OK` means "the event was delivered", which is true whatever
   the callback did with it.
 
-One handler carries a fifth constraint of its own, and it is an ordering.
-`NavigationStarting` is the other half of the containment above: it asks the host
-whether to cancel, calls `put_Cancel` itself, and only when *that* call succeeds
-invokes a second host callback — `NavigationCancelledCallback` — which is where
-everything following from a cancel happens. A `put_Cancel` that fails warns, naming
-the navigation, and tells the host nothing: the navigation is going ahead, so it has
-to reach the host as an ordinary one rather than as a cancel that never took
-(decisions/0027). Both getters on this event report their own failure for the same
-reason — an unreadable URI arrives at a host gate as the empty string, which is no
-origin's, and a failed id read arrives as `0`, which no real navigation uses.
+For every value passed across an observation callback, the adapter carries the
+getter's value and error independently. The host therefore distinguishes a
+successfully observed zero/empty value from one produced after an HRESULT failure,
+and reports policy only after its state transition. Getters that fail before a
+safe callback exists — string-message decoding and resource-request acquisition —
+are instead reported locally under the return-ownership rule below.
+`NavigationStarting` asks the host whether to cancel, calls `put_Cancel` itself,
+and invokes `NavigationCancelledCallback` only after that call succeeds. A failed
+`put_Cancel` warns with the navigation and commits no cancel state. URI, navigation
+id, initiation and redirect getters retain separate provenance; the completed-
+navigation, new-window, process-failure and message adapters do the same. See
+[decisions/0027](./decisions/0027-cancel-is-committed-after-the-runtime-performs-it.md)
+and [0037](./decisions/0037-event-values-preserve-getter-provenance.md).
+
+### Reporting follows return ownership
+
+Browser operations that return an error do not also invoke `ErrorCallback`; the
+host wraps and reports that terminal failure once. The adapter reports locally
+only when no error can be returned: an event cannot safely reach its callback,
+an adapter-only policy operation fails, or secondary cleanup (including
+controller close) cannot replace a primary returned failure. Optional-interface
+misses remain warnings. This keeps one owner per terminal report without hiding
+non-returnable failures
+([decision 0038](./decisions/0038-terminal-policy-owns-error-reporting.md)).
 
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: documented lazy COM callback allocation after the Windows/amd64 architecture gate, then split the asset-serving continuation verbatim when this file reached its hard limit.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document the source-plan/event/reporting contracts and the independent loader, numeric-slot, architecture-suffix and pointer-lifetime ABI trip-wires.

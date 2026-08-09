@@ -29,13 +29,33 @@ import (
 
 // fakeComState counts the calls a fake COM object receives.
 type fakeComState struct {
-	releases    int
-	addRefs     int
-	getRequest  int
-	request     uintptr // what a fake event args writes out from GetRequest; 0 fails the call
-	queryTarget uintptr // what a fake controller's QueryInterface hands out; 0 answers E_NOINTERFACE
-	puts        int     // Put* setter calls received by a fake controller3
-	putResult   uintptr // HRESULT a fake controller3 returns from its Put* setters
+	releases            int
+	addRefs             int
+	getRequest          int
+	request             uintptr // what a fake event args writes out from GetRequest; 0 fails the call
+	queryTarget         uintptr // what a fake controller's QueryInterface hands out; 0 answers E_NOINTERFACE
+	puts                int     // Put* setter calls received by a fake controller3
+	putResult           uintptr // HRESULT a fake controller3 returns from its Put* setters
+	message             string
+	source              string
+	uri                 string
+	messageResult       uintptr
+	sourceResult        uintptr
+	uriResult           uintptr
+	navigationID        uint64
+	navigationIDResult  uintptr
+	userInitiated       bool
+	userInitiatedResult uintptr
+	success             bool
+	successResult       uintptr
+	redirected          bool
+	redirectedResult    uintptr
+	status              WebErrorStatus
+	statusResult        uintptr
+	kind                ProcessFailedKind
+	kindResult          uintptr
+	operationResult     uintptr
+	operationCalls      int
 }
 
 var (
@@ -107,6 +127,146 @@ var fakeWebResourceArgsVtbl = ICoreWebView2WebResourceRequestedEventArgsVtbl{
 		state.getRequest++
 		writeAddress(out, state.request)
 		return sOK
+	})),
+}
+
+func fakeStringResult(out uintptr, value string, result uintptr) uintptr {
+	if result != sOK {
+		writeAddress(out, 0)
+		return result
+	}
+	address, err := coTaskMemString(value)
+	if err != nil {
+		writeAddress(out, 0)
+		return eFail
+	}
+	writeAddress(out, address)
+	return sOK
+}
+
+func fakeWriteUint64(out uintptr, value uint64) {
+	if out != 0 {
+		_, _, _ = procRtlMoveMemory.Call(out, uintptr(unsafe.Pointer(&value)), unsafe.Sizeof(value))
+	}
+}
+
+func fakeWriteInt32(out uintptr, value int32) {
+	if out != 0 {
+		_, _, _ = procRtlMoveMemory.Call(out, uintptr(unsafe.Pointer(&value)), unsafe.Sizeof(value))
+	}
+}
+
+var fakeWebMessageArgsVtbl = ICoreWebView2WebMessageReceivedEventArgsVtbl{
+	IUnknownVtbl: fakeComIUnknownVtbl,
+	GetSource: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		return fakeStringResult(out, state.source, state.sourceResult)
+	})),
+	TryGetWebMessageAsString: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		return fakeStringResult(out, state.message, state.messageResult)
+	})),
+}
+
+var fakeNavigationStartingArgsVtbl = ICoreWebView2NavigationStartingEventArgsVtbl{
+	IUnknownVtbl: fakeComIUnknownVtbl,
+	GetUri: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		return fakeStringResult(out, state.uri, state.uriResult)
+	})),
+	GetIsUserInitiated: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		writeBOOL(out, state.userInitiated)
+		return state.userInitiatedResult
+	})),
+	GetIsRedirected: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		writeBOOL(out, state.redirected)
+		return state.redirectedResult
+	})),
+	PutCancel: ComProc(windows.NewCallback(func(this, value uintptr) uintptr {
+		state := fakeComStateFor(this)
+		state.puts++
+		return state.putResult
+	})),
+	GetNavigationID: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		fakeWriteUint64(out, state.navigationID)
+		return state.navigationIDResult
+	})),
+}
+
+var fakeNavigationCompletedArgsVtbl = ICoreWebView2NavigationCompletedEventArgsVtbl{
+	IUnknownVtbl: fakeComIUnknownVtbl,
+	GetIsSuccess: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		writeBOOL(out, state.success)
+		return state.successResult
+	})),
+	GetWebErrorStatus: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		fakeWriteInt32(out, int32(state.status))
+		return state.statusResult
+	})),
+	GetNavigationID: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		fakeWriteUint64(out, state.navigationID)
+		return state.navigationIDResult
+	})),
+}
+
+var fakeNewWindowArgsVtbl = ICoreWebView2NewWindowRequestedEventArgsVtbl{
+	IUnknownVtbl: fakeComIUnknownVtbl,
+	GetUri: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		return fakeStringResult(out, state.uri, state.uriResult)
+	})),
+	PutHandled: ComProc(windows.NewCallback(func(this, value uintptr) uintptr {
+		state := fakeComStateFor(this)
+		state.puts++
+		return state.putResult
+	})),
+	GetIsUserInitiated: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		writeBOOL(out, state.userInitiated)
+		return state.userInitiatedResult
+	})),
+}
+
+var fakeProcessFailedArgsVtbl = ICoreWebView2ProcessFailedEventArgsVtbl{
+	IUnknownVtbl: fakeComIUnknownVtbl,
+	GetProcessFailedKind: ComProc(windows.NewCallback(func(this, out uintptr) uintptr {
+		state := fakeComStateFor(this)
+		fakeWriteInt32(out, int32(state.kind))
+		return state.kindResult
+	})),
+}
+
+var fakeSurfaceCoreVtbl = ICoreWebView2Vtbl{
+	IUnknownVtbl: fakeComIUnknownVtbl,
+	Navigate: ComProc(windows.NewCallback(func(this, uri uintptr) uintptr {
+		state := fakeComStateFor(this)
+		state.operationCalls++
+		return state.operationResult
+	})),
+	AddScriptToExecuteOnDocumentCreated: ComProc(windows.NewCallback(func(this, script, handler uintptr) uintptr {
+		state := fakeComStateFor(this)
+		state.operationCalls++
+		return state.operationResult
+	})),
+	ExecuteScript: ComProc(windows.NewCallback(func(this, script, handler uintptr) uintptr {
+		state := fakeComStateFor(this)
+		state.operationCalls++
+		return state.operationResult
+	})),
+}
+
+var fakeSurfaceControllerVtbl = ICoreWebView2ControllerVtbl{
+	IUnknownVtbl: fakeComIUnknownVtbl,
+	PutIsVisible: ComProc(windows.NewCallback(func(this, visible uintptr) uintptr {
+		state := fakeComStateFor(this)
+		state.operationCalls++
+		return state.operationResult
 	})),
 }
 
@@ -207,4 +367,55 @@ func newFakeWebResourceArgs(t *testing.T, request *ICoreWebView2WebResourceReque
 	state := &fakeComState{request: uintptr(unsafe.Pointer(request))}
 	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(args)), state))
 	return args, state
+}
+
+func newFakeWebMessageArgs(t *testing.T, state *fakeComState) *ICoreWebView2WebMessageReceivedEventArgs {
+	t.Helper()
+	args := &ICoreWebView2WebMessageReceivedEventArgs{Vtbl: &fakeWebMessageArgsVtbl}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(args)), state))
+	return args
+}
+
+func newFakeNavigationStartingArgs(t *testing.T, state *fakeComState) *ICoreWebView2NavigationStartingEventArgs {
+	t.Helper()
+	args := &ICoreWebView2NavigationStartingEventArgs{Vtbl: &fakeNavigationStartingArgsVtbl}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(args)), state))
+	return args
+}
+
+func newFakeNavigationCompletedArgs(t *testing.T, state *fakeComState) *ICoreWebView2NavigationCompletedEventArgs {
+	t.Helper()
+	args := &ICoreWebView2NavigationCompletedEventArgs{Vtbl: &fakeNavigationCompletedArgsVtbl}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(args)), state))
+	return args
+}
+
+func newFakeNewWindowArgs(t *testing.T, state *fakeComState) *ICoreWebView2NewWindowRequestedEventArgs {
+	t.Helper()
+	args := &ICoreWebView2NewWindowRequestedEventArgs{Vtbl: &fakeNewWindowArgsVtbl}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(args)), state))
+	return args
+}
+
+func newFakeProcessFailedArgs(t *testing.T, state *fakeComState) *ICoreWebView2ProcessFailedEventArgs {
+	t.Helper()
+	args := &ICoreWebView2ProcessFailedEventArgs{Vtbl: &fakeProcessFailedArgsVtbl}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(args)), state))
+	return args
+}
+
+func newFakeSurfaceCore(t *testing.T, result uintptr) (*ICoreWebView2, *fakeComState) {
+	t.Helper()
+	core := &ICoreWebView2{Vtbl: &fakeSurfaceCoreVtbl}
+	state := &fakeComState{operationResult: result}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(core)), state))
+	return core, state
+}
+
+func newFakeSurfaceController(t *testing.T, result uintptr) (*ICoreWebView2Controller, *fakeComState) {
+	t.Helper()
+	controller := &ICoreWebView2Controller{Vtbl: &fakeSurfaceControllerVtbl}
+	state := &fakeComState{operationResult: result}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(controller)), state))
+	return controller, state
 }

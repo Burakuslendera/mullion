@@ -34,20 +34,20 @@ These files are that record.
 | [0011](./0011-host-owns-rasterization-scale.md) | The host owns the WebView2 rasterization scale | Accepted |
 | [0012](./0012-config-url-loopback.md) | Config.URL lets a caller serve the frontend itself; mullion still opens no socket | Accepted, guard exemption extended by 0030 |
 | [0013](./0013-backdrop-is-a-mullion-command.md) | The screenshot backdrop is a mullion command | Accepted |
-| [0014](./0014-bridge-origin-at-dispatch.md) | The injected bridge acts only on messages from the trusted origin | Accepted, follow-up landed as 0022 + 0023 |
+| [0014](./0014-bridge-origin-at-dispatch.md) | The injected bridge acts only on messages from the trusted origin | Accepted, follow-up landed as 0022 + 0023; fallback authority refined by 0037 |
 | [0015](./0015-maximize-insets-for-autohide-taskbar.md) | Maximized geometry insets 1px on an auto-hide taskbar edge | Accepted, narrowed by 0019 |
 | [0016](./0016-single-flight-embed.md) | The WebView2 embed is single-flight, and a destroyed window cancels it | Accepted |
-| [0017](./0017-error-surface-by-navigation-state.md) | The error surface is identified by navigation state, not by its source | Accepted, extended by 0020, orderings replaced by 0021 |
+| [0017](./0017-error-surface-by-navigation-state.md) | The error surface is identified by navigation state, not by its source | Accepted, extended by 0020, orderings replaced by 0021, provenance refined by 0037 |
 | [0018](./0018-initial-placement-centered-on-primary.md) | The first window is centered on the primary monitor's work area, DPI-scaled | Accepted |
 | [0019](./0019-maximized-hittest-stays-in-process.md) | The maximized hit-test never queries the shell | Accepted |
 | [0020](./0020-absorb-failures-while-surface-loads.md) | Failure completions are absorbed while the error surface loads | Superseded by 0021, log level set by 0026 |
-| [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted; anticipated cancel gate landed as 0023, refined by 0024, log levels by 0026 |
+| [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted; anticipated cancel gate landed as 0023, refined by 0024, log levels by 0026, getter authority by 0037 |
 | [0022](./0022-new-windows-to-system-browser.md) | New windows are routed to the system browser, never opened in the host | Accepted, launch moved off the UI thread by 0029 |
 | [0023](./0023-navigation-cancel-gate.md) | A top-level navigation off the trusted origin is cancelled, opt-in | Accepted, ordering corrected by 0027, launch moved off the UI thread by 0029 |
 | [0024](./0024-benign-abort-in-process.md) | An aborted navigation is not a load failure when mullion serves the assets | Accepted |
 | [0025](./0025-urls-are-logged-as-urls.md) | A URL reaching a log line is reduced as a URL, not as a filesystem path | Accepted, trip-wire fired by 0028 |
 | [0026](./0026-navigation-failure-level-follows-classification.md) | A failed navigation is logged at the level the host's own classification gives it | Accepted |
-| [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md) | A navigation cancel is committed only after the runtime has performed it | Accepted |
+| [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md) | A navigation cancel is committed only after the runtime has performed it | Accepted, event provenance and fallback restoration refined by 0037 |
 | [0028](./0028-message-keeps-the-urls-inside-it.md) | A message keeps the http(s) URLs inside it | Accepted |
 | [0029](./0029-system-browser-launch-off-the-ui-thread.md) | The system-browser launch runs off the UI thread, bounded | Accepted |
 | [0030](./0030-guard-exempts-the-virtual-host-name.md) | The no-port guard exempts one virtual host name, not a file | Accepted |
@@ -56,6 +56,9 @@ These files are that record.
 | [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) | The Go floor is 1.24, so that an asset directory can be an `os.Root` | Accepted |
 | [0034](./0034-webview2-hosting-is-windows-amd64-only.md) | WebView2 hosting is supported only on Windows/amd64 | Accepted |
 | [0035](./0035-frontend-diagnostics-are-bounded.md) | Frontend-controlled diagnostics are bounded before reduction and retention | Accepted |
+| [0036](./0036-one-source-plan-defines-origin.md) | One source plan defines the frontend origin | Accepted |
+| [0037](./0037-event-values-preserve-getter-provenance.md) | Event values preserve getter provenance before granting fallback authority | Accepted |
+| [0038](./0038-terminal-policy-owns-error-reporting.md) | Terminal policy owns each error report | Accepted |
 
 ## When to write one
 
@@ -98,4 +101,4 @@ the most useful part.
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: index the source-plan, event-provenance and reporting-ownership decisions and route their refinements forward.

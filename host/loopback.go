@@ -2,167 +2,36 @@ package host
 
 import (
 	"errors"
-	"net/url"
 	"strings"
 )
 
-// Config.URL lets a caller point mullion at a URL they serve themselves instead of
-// the in-process virtual host (see docs/decisions/0012). mullion never opens a
-// socket - the caller runs the server, and mullion only navigates there.
-//
-// This file owns the two rules that make that safe, and it is the one place in the
-// tree allowed to name the loopback hosts: leak_test.go exempts it, because here the
-// names *restrict* Config.URL to the local machine, which is the opposite of opening
-// a socket. Nothing here listens; net/url only parses.
-
-// loopbackHosts are the only hosts Config.URL may name. mullion injects window.<ns>
-// - the window controls and Config.Bridge, i.e. the application's own Go methods -
-// into whatever it navigates to. A non-loopback origin could therefore drive the
-// window and call into Go from across the network, so the URL is pinned to the
-// local machine.
+// Config.URL points the WebView at a caller-served loopback URL. Mullion never
+// opens a socket; this allow-list only restricts where the injected bridge may
+// run. Source-plan construction is the sole production parser of Config.URL.
 var loopbackHosts = map[string]bool{
 	"127.0.0.1": true,
 	"localhost": true,
 	"::1":       true,
 }
 
-// validateURL checks Config.URL. Empty is valid, and is the default: assets are
-// served from the in-process virtual host and mullion opens nothing. A non-empty URL
-// must use http or https and must name a loopback host. This decides only where
-// mullion navigates; it never opens the socket.
-func validateURL(raw string) error {
-	if raw == "" {
-		return nil
-	}
-	parsed, err := url.Parse(raw)
+func buildExternalSourcePlan(raw string) (sourcePlan, error) {
+	origin, parsed, err := parseCanonicalHTTPOrigin(raw)
 	if err != nil {
-		return errors.New("mullion: Config.URL is not a valid URL")
+		return sourcePlan{}, errors.New("mullion: Config.URL " + err.Error())
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return errors.New("mullion: Config.URL must use http or https")
+	if !loopbackHosts[origin.host] {
+		return sourcePlan{}, errors.New("mullion: Config.URL must name a loopback host (the local machine only)")
 	}
-	if !loopbackHosts[parsed.Hostname()] {
-		return errors.New("mullion: Config.URL must name a loopback host (the local machine only)")
-	}
-	return nil
-}
 
-// urlOrigin returns scheme://host[:port] for a log line, dropping any path, query or
-// fragment so a token a caller placed in the URL never reaches a log. It runs only
-// after validateURL has accepted the URL; the error branch is belt and braces.
-func urlOrigin(raw string) string {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return "invalid"
-	}
-	return parsed.Scheme + "://" + parsed.Host
-}
-
-// assetSourceSummary is the startup line that states, on every run, where the
-// frontend is served from - so a bug report shows whether Config.URL was set without
-// anyone having to ask. It is logged at INFO alongside the version line, and the URL
-// is reduced to its origin first (urlOrigin) so no path is disclosed.
-func assetSourceSummary(config Config) string {
-	if config.URL == "" {
-		return "mullion: asset source=embedded-fs, virtual_host=" + config.origin()
-	}
-	return "mullion: asset source=external-url, url=" + urlOrigin(config.URL)
-}
-
-// trustedOrigin is the single origin the injected bridge may be driven from: the
-// virtual host that serves the embedded fs.FS (https://<VirtualHost>), or the
-// loopback origin the caller serves when Config.URL is set. Scheme://host[:port],
-// no path.
-func (config Config) trustedOrigin() string {
-	return urlOrigin(config.startURL())
-}
-
-// messageSourceAllowed decides whether a top-level web message posted from
-// source may reach the bridge. window.<ns> is injected into every document the
-// WebView loads, but the CoreWebView2 WebMessageReceived path currently receives
-// top-level document messages only (decisions/0014). This is an allow-list, not a
-// deny-list: only mullion's own surfaces pass. That is the trusted origin (the
-// virtual host, or the Config.URL origin) and the data: error page (errorpage.go).
-// Everything else is rejected - a foreign http/https origin, and also
-// blob:/filesystem:/file: (which carry a real web origin a bare scheme check
-// would wave through) and about:blank/"" (which a script-driven top navigation
-// can reach while inheriting the previous document's origin). Admitting data: is
-// safe on this current top-level path: only mullion itself can put a data:
-// document there, because browsers block script-driven top navigation to data:.
-//
-// The data: branch is belt and braces, kept for a runtime that reports the URI:
-// the runtime measured live (150.0.4078.65) reports a data: document's source as
-// the empty string instead, at the event args and the core alike, so the error
-// surface never actually reaches this branch there. The empty-source case is
-// admitted per navigation state by Host.errorSurfaceMessageAllowed
-// (errorsurface_windows.go, issue #56); this pure function stays source-only and
-// keeps rejecting "".
-func (config Config) messageSourceAllowed(source string) bool {
-	if strings.HasPrefix(source, "data:") {
-		return true
-	}
-	return sameHTTPOrigin(source, config.trustedOrigin())
-}
-
-// messageSourceTrusted reports whether a message from source may drive the
-// application's own Config.Bridge methods, not just fallback window controls.
-// Only the trusted origin qualifies. The error surface's messages are allowed
-// (messageSourceAllowed, or Host.errorSurfaceMessageAllowed for the empty-source
-// form the runtime actually reports - issue #56) so its caption, drag and resize
-// controls work, but they are NOT trusted for Config.Bridge. That distinction is
-// defense in depth on today's top-level-only receipt path and becomes essential
-// if frame message receipt is added: a script can create a hostile data: iframe,
-// and an empty source says even less (decisions/0014).
-func (config Config) messageSourceTrusted(source string) bool {
-	return sameHTTPOrigin(source, config.trustedOrigin())
-}
-
-// navigationOffOrigin reports whether a top-level navigation to uri should be
-// cancelled by the PinNavigationToOrigin gate - that is, whether it leaves the
-// trusted origin. It is always false unless the gate is enabled. Then the
-// trusted origin (any path on it, so SPA routing and in-origin links pass) and
-// mullion's own data: error surface are allowed, and everything else - a foreign
-// http/https origin, and the blob:/file:/about:blank forms a bare scheme check
-// would wave through - is off-origin. Content cannot top-navigate to a data: URL
-// (browsers block a script-driven top navigation to one), so a data: start in
-// the top frame is mullion's own error surface, never a foreign document.
-func (config Config) navigationOffOrigin(uri string) bool {
-	if !config.PinNavigationToOrigin {
-		return false
-	}
-	if strings.HasPrefix(uri, "data:") {
-		return false
-	}
-	return !sameHTTPOrigin(uri, config.trustedOrigin())
-}
-
-// sameHTTPOrigin reports whether raw and trusted are the same http/https origin -
-// scheme, host (case-insensitive) and port, with the default port normalised so that
-// https://x and https://x:443 match. A non-http/https scheme (blob:, file:, ...) is
-// never the same origin as the trusted http/https one, so it is rejected.
-func sameHTTPOrigin(raw, trusted string) bool {
-	a, err := url.Parse(raw)
-	if err != nil {
-		return false
-	}
-	b, err := url.Parse(trusted)
-	if err != nil {
-		return false
-	}
-	if a.Scheme != b.Scheme || (a.Scheme != "http" && a.Scheme != "https") {
-		return false
-	}
-	return strings.EqualFold(a.Hostname(), b.Hostname()) && defaultedPort(a) == defaultedPort(b)
-}
-
-// defaultedPort returns the URL's port, or the scheme default (443 for https, 80 for
-// http) when none is given, so an explicit default port compares equal to none.
-func defaultedPort(u *url.URL) string {
-	if port := u.Port(); port != "" {
-		return port
-	}
-	if u.Scheme == "https" {
-		return "443"
-	}
-	return "80"
+	// Keep the caller-owned path, query, fragment and optional userinfo, but
+	// canonicalise the scheme, host and default port once for every consumer.
+	parsed.Scheme = origin.scheme
+	parsed.Host = strings.TrimPrefix(origin.text, origin.scheme+"://")
+	startURL := parsed.String()
+	return sourcePlan{
+		startURL:    startURL,
+		origin:      origin,
+		retryTarget: origin.text,
+		summary:     "mullion: asset source=external-url, url=" + origin.text,
+	}, nil
 }

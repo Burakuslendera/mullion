@@ -94,7 +94,7 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 	options := newEnvironmentOptions(opts)
 	defer options.release()
 
-	handler := newCompletedHandler(uintptr(unsafe.Pointer(&completedVtable)), iidEnvironmentCompletedHandler)
+	handler := newEnvironmentCompletedHandler()
 	// Our reference is held until Invoke has run. Releasing it right after the
 	// create call would rely on the runtime having taken its own reference; it
 	// does, but a lifetime bug there is a use-after-free inside the browser, and
@@ -139,15 +139,6 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 	return &Environment{unknown: unknown}, nil
 }
 
-// environmentVtbl mirrors ICoreWebView2Environment only as far as its first
-// method. The remaining methods belong to the interface bindings; this exists
-// so that creating a controller - the one thing the loader must be able to do
-// to prove it works - does not depend on them.
-type environmentVtbl struct {
-	IUnknownVtbl
-	CreateCoreWebView2Controller ComProc
-}
-
 // CreateController creates the ICoreWebView2Controller that hosts the browser
 // inside parent, and returns it as a raw interface pointer for the interface
 // bindings to wrap. The caller owns a reference and must Release it.
@@ -165,10 +156,10 @@ func (e *Environment) CreateController(parent windows.Handle) (*IUnknown, error)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	handler := newCompletedHandler(uintptr(unsafe.Pointer(&completedVtable)), iidControllerCompletedHandler)
+	handler := newControllerCompletedHandler()
 	defer handler.release()
 
-	vtbl := (*environmentVtbl)(unsafe.Pointer(e.unknown.Vtbl))
+	vtbl := (*ICoreWebView2EnvironmentVtbl)(unsafe.Pointer(e.unknown.Vtbl))
 	hr, _, _ := vtbl.CreateCoreWebView2Controller.Call(
 		uintptr(unsafe.Pointer(e.unknown)),
 		uintptr(parent),

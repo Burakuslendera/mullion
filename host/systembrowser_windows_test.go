@@ -95,7 +95,7 @@ func TestShouldCancelNavigation(t *testing.T) {
 
 	// The trusted origin passes - the surface, SPA routing and in-origin links
 	// must never be cancelled.
-	if cancelNavigation(on, on.config.trustedOrigin()+"/app", 1, true) {
+	if cancelNavigation(on, on.source.origin.text+"/app", 1, true) {
 		t.Error("gate on: cancelled an on-origin navigation")
 	}
 	// An off-origin non-http(s) target is cancelled and dropped, never routed.

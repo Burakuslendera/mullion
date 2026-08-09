@@ -27,9 +27,10 @@ package webview2
 // QueryInterface from it, so the vtable - which holds nothing but function
 // pointers - can be shared.
 //
-// windows.NewCallback allocates from a small, fixed, never-freed table. One
-// shared vtable means exactly one Invoke callback for all event handling, and
-// ensureCOMVtables builds it only after the supported-architecture gate.
+// windows.NewCallback allocates from a small, fixed, never-freed table and is
+// usable here only because the architecture gate has accepted Windows/amd64.
+// One shared vtable means exactly one Invoke callback for all event handling,
+// and ensureCOMVtables builds it only after that gate.
 //
 // # Threading
 //
@@ -49,8 +50,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// eventHandlerVtbl is the vtable shape all six event handler interfaces share.
-// ABI-critical: Invoke must sit at slot 3, immediately after IUnknown.
+// eventHandlerVtbl is the C ABI shape from Microsoft.Web.WebView2 SDK
+// 1.0.4129.50: IUnknown plus Invoke at literal slot 3. The layout manifest pins
+// the offset, and TestHandlerInvokeDispatch calls numeric slot 3 so a declaration
+// and a test cannot drift together by reusing the Go field name.
 type eventHandlerVtbl struct {
 	IUnknownVtbl
 	Invoke ComProc

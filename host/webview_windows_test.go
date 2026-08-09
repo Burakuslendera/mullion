@@ -4,6 +4,9 @@ package host
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 	"time"
@@ -29,10 +32,10 @@ func TestNavigateFailureUncommitsAndTearsDownBrowser(t *testing.T) {
 	host.browser = browser
 	wantErr := errors.New("navigate failed")
 
-	err := host.navigateOrTearDown(func() error { return wantErr })
+	err := host.committedBrowserStepOrTearDown(func() error { return wantErr })
 
 	if !errors.Is(err, wantErr) {
-		t.Fatalf("navigateOrTearDown err = %v, want %v", err, wantErr)
+		t.Fatalf("committedBrowserStepOrTearDown err = %v, want %v", err, wantErr)
 	}
 	if host.browser != nil {
 		t.Fatal("a Navigate failure must uncommit host.browser, or ensureWebView reuses a torn-down browser on retry")
@@ -49,8 +52,8 @@ func TestNavigateSuccessKeepsBrowser(t *testing.T) {
 	browser := webview2.New()
 	host.browser = browser
 
-	if err := host.navigateOrTearDown(func() error { return nil }); err != nil {
-		t.Fatalf("navigateOrTearDown err = %v, want nil", err)
+	if err := host.committedBrowserStepOrTearDown(func() error { return nil }); err != nil {
+		t.Fatalf("committedBrowserStepOrTearDown err = %v, want nil", err)
 	}
 	if host.browser != browser {
 		t.Fatal("a successful navigation must keep the committed browser")
@@ -263,10 +266,211 @@ func TestNavigateFailureStopsTheRenderWatchdog(t *testing.T) {
 	host.browser = browser
 	host.startRenderWatchdog()
 
-	_ = host.navigateOrTearDown(func() error { return errors.New("navigate failed") })
+	_ = host.committedBrowserStepOrTearDown(func() error { return errors.New("navigate failed") })
 	time.Sleep(60 * time.Millisecond)
 
 	if strings.Contains(logger.String(), "mullion: frontend render timeout") {
 		t.Fatal("the render watchdog fired after the failed navigation tore the webview down")
+	}
+}
+
+func TestFilterFailureCleansUpLogsOnceAndAllowsRetry(t *testing.T) {
+	host, logger := newTestHost(t, Config{VirtualHost: "APP_ONE.INTERNAL"})
+	wantErr := errors.New("filter failed")
+	first := webview2.New()
+	var firstPattern string
+
+	err := host.ensureWebViewWith("initial", func() error {
+		host.browser = first
+		return host.registerAssetFilterOrTearDown(func(pattern string, context webview2.WebResourceContext) error {
+			firstPattern = pattern
+			if context != webview2.WebResourceContextAll {
+				t.Fatalf("filter context = %v, want all", context)
+			}
+			return wantErr
+		})
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("filter failure = %v, want %v", err, wantErr)
+	}
+	if firstPattern != "https://app_one.internal/*" {
+		t.Fatalf("filter pattern = %q", firstPattern)
+	}
+	if host.browser != nil || !first.IsShuttingDown() {
+		t.Fatal("failed filter did not uncommit and shut down the browser")
+	}
+	logged := logger.String()
+	if strings.Contains(logged, wantErr.Error()) {
+		t.Fatalf("returned filter failure was also reported by ensureWebViewWith:\n%s", logged)
+	}
+	for _, falseSuccess := range []string{
+		"webresource filter registered",
+		"asset serving ready",
+		"injected scripts registered",
+		"navigate requested",
+	} {
+		if strings.Contains(logged, falseSuccess) {
+			t.Fatalf("filter failure logged a false later stage %q:\n%s", falseSuccess, logged)
+		}
+	}
+
+	second := webview2.New()
+	var retryCalls int
+	err = host.ensureWebViewWith("retry", func() error {
+		host.browser = second
+		return host.registerAssetFilterOrTearDown(func(pattern string, context webview2.WebResourceContext) error {
+			retryCalls++
+			if pattern != firstPattern || context != webview2.WebResourceContextAll {
+				t.Fatalf("retry filter = %q/%v, want %q/all", pattern, context, firstPattern)
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if retryCalls != 1 || host.browser != second || second.IsShuttingDown() {
+		t.Fatalf("retry state = calls %d, committed %v, shutdown %v", retryCalls, host.browser == second, second.IsShuttingDown())
+	}
+	logged = logger.String()
+	if strings.Count(logged, "webresource filter registered") != 1 ||
+		strings.Count(logged, "asset serving ready, source=embedded-fs") != 1 {
+		t.Fatalf("retry did not log exactly one successful registration:\n%s", logged)
+	}
+}
+
+func TestExternalSourceSkipsEmbeddedFilterWithoutTearingDown(t *testing.T) {
+	host, logger := newTestHost(t, Config{URL: testExternalURL, VirtualHost: "invalid/ignored"})
+	browser := webview2.New()
+	host.browser = browser
+	var calls int
+	err := host.registerAssetFilterOrTearDown(func(string, webview2.WebResourceContext) error {
+		calls++
+		return errors.New("must not run")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 || host.browser != browser || browser.IsShuttingDown() {
+		t.Fatalf("external filter state = calls %d, committed %v, shutdown %v", calls, host.browser == browser, browser.IsShuttingDown())
+	}
+	logged := logger.String()
+	if !strings.Contains(logged, "asset serving skipped, source=external-url") ||
+		strings.Contains(logged, "webresource filter registered") {
+		t.Fatalf("external filter logging is false or missing:\n%s", logged)
+	}
+}
+
+func TestCreateWebViewProductionWiresMandatoryAssetFilterGateInOrder(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "webview_windows.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	functions := make(map[string]*ast.FuncDecl)
+	for _, declaration := range file.Decls {
+		if function, ok := declaration.(*ast.FuncDecl); ok {
+			functions[function.Name.Name] = function
+		}
+	}
+	create := functions["createWebView"]
+	filterGate := functions["registerAssetFilterOrTearDown"]
+	if create == nil || filterGate == nil {
+		t.Fatal("production createWebView/filter teardown gate declaration missing")
+	}
+
+	collectCalls := func(function *ast.FuncDecl) map[string][]*ast.CallExpr {
+		calls := make(map[string][]*ast.CallExpr)
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			if call, ok := node.(*ast.CallExpr); ok {
+				if name := webViewASTSelectorPath(call.Fun); name != "" {
+					calls[name] = append(calls[name], call)
+				}
+			}
+			return true
+		})
+		return calls
+	}
+	createCalls := collectCalls(create)
+	one := func(name string) *ast.CallExpr {
+		calls := createCalls[name]
+		if len(calls) != 1 {
+			t.Fatalf("createWebView %s calls = %d, want exactly one", name, len(calls))
+		}
+		return calls[0]
+	}
+	commit := one("host.commitEmbeddedBrowser")
+	gate := one("host.registerAssetFilterOrTearDown")
+	watchdog := one("host.startRenderWatchdog")
+	navigate := one("browser.Navigate")
+	scripts := createCalls["browser.Init"]
+	if len(scripts) == 0 {
+		t.Fatal("createWebView has no production script registration")
+	}
+	if !(commit.Pos() < gate.Pos() &&
+		gate.Pos() < scripts[0].Pos() &&
+		gate.Pos() < watchdog.Pos() &&
+		gate.Pos() < navigate.Pos()) {
+		t.Fatalf("mandatory filter order is commit %s, gate %s, scripts %s, watchdog %s, navigate %s",
+			fset.Position(commit.Pos()), fset.Position(gate.Pos()), fset.Position(scripts[0].Pos()),
+			fset.Position(watchdog.Pos()), fset.Position(navigate.Pos()))
+	}
+
+	if len(gate.Args) != 1 {
+		t.Fatalf("filter gate arguments = %d, want registration callback", len(gate.Args))
+	}
+	callback, ok := gate.Args[0].(*ast.FuncLit)
+	if !ok {
+		t.Fatal("filter gate no longer receives the production browser registration callback")
+	}
+	var registrations []*ast.CallExpr
+	ast.Inspect(callback.Body, func(node ast.Node) bool {
+		if call, ok := node.(*ast.CallExpr); ok && webViewASTSelectorPath(call.Fun) == "browser.AddWebResourceRequestedFilter" {
+			registrations = append(registrations, call)
+		}
+		return true
+	})
+	if len(registrations) != 1 ||
+		len(registrations[0].Args) != 2 ||
+		webViewASTSelectorPath(registrations[0].Args[0]) != "pattern" ||
+		webViewASTSelectorPath(registrations[0].Args[1]) != "context" {
+		t.Fatal("production callback must forward the gate's pattern/context to AddWebResourceRequestedFilter")
+	}
+
+	filterCalls := collectCalls(filterGate)
+	register := filterCalls["register"]
+	teardown := filterCalls["host.committedBrowserStepOrTearDown"]
+	if len(register) != 1 || len(register[0].Args) != 2 ||
+		webViewASTSelectorPath(register[0].Args[0]) != "host.source.filterPattern" ||
+		webViewASTSelectorPath(register[0].Args[1]) != "webview2.WebResourceContextAll" {
+		t.Fatal("filter gate must register the source-plan pattern for WebResourceContextAll")
+	}
+	if len(teardown) != 1 || len(teardown[0].Args) != 1 {
+		t.Fatal("filter registration must pass through committedBrowserStepOrTearDown")
+	}
+	insideTeardown := false
+	ast.Inspect(teardown[0].Args[0], func(node ast.Node) bool {
+		if node == register[0] {
+			insideTeardown = true
+		}
+		return true
+	})
+	if !insideTeardown {
+		t.Fatal("canonical filter registration bypasses the teardown gate")
+	}
+}
+
+func webViewASTSelectorPath(expression ast.Expr) string {
+	switch expression := expression.(type) {
+	case *ast.Ident:
+		return expression.Name
+	case *ast.SelectorExpr:
+		prefix := webViewASTSelectorPath(expression.X)
+		if prefix == "" {
+			return ""
+		}
+		return prefix + "." + expression.Sel.Name
+	default:
+		return ""
 	}
 }

@@ -46,6 +46,9 @@ var (
 // callback trampoline exists. ensureCOMVtables itself checks the central
 // architecture decision, so even a direct callback-constructor consumer cannot
 // bypass discovery's gate.
+// The only accepted target is Windows/amd64, where windows.NewCallback and COM
+// share the Win64 calling convention. Supporting another architecture requires
+// proving that callback ABI first; compiling there is not sufficient.
 //
 // The factory is a seam for the architecture-tagged gate test. Production never
 // replaces it.

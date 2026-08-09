@@ -38,17 +38,12 @@ func (host *Host) logNavigationStarting(uri string, navigationID uint64, isUserI
 // logRejectedWebMessage records a web message dropped because its source is not
 // allowed to drive the bridge.
 //
-// Two lines, deliberately. The WARN carries the origin, which is what the
-// allow-list actually decided on; the DEBUG carries the fuller reduction because
-// urlOrigin collapses every value without an http(s) origin to the same
-// ":unknown", and that collapse is what made issue #56 need a live probe to
-// diagnose. The collapse stays - a live observation was read against it. What
-// changed with issue #78 is that an http(s) origin now survives the reduction at
-// all: through Message this WARN read "httpevil.example", the host welded onto a
-// clipped scheme. A value with no http(s) origin still reduces exactly as
-// before, ":unknown" included.
+// Two lines, deliberately. The WARN carries the canonical origin, which is what
+// the allow-list actually decided on; the DEBUG carries the fuller logsafe
+// reduction. A value without an HTTP origin retains the established :unknown
+// diagnostic while the raw line distinguishes the forms at DEBUG.
 func (host *Host) logRejectedWebMessage(source string) {
-	host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.URL(urlOrigin(source)))
+	host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.URL(sourceOriginSummary(source)))
 	host.log.Debug("mullion: web message rejected, raw source=" + logsafe.URL(source) +
 		", len=" + strconv.Itoa(len(source)))
 }

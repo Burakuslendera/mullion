@@ -13,8 +13,8 @@ import (
 // needs a real window and the WebView2 runtime, and is called out in the report.
 //
 // The failed URLs below use the IPv6 loopback [::1]. TestNoNetworkListener
-// (leak_test.go) forbids the two more common loopback literals outside loopback.go,
-// and the builder does not validate the host anyway.
+// forbids the two more common loopback literals outside loopback.go, and the
+// source-plan preflight accepts this canonical loopback form.
 
 // decodeErrorPageHTML strips the data:text/html;charset=utf-8, prefix and
 // percent-decodes the payload back to the HTML the WebView would parse. A decode
@@ -44,11 +44,20 @@ func decodeErrorPageHTML(t *testing.T, page string) string {
 	return decoded
 }
 
+func errorPageForURL(t *testing.T, config Config, raw string) string {
+	t.Helper()
+	plan, err := buildSourcePlan(Config{URL: raw}.normalise())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return errorPageURL(config, plan.retryTarget)
+}
+
 func TestErrorPageURLShowsControllableSurfaceAndRedactsPath(t *testing.T) {
 	const failed = "http://[::1]:8080/private?token=secret"
 	config := Config{JSNamespace: "mullion", TitlebarHeight: 36}.normalise()
 
-	doc := decodeErrorPageHTML(t, errorPageURL(config, failed))
+	doc := decodeErrorPageHTML(t, errorPageForURL(t, config, failed))
 
 	// Redaction: only the origin is shown, never the path, query or token.
 	if !strings.Contains(doc, "http://[::1]:8080") {
@@ -94,7 +103,7 @@ func TestErrorPageURLUsesConfiguredNamespace(t *testing.T) {
 	// A host configured for "app" must leave no addressable "mullion" behind, the
 	// same contract js_test.go locks for the injected scripts.
 	config := Config{JSNamespace: "app"}.normalise()
-	doc := decodeErrorPageHTML(t, errorPageURL(config, "http://[::1]:9000"))
+	doc := decodeErrorPageHTML(t, errorPageForURL(t, config, "http://[::1]:9000"))
 
 	if !strings.Contains(doc, "window.app.window.close()") {
 		t.Errorf("caption controls are not wired to the configured namespace")
@@ -111,7 +120,7 @@ func TestErrorPageURLUsesConfiguredNamespace(t *testing.T) {
 
 func TestErrorPageURLUsesConfiguredBackground(t *testing.T) {
 	config := Config{BackgroundColour: Colour{R: 30, G: 30, B: 30, A: 255}}.normalise()
-	doc := decodeErrorPageHTML(t, errorPageURL(config, "http://[::1]:9000"))
+	doc := decodeErrorPageHTML(t, errorPageForURL(t, config, "http://[::1]:9000"))
 
 	if !strings.Contains(doc, "rgba(30,30,30,1)") {
 		t.Errorf("error page does not paint the configured BackgroundColour")

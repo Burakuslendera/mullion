@@ -85,8 +85,18 @@ documents as subject to change.
 - `internal/webview2/loader_machine_windows_test.go`:
   `TestRuntimeExportsTheEntryPointWeCallDirectly` loads the runtime's client DLL
   on a real machine and asserts the export exists.
-- `internal/webview2/interfaces_windows_test.go`: every slot of every vtable
-  pinned; `TestSettings9VtblLayout` anchors the 39-slot chain.
+- `internal/webview2/interfaces_windows_test.go`: the runtime-owned interface
+  manifest pins every vtable slot; canonical-string rows pin every IID literal
+  the binding declares; the settings chain is 39 slots.
+- `internal/webview2/handlers_windows_test.go`,
+  `loader_options_windows_test.go` and `loader_completion_windows_test.go`: the
+  Go-owned ABI manifest pins object/vtable layout, canonical IIDs and literal
+  numeric-slot dispatch for each runtime-facing entry point.
+- `internal/webview2/abi_completeness_windows_test.go`: the inventory guard
+  rejects unclassified production vtables, COM object structs and GUID literals.
+- Official authority: Microsoft.Web.WebView2 NuGet `1.0.4129.50`,
+  `build/native/include/WebView2.h` (flattened C vtables) and root
+  `WebView2.idl` (UUIDs and declaration order).
 - Live, at the time the layer was written: a bare Win32 window created an
   environment and a controller through this path, navigated to `about:blank`, and
   the destination was **read back** from the browser through `get_Source` - a
@@ -100,4 +110,4 @@ documents as subject to change.
   [verification.md](../verification.md), which exercises the same path through
   `examples/basic`.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: correct ABI evidence to distinguish runtime-owned and Go-owned manifests, numeric dispatch, canonical IIDs and the completeness guard.

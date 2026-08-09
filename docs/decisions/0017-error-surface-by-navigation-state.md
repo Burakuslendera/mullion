@@ -1,6 +1,6 @@
 # 0017. The error surface is identified by navigation state, not by its source
 
-**Status:** Accepted. Extended by [0020](./0020-absorb-failures-while-surface-loads.md): failure completions arriving while the surface's own load is in flight are absorbed, not read as the surface dying (issue #68). [0021](./0021-error-surface-navigation-identity.md) replaces the completion-ordering assumptions with navigation-id attribution; this record's ordering costs apply only when identity is unavailable (the 0021 fallback).
+**Status:** Accepted. Extended by [0020](./0020-absorb-failures-while-surface-loads.md): failure completions arriving while the surface's own load is in flight are absorbed, not read as the surface dying (issue #68). [0021](./0021-error-surface-navigation-identity.md) replaces the completion-ordering assumptions with navigation-id attribution; this record's ordering costs apply only when identity is unavailable (the 0021 fallback). Getter provenance and generation-bound admission are refined by [0037](./0037-event-values-preserve-getter-provenance.md).
 
 ## Context
 
@@ -91,4 +91,4 @@ source never reaches `Config.Bridge`:
 - logging-dead-ends.md §1: the dead ends this record's decision replaced (moved
   there verbatim from lessons-and-dead-ends.md §14).
 
-> Last updated: 2026-07-21 | Editor: Claude (Fable 5) | Change: status line extended by 0020 — the failure-counting side of the missing-identity assumption sealed the surface on a failed Retry (issue #68); the body is unchanged, per the supersede rules.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: route event provenance and fallback admission forward to 0037 while preserving the historical body.

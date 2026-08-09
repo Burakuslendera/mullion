@@ -33,126 +33,143 @@ func (browser *Browser) registerEvents() error {
 		return errors.New("webview2: core webview unavailable")
 	}
 
-	if err := addEvent(NewWebMessageReceivedHandler(func(sender *ICoreWebView2, args *ICoreWebView2WebMessageReceivedEventArgs) {
-		if browser.MessageCallback == nil {
-			return
-		}
-		message, err := args.TryGetWebMessageAsString()
-		if err != nil {
-			// A frontend may post a structured message rather than a string.
-			// The bridge protocol here is string-based, so dropping it is
-			// correct - there is nothing the host could do with it.
-			return
-		}
-		// GetSource is the URI of the document that posted the message; the host
-		// uses it to keep the bridge pinned to the trusted origin.
-		source, _ := args.GetSource()
-		browser.MessageCallback(message, source, sender)
-	}), core.AddWebMessageReceived); err != nil {
+	if err := addEvent(NewWebMessageReceivedHandler(browser.handleWebMessageReceived), core.AddWebMessageReceived); err != nil {
 		return err
 	}
-
 	if err := addEvent(NewWebResourceRequestedHandler(func(_ *ICoreWebView2, args *ICoreWebView2WebResourceRequestedEventArgs) {
 		browser.handleWebResourceRequested(args)
 	}), core.AddWebResourceRequested); err != nil {
 		return err
 	}
-
 	if err := addEvent(NewNavigationStartingHandler(func(_ *ICoreWebView2, args *ICoreWebView2NavigationStartingEventArgs) {
-		if browser.NavigationStartingCallback == nil {
-			return
-		}
-		// The getters degrade independently on purpose: identity is the
-		// load-bearing value, and a URI read failing must not cost the id. A
-		// failed id read reports 0, which no real navigation uses - callers
-		// treat it as "identity unavailable" (decisions/0021).
-		//
-		// Both failures are reported. An unreadable URI is not cosmetic here:
-		// a host gate that decides on the target sees the empty string, which
-		// is no origin's, so it decides against a navigation it could not read
-		// (issue #73). That has to be diagnosable, and it was silent.
-		uri, err := args.GetUri()
-		if err != nil {
-			browser.reportWarning(err)
-		}
-		id, err := args.GetNavigationID()
-		if err != nil {
-			browser.reportWarning(err)
-		}
-		userInitiated, _ := args.GetIsUserInitiated()
-		redirected, _ := args.GetIsRedirected()
-		if !browser.NavigationStartingCallback(uri, id, userInitiated, redirected) {
-			return
-		}
-		// Cancel first, tell the host second. A failed put_Cancel means the
-		// navigation is still going ahead, so the host must not act on a
-		// cancel that did not happen - no id to swallow the completion with,
-		// and no second copy of the target opened somewhere else (issue #73).
-		if err := args.PutCancel(true); err != nil {
-			// Named, because the bare HRESULT this used to report says neither
-			// that a cancel failed nor which navigation it was - and a failed
-			// cancel is the one event the whole split exists to handle
-			// correctly, so it has to be recognisable in a log.
-			browser.reportWarning(errors.Join(errors.New("cancel navigation "+strconv.FormatUint(id, 10)), err))
-			return
-		}
-		if browser.NavigationCancelledCallback != nil {
-			browser.NavigationCancelledCallback(uri, id, userInitiated)
-		}
+		browser.handleNavigationStarting(args)
 	}), core.AddNavigationStarting); err != nil {
 		return err
 	}
-
 	if err := addEvent(NewNavigationCompletedHandler(func(_ *ICoreWebView2, args *ICoreWebView2NavigationCompletedEventArgs) {
-		if browser.NavigationCompletedCallback == nil {
-			return
-		}
-		success, _ := args.GetIsSuccess()
-		status, _ := args.GetWebErrorStatus()
-		id, err := args.GetNavigationID()
-		if err != nil {
-			browser.reportWarning(err)
-		}
-		browser.NavigationCompletedCallback(success, status, id)
+		browser.handleNavigationCompleted(args)
 	}), core.AddNavigationCompleted); err != nil {
 		return err
 	}
-
 	if err := addEvent(NewNewWindowRequestedHandler(func(_ *ICoreWebView2, args *ICoreWebView2NewWindowRequestedEventArgs) {
-		// Suppress the runtime's default new window first - a detached
-		// CoreWebView2 with no host chrome is meaningless for a single-window
-		// frameless host (issue #6). If suppression fails (a broken args object),
-		// the runtime opens its own window, so do not also route the URI to the
-		// system browser: that would double-open. Otherwise the suppression stands
-		// even when the callback is unset or the URI read fails.
-		if err := args.PutHandled(true); err != nil {
-			browser.reportWarning(err)
-			return
-		}
-		if browser.NewWindowRequestedCallback == nil {
-			return
-		}
-		// Reported for the same reason as the navigation getter's: an unreadable
-		// URI reaches the host as the empty string, where it is dropped as an
-		// unsupported scheme - a request that silently did nothing, with nothing
-		// to say why (issue #73).
-		uri, err := args.GetUri()
-		if err != nil {
-			browser.reportWarning(err)
-		}
-		userInitiated, _ := args.GetIsUserInitiated()
-		browser.NewWindowRequestedCallback(uri, userInitiated)
+		browser.handleNewWindowRequested(args)
 	}), core.AddNewWindowRequested); err != nil {
 		return err
 	}
-
 	return addEvent(NewProcessFailedHandler(func(_ *ICoreWebView2, args *ICoreWebView2ProcessFailedEventArgs) {
-		if browser.ProcessFailedCallback == nil {
-			return
-		}
-		kind, _ := args.GetProcessFailedKind()
-		browser.ProcessFailedCallback(kind)
+		browser.handleProcessFailed(args)
 	}), core.AddProcessFailed)
+}
+
+func eventGetterError(event, getter string, err error) error {
+	return errors.Join(errors.New(event+"."+getter), err)
+}
+
+func isInvalidArgument(err error) bool {
+	var status HResultError
+	return errors.As(err, &status) && status.HResult() == 0x80070057
+}
+
+func (browser *Browser) handleWebMessageReceived(sender *ICoreWebView2, args *ICoreWebView2WebMessageReceivedEventArgs) {
+	if browser.MessageCallback == nil || args == nil {
+		return
+	}
+	message, err := args.TryGetWebMessageAsString()
+	if err != nil {
+		if !isInvalidArgument(err) {
+			browser.reportError(eventGetterError("WebMessageReceived", "TryGetWebMessageAsString", err))
+		}
+		return
+	}
+	source, sourceErr := args.GetSource()
+	browser.MessageCallback(WebMessageObservation{
+		Message:   message,
+		Source:    source,
+		SourceErr: sourceErr,
+	}, sender)
+}
+
+func (browser *Browser) handleNavigationStarting(args *ICoreWebView2NavigationStartingEventArgs) {
+	if browser.NavigationStartingCallback == nil || args == nil {
+		return
+	}
+	uri, uriErr := args.GetUri()
+	id, idErr := args.GetNavigationID()
+	userInitiated, userInitiatedErr := args.GetIsUserInitiated()
+	redirected, redirectedErr := args.GetIsRedirected()
+	observation := NavigationStartingObservation{
+		URI:                uri,
+		URIErr:             uriErr,
+		NavigationID:       id,
+		NavigationIDErr:    idErr,
+		IsUserInitiated:    userInitiated,
+		IsUserInitiatedErr: userInitiatedErr,
+		IsRedirected:       redirected,
+		IsRedirectedErr:    redirectedErr,
+	}
+	if !browser.NavigationStartingCallback(observation) {
+		return
+	}
+	// Cancel first, tell the host second. The args and every value derived from
+	// it remain borrowed only for this synchronous invocation.
+	if err := args.PutCancel(true); err != nil {
+		browser.reportWarning(errors.Join(
+			errors.New("NavigationStarting.PutCancel navigation "+strconv.FormatUint(id, 10)),
+			err,
+		))
+		return
+	}
+	if browser.NavigationCancelledCallback != nil {
+		browser.NavigationCancelledCallback(observation)
+	}
+}
+
+func (browser *Browser) handleNavigationCompleted(args *ICoreWebView2NavigationCompletedEventArgs) {
+	if browser.NavigationCompletedCallback == nil || args == nil {
+		return
+	}
+	success, successErr := args.GetIsSuccess()
+	status, statusErr := args.GetWebErrorStatus()
+	id, idErr := args.GetNavigationID()
+	browser.NavigationCompletedCallback(NavigationCompletedObservation{
+		IsSuccess:         success,
+		IsSuccessErr:      successErr,
+		WebErrorStatus:    status,
+		WebErrorStatusErr: statusErr,
+		NavigationID:      id,
+		NavigationIDErr:   idErr,
+	})
+}
+
+func (browser *Browser) handleNewWindowRequested(args *ICoreWebView2NewWindowRequestedEventArgs) {
+	if args == nil {
+		return
+	}
+	// Suppress the runtime first. A failure means it may open a window itself,
+	// so routing as well would double-open.
+	if err := args.PutHandled(true); err != nil {
+		browser.reportWarning(eventGetterError("NewWindowRequested", "PutHandled", err))
+		return
+	}
+	if browser.NewWindowRequestedCallback == nil {
+		return
+	}
+	uri, uriErr := args.GetUri()
+	userInitiated, userInitiatedErr := args.GetIsUserInitiated()
+	browser.NewWindowRequestedCallback(NewWindowRequestedObservation{
+		URI:                uri,
+		URIErr:             uriErr,
+		IsUserInitiated:    userInitiated,
+		IsUserInitiatedErr: userInitiatedErr,
+	})
+}
+
+func (browser *Browser) handleProcessFailed(args *ICoreWebView2ProcessFailedEventArgs) {
+	if browser.ProcessFailedCallback == nil || args == nil {
+		return
+	}
+	kind, err := args.GetProcessFailedKind()
+	browser.ProcessFailedCallback(ProcessFailedObservation{Kind: kind, KindErr: err})
 }
 
 // handleWebResourceRequested resolves the request out of the event args, hands
@@ -176,7 +193,7 @@ func (browser *Browser) handleWebResourceRequested(args *ICoreWebView2WebResourc
 	}
 	request, err := args.GetRequest()
 	if err != nil {
-		browser.reportError(err)
+		browser.reportError(eventGetterError("WebResourceRequested", "GetRequest", err))
 		return
 	}
 	defer asUnknown(request).Release()

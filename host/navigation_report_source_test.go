@@ -65,8 +65,8 @@ func TestNavigationCompletedCallbackReportsNoFailureItself(t *testing.T) {
 // (issue #73, decisions/0027).
 func TestTheNavigationCallbacksAreWiredToTheirOwnHalves(t *testing.T) {
 	starting := callbackSource(t, "browser.NavigationStartingCallback = func(", "browser.NavigationCancelledCallback = func(")
-	if !strings.Contains(starting, "host.noteAndGateNavigation(") {
-		t.Fatal("NavigationStartingCallback no longer asks the gate for a decision")
+	if !strings.Contains(starting, "host.noteAndGateNavigationKnown(") {
+		t.Fatal("NavigationStartingCallback no longer asks the provenance-aware gate for a decision")
 	}
 	// The decision half must commit to nothing: that is the fix.
 	for _, banned := range []string{"noteNavigationCancelled(", "rememberCancelledNavigation(", "openInSystemBrowser("} {
@@ -76,8 +76,8 @@ func TestTheNavigationCallbacksAreWiredToTheirOwnHalves(t *testing.T) {
 	}
 
 	cancelled := callbackSource(t, "browser.NavigationCancelledCallback = func(", "browser.NavigationCompletedCallback = func(")
-	if !strings.Contains(cancelled, "host.noteNavigationCancelled(") {
-		t.Fatal("NavigationCancelledCallback is not wired to the commit, so confirmed cancels are remembered nowhere and every one of them reaches the error-surface machine")
+	if !strings.Contains(cancelled, "host.noteNavigationCancelledObserved(") {
+		t.Fatal("NavigationCancelledCallback is not wired to the provenance-aware commit, so confirmed cancels lose getter identity before entering the ledger")
 	}
 
 	// And the completion callback must act on the ledger's verdict rather than

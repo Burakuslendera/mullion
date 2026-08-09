@@ -2,227 +2,214 @@ package host
 
 import "testing"
 
-// This file is exempt from the loopback-literal check in TestNoNetworkListener: it,
-// like loopback.go, names the loopback hosts on purpose - to prove Config.URL is
-// pinned to them. No socket is opened here; these are string checks.
+// This file is exempt from the loopback-literal check in TestNoNetworkListener:
+// it names loopback hosts only to prove Config.URL is pinned to the local
+// machine. No socket is opened here.
 
-// testExternalURL is the caller-served URL every other test in this package uses
-// when it needs Config.URL set. It is spelled here because this file is one of
-// the two allowed to name a loopback host, so the rest of the package can model
-// external-URL mode without each file having to be exempted. Nothing dials it.
 const testExternalURL = "http://127.0.0.1:8080"
 
-func TestValidateURLAcceptsOnlyLoopbackHTTP(t *testing.T) {
+func TestExternalSourcePlanAcceptsOnlyLoopbackHTTP(t *testing.T) {
 	valid := []string{
-		"",                               // the default: no external URL, virtual host serves
-		"http://127.0.0.1:8080",          // the common case
-		"http://localhost:3000",          // localhost by name
-		"http://localhost",               // no port is fine
-		"https://127.0.0.1:8443",         // https loopback
-		"http://[::1]:8080",              // IPv6 loopback
-		"http://127.0.0.1:8080/app.html", // a path is allowed (only rejected from logs)
+		"http://127.0.0.1:8080",
+		"http://localhost:3000",
+		"http://localhost",
+		"https://127.0.0.1:8443",
+		"http://[::1]:8080",
+		"http://127.0.0.1:8080/app.html",
+		"http://localhost:080/path",
+		"https://localhost:0443/path",
 	}
 	for _, raw := range valid {
-		if err := validateURL(raw); err != nil {
-			t.Errorf("validateURL(%q) = %v, want nil", raw, err)
+		plan, err := buildSourcePlan(Config{URL: raw}.normalise())
+		if err != nil {
+			t.Errorf("buildSourcePlan(%q) = %v, want nil", raw, err)
+			continue
+		}
+		if plan.embedded || plan.filterPattern != "" {
+			t.Errorf("buildSourcePlan(%q) produced embedded/filter state", raw)
 		}
 	}
 
 	invalid := []string{
-		"http://example.com",        // remote host - the whole point of the check
-		"https://192.168.1.10:8080", // LAN address, not loopback
-		"http://10.0.0.5",           // private but not loopback
-		"ftp://127.0.0.1",           // wrong scheme
-		"file:///c:/app/index.html", // wrong scheme
-		"127.0.0.1:8080",            // no scheme -> not http/https
-		"://nonsense",               // unparseable enough to have no loopback host
+		"http://example.com",
+		"https://192.168.1.10:8080",
+		"http://10.0.0.5",
+		"ftp://127.0.0.1",
+		"file:///c:/app/index.html",
+		"127.0.0.1:8080",
+		"://nonsense",
+		"http://localhost:",
+		"http://localhost:notaport",
+		"http://localhost:65536",
+		"http://localhost:999999",
 	}
 	for _, raw := range invalid {
-		if err := validateURL(raw); err == nil {
-			t.Errorf("validateURL(%q) = nil, want a rejection", raw)
+		if _, err := buildSourcePlan(Config{URL: raw}.normalise()); err == nil {
+			t.Errorf("buildSourcePlan(%q) = nil error, want rejection", raw)
 		}
 	}
 }
 
-func TestStartURLPrefersConfigURL(t *testing.T) {
-	// Empty URL -> the in-process virtual host index, unchanged from before Config.URL.
-	base := Config{}.normalise()
-	if got := base.startURL(); got != "https://mullion.localhost/index.html" {
-		t.Fatalf("startURL() with no Config.URL = %q, want the virtual host index", got)
+func TestExternalSourcePlanCanonicalizesOnceAndRedactsSummary(t *testing.T) {
+	plan, err := buildSourcePlan(Config{
+		URL:         "HTTP://LOCALHOST:80/private?token=secret#fragment",
+		VirtualHost: "not a valid virtual host/ignored",
+	}.normalise())
+	if err != nil {
+		t.Fatal(err)
 	}
-	// A set URL is navigated to verbatim - the caller's server owns its own paths.
-	ext := Config{URL: "http://127.0.0.1:8080"}.normalise()
-	if got := ext.startURL(); got != "http://127.0.0.1:8080" {
-		t.Fatalf("startURL() with Config.URL = %q, want the caller URL verbatim", got)
+	if plan.startURL != "http://localhost/private?token=secret#fragment" {
+		t.Fatalf("start URL = %q", plan.startURL)
 	}
-}
-
-func TestAssetSourceSummaryStatesTheSourceAndRedactsPath(t *testing.T) {
-	base := Config{}.normalise()
-	if got := assetSourceSummary(base); got != "mullion: asset source=embedded-fs, virtual_host=https://mullion.localhost" {
-		t.Fatalf("assetSourceSummary (embedded) = %q", got)
+	if plan.origin.text != "http://localhost" || plan.retryTarget != "http://localhost" {
+		t.Fatalf("origin/retry = %q/%q", plan.origin.text, plan.retryTarget)
 	}
-	// The path and query are dropped: only scheme://host:port reaches the log, so a
-	// token a caller put in the URL is never disclosed.
-	ext := Config{URL: "http://127.0.0.1:8080/private?token=secret"}.normalise()
-	if got := assetSourceSummary(ext); got != "mullion: asset source=external-url, url=http://127.0.0.1:8080" {
-		t.Fatalf("assetSourceSummary (external) = %q, want the path and query dropped", got)
+	if plan.summary != "mullion: asset source=external-url, url=http://localhost" {
+		t.Fatalf("summary = %q", plan.summary)
 	}
 }
 
-// TestMessageSourceAllowed locks the bridge-origin gate (decisions/0014). It is an
-// allow-list: only the trusted origin and the data: error surface may drive the
-// bridge. Everything else is rejected - a foreign http/https origin, a blob:/
-// filesystem:/file: document that launders a foreign origin, and about:blank/"" that
-// a script-driven top navigation can reach.
-func TestMessageSourceAllowed(t *testing.T) {
-	asset := Config{}.normalise()                            // virtual host https://mullion.localhost
-	loop := Config{URL: "http://127.0.0.1:8080"}.normalise() // caller loopback origin
-
-	allowed := []struct {
-		name   string
-		config Config
-		source string
+func TestExternalSourcePlanCanonicalizesNumericPortsForEveryConsumer(t *testing.T) {
+	tests := []struct {
+		raw        string
+		startURL   string
+		origin     string
+		candidates []string
 	}{
-		{"trusted virtual host", asset, "https://mullion.localhost/index.html"},
-		{"trusted virtual host root", asset, "https://mullion.localhost/"},
-		{"trusted host explicit default port", asset, "https://mullion.localhost:443/x"},
-		{"trusted host case-insensitive", asset, "https://MULLION.LOCALHOST/x"},
-		{"data error page", asset, "data:text/html,%3Chtml%3E"},
-		{"trusted loopback url", loop, "http://127.0.0.1:8080/app"},
+		{
+			raw:        "http://localhost:080/private?token=secret#fragment",
+			startURL:   "http://localhost/private?token=secret#fragment",
+			origin:     "http://localhost",
+			candidates: []string{"http://localhost/app", "http://localhost:80/app", "http://localhost:080/app"},
+		},
+		{
+			raw:        "https://localhost:0443/private?token=secret#fragment",
+			startURL:   "https://localhost/private?token=secret#fragment",
+			origin:     "https://localhost",
+			candidates: []string{"https://localhost/app", "https://localhost:443/app", "https://localhost:0443/app"},
+		},
+		{
+			raw:        "http://127.0.0.1:08080/private?token=secret#fragment",
+			startURL:   "http://127.0.0.1:8080/private?token=secret#fragment",
+			origin:     "http://127.0.0.1:8080",
+			candidates: []string{"http://127.0.0.1:8080/app", "http://127.0.0.1:08080/app"},
+		},
 	}
-	for _, c := range allowed {
-		if !c.config.messageSourceAllowed(c.source) {
-			t.Errorf("%s: messageSourceAllowed(%q) = false, want allowed", c.name, c.source)
-		}
-	}
-
-	rejected := []struct {
-		name   string
-		config Config
-		source string
-	}{
-		{"foreign https origin", asset, "https://evil.example/x"},
-		{"foreign http origin", asset, "http://evil.example"},
-		{"different loopback port", loop, "http://127.0.0.1:9999/x"},
-		{"remote in url mode", loop, "https://evil.example"},
-		{"scheme downgrade of trusted host", asset, "http://mullion.localhost"},
-		{"blob laundering a foreign origin", asset, "blob:https://evil.example/uuid"},
-		{"filesystem laundering a foreign origin", asset, "filesystem:https://evil.example/temporary/x"},
-		{"file scheme", asset, "file:///c:/x"},
-		{"about blank inherits the previous origin", asset, "about:blank"},
-		{"empty source", asset, ""},
-		{"userinfo cannot spoof the trusted host", asset, "https://mullion.localhost@evil.example/x"},
-	}
-	for _, c := range rejected {
-		if c.config.messageSourceAllowed(c.source) {
-			t.Errorf("%s: messageSourceAllowed(%q) = true, want rejected", c.name, c.source)
-		}
+	for _, test := range tests {
+		t.Run(test.raw, func(t *testing.T) {
+			plan, err := buildSourcePlan(Config{URL: test.raw}.normalise())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.startURL != test.startURL || plan.origin.text != test.origin || plan.retryTarget != test.origin {
+				t.Fatalf("canonical plan = start %q, origin %q, retry %q", plan.startURL, plan.origin.text, plan.retryTarget)
+			}
+			for _, candidate := range test.candidates {
+				if !plan.origin.matches(candidate) ||
+					!plan.messageSourceAllowed(candidate) ||
+					!plan.messageSourceTrusted(candidate) ||
+					plan.navigationOffOrigin(candidate, true) {
+					t.Errorf("canonical port identity rejected %q", candidate)
+				}
+			}
+		})
 	}
 }
 
-// TestMessageSourceTrusted locks the second half of decisions/0014, the one
-// TestMessageSourceAllowed does not reach: a data: top-level source is allowed so
-// the error page's window controls work, but is NOT trusted for Config.Bridge.
-// CoreWebView2 WebMessageReceived currently receives only top-level messages; if
-// frame receipt is added later, a data: document may instead be a hostile iframe.
-// Keeping these functions distinct means that future change cannot silently
-// widen Config.Bridge admission by collapsing messageSourceTrusted into
-// messageSourceAllowed.
-func TestMessageSourceTrusted(t *testing.T) {
-	asset := Config{}.normalise()                            // virtual host https://mullion.localhost
-	loop := Config{URL: "http://127.0.0.1:8080"}.normalise() // caller loopback origin
-
-	trusted := []struct {
-		name   string
-		config Config
-		source string
-	}{
-		{"trusted virtual host", asset, "https://mullion.localhost/index.html"},
-		{"trusted host explicit default port", asset, "https://mullion.localhost:443/x"},
-		{"trusted host case-insensitive", asset, "https://MULLION.LOCALHOST/x"},
-		{"trusted loopback url", loop, "http://127.0.0.1:8080/app"},
+func TestExternalStartURLIsNavigationOnlyCapability(t *testing.T) {
+	plan, err := buildSourcePlan(Config{URL: "http://user:secret@localhost:080/private?query#fragment"}.normalise())
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range trusted {
-		if !c.config.messageSourceTrusted(c.source) {
-			t.Errorf("%s: messageSourceTrusted(%q) = false, want trusted", c.name, c.source)
+	if plan.startURL != "http://user:secret@localhost/private?query#fragment" {
+		t.Fatalf("start URL = %q", plan.startURL)
+	}
+	if plan.navigationOffOrigin(plan.startURL, true) {
+		t.Fatal("exact caller-authorized start URL was rejected by the navigation gate")
+	}
+	if plan.origin.matches(plan.startURL) ||
+		plan.messageSourceAllowed(plan.startURL) ||
+		plan.messageSourceTrusted(plan.startURL) {
+		t.Fatal("navigation-only start capability was admitted as origin identity")
+	}
+
+	// The capability is deliberately byte-exact. WebView2 may report a
+	// credential-free canonical form, which remains safe through origin.matches;
+	// a partial credential or path rewrite must not inherit the caller's grant.
+	for _, candidate := range []string{
+		"http://user:different@localhost/private?query#fragment",
+		"http://user:secret@localhost/other?query#fragment",
+		"http://user:secret@localhost/private?other#fragment",
+		"http://user:secret@localhost/private?query#other",
+		"http://user@localhost/private?query#fragment",
+		"http://@localhost/private?query#fragment",
+		"http://other:secret@localhost/private?query#fragment",
+		"http://user:secret@localhost:80/private?query#fragment",
+		"HTTP://user:secret@LOCALHOST/private?query#fragment",
+		"http://user:secret@localhost/priv%61te?query#fragment",
+	} {
+		if !plan.navigationOffOrigin(candidate, true) {
+			t.Errorf("non-exact credentialed candidate %q passed the enabled gate", candidate)
+		}
+		if plan.navigationOffOrigin(candidate, false) {
+			t.Errorf("disabled gate rejected %q", candidate)
 		}
 	}
 
-	untrusted := []struct {
-		name   string
-		config Config
-		source string
-	}{
-		// The load-bearing case: allowed for reserved controls, never for Config.Bridge.
-		{"data error surface is allowed but not trusted", asset, "data:text/html,%3Chtml%3E"},
-		{"foreign https origin", asset, "https://evil.example/x"},
-		{"different loopback port", loop, "http://127.0.0.1:9999/x"},
-		{"scheme downgrade of trusted host", asset, "http://mullion.localhost"},
-		{"blob laundering a foreign origin", asset, "blob:https://evil.example/uuid"},
-		{"file scheme", asset, "file:///c:/x"},
-		{"about blank inherits the previous origin", asset, "about:blank"},
-		{"empty source", asset, ""},
-		{"userinfo cannot spoof the trusted host", asset, "https://mullion.localhost@evil.example/x"},
-	}
-	for _, c := range untrusted {
-		if c.config.messageSourceTrusted(c.source) {
-			t.Errorf("%s: messageSourceTrusted(%q) = true, want untrusted", c.name, c.source)
-		}
+	credentialFree := "http://localhost/other"
+	if !plan.origin.matches(credentialFree) || plan.navigationOffOrigin(credentialFree, true) {
+		t.Fatal("credential-free canonical origin candidate was rejected")
 	}
 }
 
-// TestNavigationOffOrigin locks the PinNavigationToOrigin gate's pure decision
-// (issue #6, decisions/0023). Off by default it never reports off-origin, so the
-// gate cancels nothing. On, it passes the trusted origin - any path on it - and
-// mullion's own data: surface, and reports every foreign target off-origin,
-// including the blob:/file:/about:blank forms a bare scheme check would admit.
-func TestNavigationOffOrigin(t *testing.T) {
-	off := Config{}.normalise()                           // gate off (default)
-	on := Config{PinNavigationToOrigin: true}.normalise() // virtual host, gate on
-	onURL := Config{URL: "http://127.0.0.1:8080", PinNavigationToOrigin: true}.normalise()
-
-	// Gate off: nothing is off-origin, whatever the URI - existing behaviour.
-	for _, uri := range []string{"https://evil.example/", "https://mullion.localhost/x", "about:blank", "data:text/html,x"} {
-		if off.navigationOffOrigin(uri) {
-			t.Errorf("gate off: navigationOffOrigin(%q) = true, want false (never cancels)", uri)
+func TestExternalSourcePlanOriginAdmission(t *testing.T) {
+	plan, err := buildSourcePlan(Config{URL: testExternalURL}.normalise())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{
+		"http://127.0.0.1:8080/app",
+		"HTTP://127.0.0.1:8080/app",
+	} {
+		if !plan.messageSourceAllowed(source) || !plan.messageSourceTrusted(source) {
+			t.Errorf("trusted source %q rejected", source)
 		}
 	}
-
-	onOrigin := []struct {
-		name   string
-		config Config
-		uri    string
-	}{
-		{"trusted virtual host root", on, "https://mullion.localhost/"},
-		{"trusted host any path", on, "https://mullion.localhost/app/route?q=1"},
-		{"trusted host explicit default port", on, "https://mullion.localhost:443/x"},
-		{"trusted host case-insensitive", on, "https://MULLION.LOCALHOST/x"},
-		{"the error surface (data:)", on, "data:text/html,%3Chtml%3E"},
-		{"trusted loopback url", onURL, "http://127.0.0.1:8080/app"},
-	}
-	for _, c := range onOrigin {
-		if c.config.navigationOffOrigin(c.uri) {
-			t.Errorf("%s: navigationOffOrigin(%q) = true, want false (on-origin/surface)", c.name, c.uri)
+	for _, source := range []string{
+		"http://127.0.0.1:9999/app",
+		"http://127.0.0.1:65536/app",
+		"http://127.0.0.1:notaport/app",
+		"https://127.0.0.1:8080/app",
+		"https://evil.example/app",
+		"blob:http://127.0.0.1:8080/id",
+		"http://127.0.0.1:8080@evil.example/app",
+		"http://user:secret@127.0.0.1:8080/app",
+	} {
+		if plan.messageSourceAllowed(source) || plan.messageSourceTrusted(source) {
+			t.Errorf("foreign source %q admitted", source)
 		}
 	}
-
-	offOrigin := []struct {
-		name   string
-		config Config
-		uri    string
-	}{
-		{"foreign https origin", on, "https://evil.example/"},
-		{"scheme downgrade of trusted host", on, "http://mullion.localhost/x"},
-		{"userinfo cannot spoof the trusted host", on, "https://mullion.localhost@evil.example/x"},
-		{"blob laundering a foreign origin", on, "blob:https://evil.example/uuid"},
-		{"file scheme", on, "file:///c:/x"},
-		{"about blank inherits the previous origin", on, "about:blank"},
-		{"different loopback port in url mode", onURL, "http://127.0.0.1:9999/x"},
+	if plan.messageSourceAllowed("data:text/html,x") || plan.messageSourceTrusted("data:text/html,x") {
+		t.Fatal("source-only policy must not grant fallback capability to an arbitrary data document")
 	}
-	for _, c := range offOrigin {
-		if !c.config.navigationOffOrigin(c.uri) {
-			t.Errorf("%s: navigationOffOrigin(%q) = false, want true (off-origin)", c.name, c.uri)
+}
+
+func TestSourcePlanNavigationGate(t *testing.T) {
+	plan, err := buildSourcePlan(Config{URL: testExternalURL}.normalise())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.navigationOffOrigin("https://evil.example", false) {
+		t.Fatal("disabled gate rejected a target")
+	}
+	for _, uri := range []string{"http://127.0.0.1:8080/app"} {
+		if plan.navigationOffOrigin(uri, true) {
+			t.Errorf("on-origin target %q rejected", uri)
+		}
+	}
+	for _, uri := range []string{"http://127.0.0.1:9999/app", "about:blank", "blob:http://127.0.0.1:8080/id", "data:text/html,x"} {
+		if !plan.navigationOffOrigin(uri, true) {
+			t.Errorf("off-origin target %q admitted", uri)
 		}
 	}
 }

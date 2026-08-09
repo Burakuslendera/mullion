@@ -2,7 +2,13 @@
 
 package host
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/Burakuslendera/mullion/internal/webview2"
+)
 
 // Decision 0026's ordering rule, driven rather than described: every report
 // comes after the state transition it describes, never before.
@@ -38,32 +44,31 @@ func newReentrantSurfaceHost(t *testing.T) (*Host, *reentrantLogger) {
 	return host, logger
 }
 
-// The arming site. A completion re-entering the machine inside armErrorSurface's
-// warning must find a machine that is already armed and absorb - exactly what it
-// would have done before the warning was moved here at all. Arming instead means
-// it asks for a second surface Navigate, and the four writes below the log line
-// then destroy the generation it just claimed, which is issue #56's
-// dead-caption-buttons symptom.
-func TestArmingIsCommittedBeforeItIsReported(t *testing.T) {
+// Classification publishes only a revocable plan before reporting. A nested
+// failure is absorbed against that plan, but pending/loading stay closed until
+// production is immediately ready to call Navigate.
+func TestClassificationIsReportedWithoutOpeningAClaimWindow(t *testing.T) {
 	host, logger := newReentrantSurfaceHost(t)
 
 	var nestedAskedToShow bool
 	logger.onWarn = func() { nestedAskedToShow = noteFail(host, 43) }
 
 	if !noteFail(host, 42) {
-		t.Fatal("the arming failure must ask for the surface to be shown")
+		t.Fatal("the arming failure must create a fallback plan")
 	}
 	if nestedAskedToShow {
-		t.Fatal("a completion re-entering the machine inside the arming warning armed a second generation: the report ran ahead of the state it describes (decisions/0026)")
+		t.Fatal("a completion re-entering the classification report created competing fallback authority")
+	}
+	if host.errorSurfacePlan == noErrorSurfacePlan ||
+		host.errorSurfacePending || host.errorSurfaceLoading {
+		t.Fatal("classification did not retain exactly one unissued fallback plan")
 	}
 }
 
 // The seal site. The surface's own load dying drops the admission and then says
-// so. A nested completion inside that warning arms a fresh generation, and the
-// admission that generation claims has to survive the rest of the outer call -
-// report first and the outer `errorSurfaceActive = false` lands on top of it,
-// leaving a surface in flight that the machine will not admit, with no line
-// anywhere saying why the caption buttons stopped answering.
+// so. A nested completion inside that warning arms a fresh pending generation,
+// and that pending state has to survive the rest of the outer call - report
+// first and the outer cleanup lands on top of it, losing the generation.
 func TestTheSealDropsTheAdmissionBeforeItIsReported(t *testing.T) {
 	host, logger := newReentrantSurfaceHost(t)
 	armAndClaim(t, host, 5, 6)
@@ -77,7 +82,169 @@ func TestTheSealDropsTheAdmissionBeforeItIsReported(t *testing.T) {
 	if noteFail(host, 6) {
 		t.Fatal("the surface's own load failing must not ask for another navigation")
 	}
-	if !host.errorSurfaceMessageAllowed("") {
-		t.Fatal("the nested arming's admission was overwritten by the outer seal: the report ran ahead of the state it describes (decisions/0026)")
+	if host.errorSurfacePlan == noErrorSurfacePlan ||
+		host.errorSurfacePending || host.errorSurfaceActive {
+		t.Fatal("the nested fallback plan was overwritten or issued by classification")
+	}
+}
+
+type debugReentrantLogger struct {
+	*captureLogger
+	onDebug func()
+}
+
+func (logger *debugReentrantLogger) Debug(message string) {
+	logger.captureLogger.Debug(message)
+	if hook := logger.onDebug; hook != nil {
+		logger.onDebug = nil
+		hook()
+	}
+}
+
+func TestDepartureRestorationIsCommittedBeforeItIsReported(t *testing.T) {
+	t.Run("benign abort", func(t *testing.T) {
+		logger := &debugReentrantLogger{captureLogger: &captureLogger{}}
+		host := New(Config{Logger: logger})
+		stubExternalOpen(host)
+		host.noteNavigationOutcome(false, statusNone, 1)
+		issueCurrentErrorSurface(t, host)
+		host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 2)
+		noteOK(host, 2)
+		host.noteAndGateNavigation(host.source.origin.text+"/index.html", 3)
+
+		var admittedInsideLog bool
+		logger.onDebug = func() { admittedInsideLog = host.errorSurfaceMessageAllowed("") }
+		noteFail(host, 3)
+		if !admittedInsideLog {
+			t.Fatal("benign-abort diagnostic ran before restoring visible-surface admission")
+		}
+	})
+
+	t.Run("confirmed gate cancellation", func(t *testing.T) {
+		logger := &debugReentrantLogger{captureLogger: &captureLogger{}}
+		host := New(Config{PinNavigationToOrigin: true, Logger: logger})
+		stubExternalOpen(host)
+		host.noteNavigationOutcome(false, statusNone, 1)
+		issueCurrentErrorSurface(t, host)
+		host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 2)
+		noteOK(host, 2)
+		cancelNavigation(host, "https://evil.example/", 7, true)
+
+		var admittedInsideLog bool
+		logger.onDebug = func() { admittedInsideLog = host.errorSurfaceMessageAllowed("") }
+		host.noteGateCancelledOutcome(false, webview2.WebErrorStatusOperationCanceled, 7)
+		if !admittedInsideLog {
+			t.Fatal("cancellation diagnostic ran before restoring visible-surface admission")
+		}
+	})
+}
+
+// The completion callback itself has a re-entrancy boundary before the error
+// surface side effect: its ordinary Debug diagnostic. A failed claimed fallback
+// must be sealed before that callback reaches the embedder's Logger, otherwise a
+// nested empty-source message can still execute the fallback's native controls.
+func TestProductionCompletionSealsFallbackBeforeDiagnosticReentrancy(t *testing.T) {
+	logger := &debugReentrantLogger{captureLogger: &captureLogger{}}
+	host := New(Config{StartHidden: true, Logger: logger})
+	stubExternalOpen(host)
+	host.noteNavigationOutcome(false, statusNone, 1)
+	issueCurrentErrorSurface(t, host)
+	if !host.noteSurfaceNavigationStarting(host.errorSurfaceURL, 6) {
+		t.Fatal("fallback start was not claimed")
+	}
+	browser := host.newWebViewBrowser()
+
+	logger.onDebug = func() { postObservedWindowClose(browser) }
+	browser.NavigationCompletedCallback(webview2.NavigationCompletedObservation{
+		WebErrorStatus: webview2.WebErrorStatus(1),
+		NavigationID:   6,
+	})
+
+	if host.errorSurfaceActive {
+		t.Fatal("failed fallback completion retained native-control admission")
+	}
+	if strings.Contains(logger.String(), "quit requested") {
+		t.Fatal("re-entrant empty-source WindowClose reached Quit before the fallback failure was sealed")
+	}
+}
+
+// The warning emitted by classification is the first arbitrary-code boundary
+// in the production completion callback. Re-entering with an empty-URI start
+// must not claim the merely planned generation, and its empty-source WindowClose
+// must remain rejected. An unembedded Browser makes any stale outer Navigate
+// deterministic: it would report "error surface navigate".
+func TestProductionCompletionDoesNotExposeAClaimBeforeNavigate(t *testing.T) {
+	host, logger := newReentrantSurfaceHost(t)
+	browser := host.newWebViewBrowser()
+
+	var claimedBeforeNavigate bool
+	logger.onWarn = func() {
+		browser.NavigationStartingCallback(webview2.NavigationStartingObservation{
+			URI:          "",
+			NavigationID: 77,
+		})
+		claimedBeforeNavigate = host.errorSurfaceActive || host.errorSurfacePending
+		postObservedWindowClose(browser)
+	}
+
+	browser.NavigationCompletedCallback(webview2.NavigationCompletedObservation{
+		WebErrorStatus: webview2.WebErrorStatusConnectionAborted,
+		NavigationID:   42,
+	})
+
+	logText := logger.String()
+	if claimedBeforeNavigate {
+		t.Fatal("re-entrant empty-URI start claimed a fallback generation before Navigate was issued")
+	}
+	if strings.Contains(logText, "quit requested") {
+		t.Fatal("pre-Navigate empty-source WindowClose reached Quit")
+	}
+	if strings.Contains(logText, "error surface navigate") {
+		t.Fatal("outer completion called Navigate after the re-entrant start invalidated its plan")
+	}
+}
+
+func TestProductionCompletionDropsStalePlanAfterNestedCompletion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		nested webview2.NavigationCompletedObservation
+	}{
+		{
+			name: "success",
+			nested: webview2.NavigationCompletedObservation{
+				IsSuccess:    true,
+				NavigationID: 43,
+			},
+		},
+		{
+			name: "unclassifiable",
+			nested: webview2.NavigationCompletedObservation{
+				IsSuccessErr: errors.New("success unavailable"),
+				NavigationID: 43,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := &debugReentrantLogger{captureLogger: &captureLogger{}}
+			host := New(Config{URL: testExternalURL, Logger: logger})
+			stubExternalOpen(host)
+			browser := host.newWebViewBrowser()
+			logger.onDebug = func() {
+				browser.NavigationCompletedCallback(tc.nested)
+			}
+
+			browser.NavigationCompletedCallback(webview2.NavigationCompletedObservation{
+				WebErrorStatus: webview2.WebErrorStatusConnectionAborted,
+				NavigationID:   42,
+			})
+
+			if host.errorSurfacePlan != noErrorSurfacePlan ||
+				host.errorSurfacePending || host.errorSurfaceLoading {
+				t.Fatal("nested completion left the outer fallback plan authoritative")
+			}
+			if strings.Contains(logger.String(), "error surface navigate") {
+				t.Fatal("outer completion called Navigate after the nested completion invalidated its plan")
+			}
+		})
 	}
 }

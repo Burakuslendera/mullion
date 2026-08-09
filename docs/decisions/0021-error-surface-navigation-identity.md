@@ -1,6 +1,6 @@
 # 0021. Error-surface completions are attributed by navigation id
 
-**Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`. Refined by [0024](./0024-benign-abort-in-process.md): which attributed failures arm the surface at all. The completion callback's generic `navigation failed` WARN that this record's Decision describes as preceding the classification is removed by [0026](./0026-navigation-failure-level-follows-classification.md): a failed completion is reported once, by the branch that classifies it, at that classification's level (issue #79). The attribution rules themselves are unchanged
+**Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`. Refined by [0024](./0024-benign-abort-in-process.md): which attributed failures arm the surface at all. The completion callback's generic `navigation failed` WARN that this record's Decision describes as preceding the classification is removed by [0026](./0026-navigation-failure-level-follows-classification.md): a failed completion is reported once, by the branch that classifies it, at that classification's level (issue #79). Getter failure provenance and fallback claim authority are refined by [0037](./0037-event-values-preserve-getter-provenance.md). The attribution rules themselves are unchanged
 
 ## Context
 
@@ -151,4 +151,4 @@ completion-less residual 0020 recorded.
   (the origin's success dropped the admission; the frontend's bridge flowed)
   with zero rejects and zero seal lines across the session.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: status line extended by 0026 — the generic `navigation failed` WARN the Decision describes as preceding the classification is gone; each ending now reports itself at its own level (issue #79). The body and the attribution rules are unchanged, per the supersede rules.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: route getter provenance and fallback claim authority forward to 0037; the historical attribution body remains unchanged.

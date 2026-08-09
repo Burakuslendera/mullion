@@ -182,6 +182,20 @@ remote origin could otherwise call into your Go. If that load fails, mullion sho
 own controllable fallback surface rather than the browser's error page. Full
 reasoning: [decisions/0012](docs/decisions/0012-config-url-loopback.md).
 
+`VirtualHost` is a host token, not a URL or authority. ASCII letters are folded
+to lowercase; digits, hyphens, dots and underscores remain accepted (underscore
+support is compatibility, not DNS validation), and IPv4/IPv6 literals must parse
+strictly with `netip`. Scheme, userinfo, port, path, percent escapes, Unicode,
+trailing dots, empty/malformed labels, zones and legacy browser numeric IPv4
+forms such as `127.1` are rejected. On supported Windows an invalid source stops
+before DPI, runtime discovery, COM or window creation. When `URL` is set,
+`VirtualHost` is ignored; the loopback URL is parsed once, its path/query/fragment
+remain on the initial navigation, and its canonical origin drives bridge, later
+navigation, Retry and logging policy. The exact configured start URL is a
+navigation-only capability: retained userinfo can authenticate that exact
+caller-authorized URL, but a userinfo-bearing candidate never proves reusable
+origin identity. See [decision 0036](docs/decisions/0036-one-source-plan-defines-origin.md).
+
 `PinNavigationToOrigin` is the other field worth a paragraph. Off by default; set it
 and a top-level navigation that leaves the trusted origin is cancelled instead of
 loading in the WebView, and an `http`/`https` target is handed to the system browser

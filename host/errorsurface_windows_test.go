@@ -31,15 +31,49 @@ const statusNone = webview2.WebErrorStatus(0)
 // is unavailable, which is what routes the machine into the order-based
 // fallback the id-less tests lock.
 func noteFail(host *Host, id uint64) bool {
+	if id == 0 {
+		return host.planNavigationOutcomeObserved(
+			false,
+			webview2.WebErrorStatusConnectionAborted,
+			navigationIdentity{},
+		) != noErrorSurfacePlan
+	}
 	return host.noteNavigationOutcome(false, webview2.WebErrorStatusConnectionAborted, id)
 }
 
 func noteCancel(host *Host, id uint64) bool {
+	if id == 0 {
+		return host.planNavigationOutcomeObserved(
+			false,
+			webview2.WebErrorStatusOperationCanceled,
+			navigationIdentity{},
+		) != noErrorSurfacePlan
+	}
 	return host.noteNavigationOutcome(false, webview2.WebErrorStatusOperationCanceled, id)
 }
 
 func noteOK(host *Host, id uint64) bool {
+	if id == 0 {
+		host.noteNavigationSuccessObserved(navigationIdentity{})
+		return false
+	}
 	return host.noteNavigationOutcome(true, statusNone, id)
+}
+func issueCurrentErrorSurface(t *testing.T, host *Host) errorSurfacePlan {
+	t.Helper()
+	plan := host.errorSurfacePlan
+	if !host.issueErrorSurfaceNavigation(plan, "data:text/html,surface") {
+		t.Fatal("classified fallback plan could not be issued")
+	}
+	return plan
+}
+
+func issueAndClaimEmptySurface(t *testing.T, host *Host, id uint64) {
+	t.Helper()
+	issueCurrentErrorSurface(t, host)
+	if !host.noteSurfaceNavigationStarting("", id) {
+		t.Fatal("a successfully read empty surface start must claim the issued generation")
+	}
 }
 
 // newSurfaceHost builds a host whose frontend is served by the caller over a
@@ -69,23 +103,25 @@ func TestErrorSurfaceEmptySourceRejectedByDefault(t *testing.T) {
 	}
 }
 
-// A navigation failure arms the surface immediately - before its load
-// completes - because the injected diagnostics post from document creation,
-// ahead of NavigationCompleted. Arming late would reject exactly the flurry
-// issue #56 was reported with.
-func TestErrorSurfaceAdmitsEmptySourceOnNavigationFailure(t *testing.T) {
+// A navigation failure only makes the fallback pending. Admission begins after
+// its NavigationStarting URI is successfully read and claimed.
+func TestErrorSurfaceAdmitsEmptySourceOnlyAfterClaim(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 
 	if !noteFail(host, 0) {
 		t.Fatal("the first navigation failure must ask for the surface to be shown")
 	}
+	if host.errorSurfaceMessageAllowed("") {
+		t.Fatal("arming alone must not admit an empty source")
+	}
+	issueAndClaimEmptySurface(t, host, 0)
 	if !host.errorSurfaceMessageAllowed("") {
-		t.Fatal("the surface's empty-source messages must be admitted from the moment it is navigated to")
+		t.Fatal("a successfully claimed empty-source surface must be admitted")
 	}
 	if host.errorSurfaceMessageAllowed("https://evil.example/x") {
-		t.Fatal("arming the surface must not admit foreign origins")
+		t.Fatal("claiming the surface must not admit foreign origins")
 	}
-	if host.config.messageSourceTrusted("") {
+	if host.source.messageSourceTrusted("") {
 		t.Fatal("an empty source must never be trusted for Config.Bridge, error surface or not")
 	}
 }
@@ -96,6 +132,7 @@ func TestErrorSurfaceAdmitsEmptySourceOnNavigationFailure(t *testing.T) {
 func TestErrorSurfaceStaysAdmittedThroughItsOwnLoad(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	noteFail(host, 0)
+	issueAndClaimEmptySurface(t, host, 0)
 
 	if noteOK(host, 0) {
 		t.Fatal("the surface's own successful load must not trigger another surface navigation")
@@ -111,11 +148,16 @@ func TestErrorSurfaceStaysAdmittedThroughItsOwnLoad(t *testing.T) {
 func TestErrorSurfaceDisarmsWhenNavigationLeavesIt(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	noteFail(host, 0) // failure: surface armed and navigated
-	noteOK(host, 0)   // the surface's own load
-	noteOK(host, 0)   // Retry reached the origin
+	issueAndClaimEmptySurface(t, host, 0)
+	noteOK(host, 0) // the surface's own load
+	host.noteAndGateNavigation(host.source.origin.text+"/index.html", 0)
+	if !host.errorSurfaceSuspended || host.errorSurfaceMessageAllowed("") {
+		t.Fatal("Retry start did not suspend the visible surface before completion")
+	}
+	noteOK(host, 0) // Retry reached the origin
 
-	if host.errorSurfaceMessageAllowed("") {
-		t.Fatal("leaving the surface must disarm the empty-source admission")
+	if host.errorSurfaceMessageAllowed("") || host.errorSurfaceSuspended {
+		t.Fatal("leaving the surface must clear empty-source admission and its suspension")
 	}
 }
 
@@ -124,11 +166,13 @@ func TestErrorSurfaceDisarmsWhenNavigationLeavesIt(t *testing.T) {
 func TestErrorSurfaceRearmsWhenRetryFailsAgain(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	noteFail(host, 0) // failure: surface armed
-	noteOK(host, 0)   // the surface's own load
+	issueAndClaimEmptySurface(t, host, 0)
+	noteOK(host, 0) // the surface's own load
 
 	if !noteFail(host, 0) {
 		t.Fatal("a failed Retry must show the surface again")
 	}
+	issueAndClaimEmptySurface(t, host, 0)
 	if !host.errorSurfaceMessageAllowed("") {
 		t.Fatal("the re-shown surface must be admitted like the first one")
 	}
@@ -148,6 +192,7 @@ func TestErrorSurfaceRearmsWhenRetryFailsAgain(t *testing.T) {
 func TestErrorSurfaceStaysAdmittedWhenAFailureRacesItsOwnLoad(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 	noteFail(host, 0) // failure: surface armed and navigated
+	issueAndClaimEmptySurface(t, host, 0)
 
 	if noteFail(host, 0) {
 		t.Fatal("a failure during the surface's load must not re-navigate: that is the loop the recursion guard exists for")
@@ -171,8 +216,10 @@ func TestErrorSurfaceStaysAdmittedWhenAFailureRacesItsOwnLoad(t *testing.T) {
 func TestErrorSurfaceSurvivesAFailedRetry(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	noteFail(host, 0) // initial load fails: surface armed
+	issueAndClaimEmptySurface(t, host, 0)
 	noteOK(host, 0)   // the surface's own load
 	noteFail(host, 0) // Retry fails: surface re-armed and re-navigated
+	issueAndClaimEmptySurface(t, host, 0)
 	noteFail(host, 0) // the failed Retry's second completion
 	noteOK(host, 0)   // the surface's own load, again
 
@@ -195,8 +242,10 @@ func TestErrorSurfaceSurvivesAFailedRetry(t *testing.T) {
 func TestErrorSurfaceSurvivesARapidRetryDoubleClick(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	noteFail(host, 0) // initial load fails: surface armed
+	issueAndClaimEmptySurface(t, host, 0)
 	noteOK(host, 0)   // the surface's own load
 	noteFail(host, 0) // Retry click one fails: surface re-armed
+	issueAndClaimEmptySurface(t, host, 0)
 	noteFail(host, 0) // its second completion
 	noteFail(host, 0) // Retry click two's failure
 	noteOK(host, 0)   // the surface's own load
@@ -215,6 +264,7 @@ func TestErrorSurfaceAbsorbsAFailureStorm(t *testing.T) {
 	if !noteFail(host, 0) {
 		t.Fatal("the first failure must arm and navigate the surface")
 	}
+	issueAndClaimEmptySurface(t, host, 0)
 	for i := 0; i < 8; i++ {
 		if noteFail(host, 0) {
 			t.Fatalf("failure %d during the surface's load asked to re-navigate: recursion", i+2)
