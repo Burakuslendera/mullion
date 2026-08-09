@@ -61,25 +61,25 @@ the wrong function pointer, i.e. a crash or memory corruption inside the browser
 process, at the point of first use. **A green build proves nothing about a vtable.**
 
 The default gate stays headless and deterministic:
-- Runtime-owned manifests pin every flattened vtable slot/size; canonical-string
-  tests pin every declared IID literal. Go-owned handler, environment-options and
-  completion manifests call each runtime-facing entry point by numeric slot.
-- `TestCOMABIInventoryCompleteness` fails on an unclassified production vtable,
-  COM object representation or GUID literal. It is a completeness alarm; the
-  layout/identity/dispatch tests prove the classified entries.
+- Local ABI manifests pin runtime-owned vtable slots/sizes and IID literals, plus
+  Go-owned object representation, vtable layout, identity and numeric dispatch.
+- `TestCOMABIInventoryCompleteness` alarms on unclassified production vtables,
+  COM object representations and GUID literals; classification is not proof.
+- Separate consumer-mapping tests pin the semantic method and concrete interface
+  selected by production call sites. Reference-handoff tests pin ownership when
+  a COM pointer crosses a callback or result boundary.
 - The authority is Microsoft.Web.WebView2 NuGet `1.0.4129.50`:
-  `build/native/include/WebView2.h` for C vtable order and root `WebView2.idl`
-  for UUIDs/declaration order. Alphabetised Learn pages are not ABI evidence.
-- None of these checks needs a WebView2 runtime or window. Do not add a runtime
-  smoke to the default suite; live execution remains the separate acceptance gate.
+  `build/native/include/WebView2.h` for C vtables and root `WebView2.idl` for
+  UUIDs/declaration order. Alphabetised Learn pages are not ABI evidence.
+- All checks need neither runtime nor window; live execution is a separate gate.
 
 ### The test suite is headless — keep it that way
 
-No test in this package creates an `HWND`, calls `Run()`, spins a message pump,
-or requires a WebView2 Runtime to be installed. That is a deliberate design
-constraint, not an accident: it means the full suite (including `-race` and
-every diagnostic tag) runs on a headless CI worker with no desktop session, no
-GPU and no WebView2 install.
+No test creates an `HWND`, enters native COM, calls a Win32 entry point, spins a
+message pump, or requires a display or WebView2 Runtime by default. Public
+`Run()` is permitted only when a deterministic seam or build path proves return
+before runtime discovery and every native boundary, with assertions that
+forbidden seams were not reached. An early-return input alone is not proof (0039).
 
 Rules for new tests:
 
@@ -193,9 +193,9 @@ a pass/fail with an observable result — "looks fine" is not a result.
       WARN lines say it went otherwise, and a good run has none of them:
       `cancelled navigation committed anyway` (the runtime accepted `put_Cancel`
       and navigated regardless, which is 0023's `unverified` premise failing),
-      `cancelled navigation forgotten` (four cancels outstanding at once, so one
-      of them reverts to the pre-issue-73 behaviour and its completion may arm
-      the surface), `navigation cancelled off origin, target unreadable` (the URI
+      `cancelled navigation forgotten` (one of two independent four-entry ledgers
+      overflowed: exact non-zero ids or anonymous known-zero/unavailable credits,
+      so an evicted completion may arm the surface), `navigation cancelled off origin, target unreadable` (the URI
       getter failed and the gate cancelled a navigation it could not read), and
       `webview2 runtime warning, reason=cancel navigation <n>` (the runtime
       refused the cancel, so the foreign document loads — check that it is then
@@ -392,9 +392,9 @@ The environment a frame bug report needs and the reporting contract live in
 - **Issues #96/#120 automated/A/B:** Go 1.24/current focused and full gates, diagnostic tags, bridge VM, portable builds and leak scan passed; Actions `31101143512` passed all jobs/race lanes. Reintroducing the precomputed `uintptr` or removing the `UINT` bound made its named regression fail.
 - **Issues #96/#120 live:** WebView2 151.0.4129.59 served three assets and reached `Ping`, navigation and readiness with zero warnings/errors; a capture showed the rendered restored window.
 - **Issues #96/#120 not covered / `unverified`:** local race lacked `gcc`; the demo was process-stopped; frame checks were unchanged; a real 4-GiB asset was not allocated, so only the scalar Win32 boundary was exercised.
-- **Issues #86/#104/#110 automated:** Go 1.24 and current uncached suites, formatting, build, vet, both diagnostic-tag pairs, bridge VM, 100 repeated environment-options numeric-slot calls, Linux/amd64 and Windows/amd64/386/ARM64 gates, and the leak scan passed.
-- **Issues #86/#104/#110 A/B:** removing the current-plan guard let a stale outer completion call `Navigate`; collapsing unavailable navigation IDs into known zero broke both production provenance tests; removing the exact `startURL` capability cancelled the credentialed initial navigation. Each named regression failed. Earlier, initial-start disarm broke visible-page abort restoration until suspension became departure-scoped, and removing `//go:uintptrescapes` made the numeric-slot harness fail 3/20 runs while the repaired harness passed 100/100.
-- **Issues #86/#104/#110 live:** `mullion doctor` found WebView2 151.0.4129.72 and its direct export; `examples/basic` registered the canonical embedded filter before scripts/navigation, served all three assets, completed `Ping`, navigation and readiness with zero warnings/errors, and a capture showed the restored shell on the current 1920x1080 125% single-monitor setup.
-- **Issues #86/#104/#110 not covered:** local `-race` could not build because `gcc` is absent; failed event getters and filter-registration failure remain deterministic fault-seam tests; the demo was process-stopped rather than UI-closed and the frame/snap/DPI checklist was not repeated.
-- **Issues #86/#104/#110 `unverified`:** the runtime's empty-source representation for a fallback `data:` document and its NavigationStarting URI for a credentialed `Config.URL` were not observed live (partial credential/path rewriting would fail closed); fault getters were not injected into a live runtime, and Windows/ARM64 remains compile-only by decision 0034.
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: record source-plan, event-provenance, single-reporting and Go-owned ABI verification with explicit live gaps.
+- **Issues #86/#104/#110 and audit follow-up automated:** current Go and Go 1.24 formatting, build, vet and uncached suites passed; the focused navigation-diagnostic and COM consumer-boundary tests, both diagnostic-tag build/test pairs, bridge VM, WebView2 doctor, Linux/amd64 and Windows/amd64/386/ARM64 gates, and the 269-file leak scan passed.
+- **Issues #86/#104/#110 and audit follow-up A/B:** the two navigation diagnostics failed before their fixes; an event `Add*` swap, omitted `addEvent` package-reference release, swapped environment/controller completion constructors, swapped options/handler arguments, changed parent `HWND`, and omitted loader options/controller-handler releases each made its consumer-boundary test fail. Earlier source-plan, fallback-generation and `//go:uintptrescapes` mutations retained their recorded failures.
+- **Issues #86/#104/#110 and audit follow-up live:** `mullion doctor` found WebView2 151.0.4129.72 and its direct export; `examples/basic` served all three assets, completed `Ping`, navigation and readiness with zero warnings/errors, rendered visibly on the current 1920x1080 100% single-monitor setup, and exited its message loop cleanly after capture.
+- **Issues #86/#104/#110 and audit follow-up not covered:** local `-race` could not build because `gcc` is absent; failed event getters, failed setters, ledger saturation and filter-registration failure remain deterministic fault-seam tests; the frame/snap/DPI checklist was not repeated because this change does not alter window behaviour.
+- **Issues #86/#104/#110 and audit follow-up `unverified`:** the runtime's empty-source representation for a fallback `data:` document, its NavigationStarting URI for a credentialed `Config.URL`, whether the inspected COM getters pump nested callbacks, and whether callbacks can arrive after controller close were not observed live; Windows/ARM64 remains compile-only by decision 0034.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add navigation-diagnostic and COM consumer-boundary A/B evidence, the refined headless/caller-owned policy verification, and exact local race and live-runtime gaps.

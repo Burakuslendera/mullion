@@ -29,33 +29,36 @@ import (
 
 // fakeComState counts the calls a fake COM object receives.
 type fakeComState struct {
-	releases            int
-	addRefs             int
-	getRequest          int
-	request             uintptr // what a fake event args writes out from GetRequest; 0 fails the call
-	queryTarget         uintptr // what a fake controller's QueryInterface hands out; 0 answers E_NOINTERFACE
-	puts                int     // Put* setter calls received by a fake controller3
-	putResult           uintptr // HRESULT a fake controller3 returns from its Put* setters
-	message             string
-	source              string
-	uri                 string
-	messageResult       uintptr
-	sourceResult        uintptr
-	uriResult           uintptr
-	navigationID        uint64
-	navigationIDResult  uintptr
-	userInitiated       bool
-	userInitiatedResult uintptr
-	success             bool
-	successResult       uintptr
-	redirected          bool
-	redirectedResult    uintptr
-	status              WebErrorStatus
-	statusResult        uintptr
-	kind                ProcessFailedKind
-	kindResult          uintptr
-	operationResult     uintptr
-	operationCalls      int
+	releases                int
+	addRefs                 int
+	getRequest              int
+	request                 uintptr // what a fake event args writes out from GetRequest; 0 fails the call
+	queryTarget             uintptr // what a fake controller's QueryInterface hands out; 0 answers E_NOINTERFACE
+	puts                    int     // Put* setter calls received by a fake controller3
+	putResult               uintptr // HRESULT a fake controller3 returns from its Put* setters
+	message                 string
+	source                  string
+	uri                     string
+	messageResult           uintptr
+	sourceResult            uintptr
+	uriResult               uintptr
+	navigationID            uint64
+	navigationIDResult      uintptr
+	userInitiated           bool
+	userInitiatedResult     uintptr
+	success                 bool
+	successResult           uintptr
+	redirected              bool
+	redirectedResult        uintptr
+	status                  WebErrorStatus
+	statusResult            uintptr
+	kind                    ProcessFailedKind
+	kindResult              uintptr
+	operationResult         uintptr
+	operationCalls          int
+	registeredEventHandlers [61]uintptr
+	registeredEventAdds     [61]int
+	registeredEventRefs     []uintptr
 }
 
 var (
@@ -240,6 +243,65 @@ var fakeProcessFailedArgsVtbl = ICoreWebView2ProcessFailedEventArgsVtbl{
 		fakeWriteInt32(out, int32(state.kind))
 		return state.kindResult
 	})),
+}
+
+const (
+	fakeAddNavigationStartingSlot   = 7
+	fakeAddNavigationCompletedSlot  = 15
+	fakeAddProcessFailedSlot        = 25
+	fakeAddWebMessageReceivedSlot   = 34
+	fakeAddNewWindowRequestedSlot   = 44
+	fakeAddWebResourceRequestedSlot = 55
+)
+
+func fakeCaptureRegisteredEvent(this, handler uintptr, slot int) uintptr {
+	state := fakeComStateFor(this)
+	if state == nil || handler == 0 {
+		return eFail
+	}
+	state.registeredEventAdds[slot]++
+	state.registeredEventHandlers[slot] = handler
+	state.registeredEventRefs = append(state.registeredEventRefs, handler)
+	serverAddRef(handler)
+	return sOK
+}
+
+var (
+	fakeAddNavigationStarting = ComProc(windows.NewCallback(func(this, handler, token uintptr) uintptr {
+		return fakeCaptureRegisteredEvent(this, handler, fakeAddNavigationStartingSlot)
+	}))
+	fakeAddNavigationCompleted = ComProc(windows.NewCallback(func(this, handler, token uintptr) uintptr {
+		return fakeCaptureRegisteredEvent(this, handler, fakeAddNavigationCompletedSlot)
+	}))
+	fakeAddProcessFailed = ComProc(windows.NewCallback(func(this, handler, token uintptr) uintptr {
+		return fakeCaptureRegisteredEvent(this, handler, fakeAddProcessFailedSlot)
+	}))
+	fakeAddWebMessageReceived = ComProc(windows.NewCallback(func(this, handler, token uintptr) uintptr {
+		return fakeCaptureRegisteredEvent(this, handler, fakeAddWebMessageReceivedSlot)
+	}))
+	fakeAddNewWindowRequested = ComProc(windows.NewCallback(func(this, handler, token uintptr) uintptr {
+		return fakeCaptureRegisteredEvent(this, handler, fakeAddNewWindowRequestedSlot)
+	}))
+	fakeAddWebResourceRequested = ComProc(windows.NewCallback(func(this, handler, token uintptr) uintptr {
+		return fakeCaptureRegisteredEvent(this, handler, fakeAddWebResourceRequestedSlot)
+	}))
+)
+
+func newFakeRegisterEventsCore(t *testing.T) (*ICoreWebView2, *fakeComState) {
+	t.Helper()
+	vtbl := &ICoreWebView2Vtbl{}
+	slots := unsafe.Slice((*ComProc)(unsafe.Pointer(vtbl)), 61)
+	slots[fakeAddNavigationStartingSlot] = fakeAddNavigationStarting
+	slots[fakeAddNavigationCompletedSlot] = fakeAddNavigationCompleted
+	slots[fakeAddProcessFailedSlot] = fakeAddProcessFailed
+	slots[fakeAddWebMessageReceivedSlot] = fakeAddWebMessageReceived
+	slots[fakeAddNewWindowRequestedSlot] = fakeAddNewWindowRequested
+	slots[fakeAddWebResourceRequestedSlot] = fakeAddWebResourceRequested
+
+	core := &ICoreWebView2{Vtbl: vtbl}
+	state := &fakeComState{}
+	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(core)), state))
+	return core, state
 }
 
 var fakeSurfaceCoreVtbl = ICoreWebView2Vtbl{

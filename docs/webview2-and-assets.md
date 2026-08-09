@@ -82,28 +82,44 @@ with it. The consequence is a rule, and it is the important one on this page:
 
 ### The Go-owned ABI is explicit
 
-The binding has two deterministic ABI manifests. Runtime-owned interface tests
-pin every flattened vtable slot/size, while canonical-string rows pin every IID
-literal the binding declares. For Go-owned COM objects — event handlers,
-environment options and completion handlers — the manifest pins the
-vtable-at-offset-zero representation, full vtable layout and canonical IID.
-Dispatch tests then exercise the runtime-facing entry points by literal slot:
-event and completion `Invoke` at slot 3, and each implemented
-environment-options getter and setter at its declared slot.
+The binding has local, deterministic ABI manifests. Runtime-owned interface
+tests pin flattened vtable slots and sizes, and canonical-string rows pin every
+declared IID. For Go-owned event, completion, and environment-options objects,
+the manifests pin vtable-at-offset-zero representation, full layout and
+canonical IID. Local dispatch tests call runtime-facing entry points by literal
+slot: event and completion `Invoke` at slot 3, plus every implemented options
+getter and setter at its declared slot.
 
-The loader has three additional trip-wires because name-mirroring tests would
-miss them. `Environment.CreateController` dispatches through the complete
+Those checks prove declarations and local dispatch only. They cannot prove that
+a production consumer selects the right semantic interface, passes arguments in
+native order, or transfers an owned COM reference correctly. Separate consumer
+and handoff tests are required:
+
+- `TestRegisterEventsPairsEveryNumericalConsumerWithItsSemanticHandler` maps all
+  six production `add_*` slots to the expected handler IID, while
+  `TestAddEventTransfersExactlyOneReferenceToTheRuntime` pins the package-to-
+  runtime reference handoff on registration success and failure.
+- `TestCreateEnvironmentWithOptionsNativeCallBoundary` and
+  `TestEnvironmentCreateControllerNativeCallBoundary` drive the production
+  loader delegates through their real callback/COM slots. They pin native
+  argument order, semantic completion handlers, options-slot reads, and result
+  ownership across synchronous failure, timeout with late completion, completed
+  failure, and success.
+
+The loader also has three local trip-wires that name-mirroring tests would miss.
+`Environment.CreateController` dispatches through the complete
 `ICoreWebView2EnvironmentVtbl`, never a private prefix that could drift from it.
 Separate semantic constructors bind environment and controller completions to
-their own IIDs. The numeric-call helper retains `//go:uintptrescapes`: it forwards
-stack addresses through a `uintptr` wrapper, so removing that directive can leave
-a callback holding the pre-growth stack address.
+their own IIDs. The numeric-call helper retains `//go:uintptrescapes`: it
+forwards stack addresses through a `uintptr` wrapper, so removing that directive
+can leave a callback holding the pre-growth stack address.
 
 `TestCOMABIInventoryCompleteness` scans every production Go filename, including
 architecture-specific suffixes, and inventories each vtable declaration, COM
 object representation and GUID literal. It is only an alarm for unclassified
-ABI: adding a manifest row does not prove correctness; the corresponding literal
-layout, identity and dispatch or lifetime behavior must also be tested.
+ABI: adding a manifest row does not prove correctness; the corresponding local
+layout/identity/dispatch test and any affected consumer mapping or reference
+handoff must also be pinned.
 The authority is Microsoft.Web.WebView2 NuGet `1.0.4129.50`:
 `build/native/include/WebView2.h` for flattened C vtables and root `WebView2.idl`
 for UUIDs and declaration order. These checks are deterministic and need neither
@@ -150,9 +166,11 @@ safe callback exists — string-message decoding and resource-request acquisitio
 are instead reported locally under the return-ownership rule below.
 `NavigationStarting` asks the host whether to cancel, calls `put_Cancel` itself,
 and invokes `NavigationCancelledCallback` only after that call succeeds. A failed
-`put_Cancel` warns with the navigation and commits no cancel state. URI, navigation
-id, initiation and redirect getters retain separate provenance; the completed-
-navigation, new-window, process-failure and message adapters do the same. See
+`put_Cancel` warns with the navigation and commits no cancel state. The warning
+preserves getter provenance: a successful zero navigation id is `id=0`, while a
+failed id getter is `id=unavailable`. URI, navigation id, initiation and redirect
+getters retain separate provenance; the completed-navigation, new-window,
+process-failure and message adapters do the same. See
 [decisions/0027](./decisions/0027-cancel-is-committed-after-the-runtime-performs-it.md)
 and [0037](./decisions/0037-event-values-preserve-getter-provenance.md).
 
@@ -170,4 +188,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document the source-plan/event/reporting contracts and the independent loader, numeric-slot, architecture-suffix and pointer-lifetime ABI trip-wires.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: separate local ABI trip-wires from consumer mapping and COM reference-handoff tests, and preserve zero-versus-unavailable PutCancel identities.

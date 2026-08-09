@@ -28,9 +28,10 @@ import (
 // but not the readiness and diagnostic helpers injected alongside them; those
 // belong to the failed application's watchdog evidence (decisions/0014).
 
-// errorPageURL renders the fallback surface as a data:text/html URL for the
-// source plan's canonical retry target. That target is already origin-only, so a
-// token a caller placed in Config.URL never reaches either the page or Retry.
+// errorPageURL renders the fallback surface as a data:text/html URL using the
+// source plan's canonical retryTarget projection. That projection is origin-only,
+// so Config.URL userinfo, path, query, fragment, and tokens never reach the page
+// or Retry.
 //
 // The whole document is percent-encoded (url.PathEscape) into the data: payload,
 // and every interpolated value is HTML-escaped first, so the two encodings
@@ -55,9 +56,9 @@ func errorPageURL(config Config, retryTarget string) string {
 	// An explicit charset: the document is ASCII (leak-scan holds errorpage.html to
 	// the ASCII rule and every interpolated value is escaped or numeric), so this
 	// fixes no concrete bug, but it states the encoding rather than leaving the
-	// browser to assume one (issue #13). surfaceURIMatches tolerates the exact URL,
-	// an empty URI and any data: prefix, so the added parameter does not disturb the
-	// error-surface navigation-identity match (decisions/0021).
+	// browser to assume one (issue #13). surfaceURIMatches admits the exact URL
+	// and a successfully observed empty URI only, so the added parameter remains
+	// part of the error-surface navigation identity (decisions/0021, 0037).
 	return "data:text/html;charset=utf-8," + url.PathEscape(document)
 }
 

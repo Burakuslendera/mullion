@@ -5,7 +5,11 @@ package webview2
 import (
 	"errors"
 	"runtime"
+	"sync/atomic"
 	"testing"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // TestRegisterEventsFailureTearsDownBrowser locks the leak fix for the embed error
@@ -53,6 +57,84 @@ func TestRegisterEventsSuccessKeepsBrowser(t *testing.T) {
 	if browser.IsShuttingDown() {
 		t.Fatal("a successful embed must not tear the browser down")
 	}
+}
+
+func TestRegisterEventsPairsEveryNumericalConsumerWithItsSemanticHandler(t *testing.T) {
+	baseline := liveServerCount()
+	core, state := newFakeRegisterEventsCore(t)
+	browser := New()
+	browser.core = core
+
+	consumers := []struct {
+		name string
+		slot int
+		iid  windows.GUID
+	}{
+		{"NavigationStarting", fakeAddNavigationStartingSlot, IIDICoreWebView2NavigationStartingEventHandler},
+		{"NavigationCompleted", fakeAddNavigationCompletedSlot, IIDICoreWebView2NavigationCompletedEventHandler},
+		{"ProcessFailed", fakeAddProcessFailedSlot, IIDICoreWebView2ProcessFailedEventHandler},
+		{"WebMessageReceived", fakeAddWebMessageReceivedSlot, IIDICoreWebView2WebMessageReceivedEventHandler},
+		{"NewWindowRequested", fakeAddNewWindowRequestedSlot, IIDICoreWebView2NewWindowRequestedEventHandler},
+		{"WebResourceRequested", fakeAddWebResourceRequestedSlot, IIDICoreWebView2WebResourceRequestedEventHandler},
+	}
+	releaseRuntimeReferences := func() {
+		for _, handler := range state.registeredEventRefs {
+			if handler != 0 && serverFor(handler) != nil {
+				serverRelease(handler)
+			}
+		}
+	}
+	t.Cleanup(releaseRuntimeReferences)
+
+	if err := browser.registerEvents(); err != nil {
+		t.Fatalf("registerEvents returned %v, want nil", err)
+	}
+	if got, want := liveServerCount(), baseline+len(consumers); got != want {
+		t.Fatalf("live servers after registration = %d, want %d runtime-owned handlers", got, want)
+	}
+
+	for _, consumer := range consumers {
+		t.Run(consumer.name, func(t *testing.T) {
+			handler := state.registeredEventHandlers[consumer.slot]
+			if handler == 0 {
+				t.Fatalf("numerical Add* slot %d did not receive a handler", consumer.slot)
+			}
+			if got := state.registeredEventAdds[consumer.slot]; got != 1 {
+				t.Fatalf("numerical Add* slot %d calls = %d, want 1", consumer.slot, got)
+			}
+			server := serverFor(handler)
+			if server == nil {
+				t.Fatalf("handler passed to numerical Add* slot %d is not rooted", consumer.slot)
+			}
+			if got := atomic.LoadInt32(&server.refs); got != 1 {
+				t.Fatalf("refs after package release = %d, want exactly the runtime's reference", got)
+			}
+
+			iid := consumer.iid
+			var queried uintptr
+			hr := serverQueryInterface(
+				handler,
+				uintptr(unsafe.Pointer(&iid)),
+				uintptr(unsafe.Pointer(&queried)),
+			)
+			if hr != sOK || queried != handler {
+				t.Fatalf("slot %d handler QueryInterface(%s) = (hr=%#x, ptr=%#x), want (S_OK, %#x)", consumer.slot, consumer.name, hr, queried, handler)
+			}
+			if got := atomic.LoadInt32(&server.refs); got != 2 {
+				t.Fatalf("refs after semantic QueryInterface = %d, want runtime plus queried references", got)
+			}
+			serverRelease(queried)
+			if got := atomic.LoadInt32(&server.refs); got != 1 {
+				t.Fatalf("refs after releasing queried interface = %d, want runtime reference", got)
+			}
+		})
+	}
+
+	releaseRuntimeReferences()
+	if got := liveServerCount(); got != baseline {
+		t.Fatalf("live servers after all runtime releases = %d, want baseline %d", got, baseline)
+	}
+	runtime.KeepAlive(core)
 }
 func TestReturnedSurfaceOperationFailuresAreNotInternallyReported(t *testing.T) {
 	core, coreState := newFakeSurfaceCore(t, eFail)

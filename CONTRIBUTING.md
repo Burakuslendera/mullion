@@ -61,10 +61,14 @@ skipping it silently; CI runs it on every push.
 
 ## Tests stay headless
 
-**No test may call `Run()`, create an `HWND`, or require a display, and no test
-requires the WebView2 Runtime by default.** This is not a style preference — it
-is what makes the suite runnable in CI and on a contributor's machine of any OS,
-and a test nobody can run is a test that stops being true.
+**No test may create an `HWND`, require a display, enter native COM, call a
+Win32 entry point, or spin a message pump, and no test requires the WebView2
+Runtime by default.** A test may call public `Run()` only through a deterministic
+seam or build path that proves return before runtime discovery and every native
+boundary, with assertions that the forbidden seams were not reached. Choosing
+an input that is merely expected to return early is not proof. This narrow
+exception preserves public preflight coverage without weakening headless CI
+([decision 0039](./docs/decisions/0039-public-run-preflight-stays-headless.md)).
 
 The one opt-in, and only for a machine that is meant to have a runtime:
 `MULLION_REQUIRE_WEBVIEW2=1` turns the two runtime-dependent tests in
@@ -177,4 +181,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: refine the protected headless rule with the approved deterministic pre-native public Run exception and require assertions on every forbidden seam.

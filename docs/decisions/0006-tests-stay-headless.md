@@ -1,6 +1,6 @@
 # 0006. No test creates a window
 
-**Status:** Accepted
+**Status:** Superseded by [0039](./0039-public-run-preflight-stays-headless.md)
 
 ## Context
 
@@ -80,4 +80,4 @@ catches a vtable mistake before it reaches a user.
   arrives at the WebView2 child, and the resulting split between what is
   automatable and what is not.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: link this historical blanket Run-test ban forward to decision 0039's deterministic pre-native exception.
