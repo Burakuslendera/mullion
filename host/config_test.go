@@ -83,6 +83,35 @@ func TestConfigHitTestMetricsFollowCSSUnlessOverridden(t *testing.T) {
 	}
 }
 
+func TestConfigNormalisePreservesMaxInt32Metrics(t *testing.T) {
+	const maxInt32 = int32(1<<31 - 1)
+	config := Config{
+		Width:                       maxInt32,
+		Height:                      maxInt32,
+		TitlebarHeight:              maxInt32,
+		CaptionControlsWidth:        maxInt32,
+		ResizeBorder:                maxInt32,
+		HitTestTitlebarHeight:       maxInt32,
+		HitTestCaptionControlsWidth: maxInt32,
+	}.normalise()
+	for _, metric := range []struct {
+		name  string
+		value int32
+	}{
+		{name: "Width", value: config.Width},
+		{name: "Height", value: config.Height},
+		{name: "TitlebarHeight", value: config.TitlebarHeight},
+		{name: "CaptionControlsWidth", value: config.CaptionControlsWidth},
+		{name: "ResizeBorder", value: config.ResizeBorder},
+		{name: "HitTestTitlebarHeight", value: config.HitTestTitlebarHeight},
+		{name: "HitTestCaptionControlsWidth", value: config.HitTestCaptionControlsWidth},
+	} {
+		if metric.value != maxInt32 {
+			t.Fatalf("%s = %d after normalise, want MaxInt32", metric.name, metric.value)
+		}
+	}
+}
+
 // TestConfigRejectsInvalidJSNamespace guards a silent failure: the namespace is
 // used both as a DOM attribute segment (data-<ns>-resize-edge) and as the
 // camelCase dataset key that reads it back. A dash or an upper-case letter

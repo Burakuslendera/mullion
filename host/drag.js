@@ -3,15 +3,27 @@
   if (!api || api.__dragBound) return;
   api.__dragBound = true;
   const topResizeBorder = __BORDER__;
-  let maximised = false;
-  const syncMaximised = () => {
-    api.window.isMaximised().then((value) => { maximised = value === true; }).catch(() => {});
+  let frameKnown = false;
+  let maximised = true;
+  let moveSizeActive = true;
+  const applyFrameState = (state) => {
+    if (!state) return;
+    maximised = state.maximised === true;
+    moveSizeActive = state.moveSizeActive === true;
+    frameKnown = true;
   };
-  syncMaximised();
-  window.addEventListener("focus", syncMaximised);
-  window.addEventListener("resize", () => window.setTimeout(syncMaximised, 120));
+  const syncFrameState = () => {
+    frameKnown = false;
+    api.__frame.invalidate();
+    api.__frame.refresh().catch(() => {});
+  };
+  api.__frame.subscribe(applyFrameState);
+  syncFrameState();
+  window.addEventListener("focus", syncFrameState);
+  window.addEventListener("resize", () => window.setTimeout(syncFrameState, 120));
   document.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
+    if (!frameKnown || moveSizeActive) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const titlebar = target.closest(__DRAG_SELECTOR__);

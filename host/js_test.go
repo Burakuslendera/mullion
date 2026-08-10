@@ -79,7 +79,8 @@ func TestJSBridgeExposesReservedMethods(t *testing.T) {
 	scripts := Config{}.normalise().jsScripts()
 	for _, method := range []string{
 		methodStartDrag, methodStartResize, methodMinimise, methodToggleMaximise,
-		methodIsMaximised, methodShow, methodHide, methodClose,
+		methodIsMaximised, methodFrameState, eventFrameStateChanged,
+		methodShow, methodHide, methodClose,
 		methodShellReady, methodReady, methodPhase, methodDiagnostic,
 	} {
 		if !strings.Contains(scripts.bridge, `"`+method+`"`) {

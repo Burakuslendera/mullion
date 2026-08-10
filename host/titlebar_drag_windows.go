@@ -65,11 +65,22 @@ func (host *Host) logTitlebarDragHitTestDiagnostic(cursor point, windowRect rect
 	if !nativeHitTestDiagnosticEnabled() {
 		return
 	}
+	geometry, ok := newHitTestGeometry(host.config.hitTestMetrics(), windowRect, cursor, dpi)
+	if !ok {
+		host.log.Debug("mullion: hittest diagnostic, source=titlebar_drag" +
+			", geometry_valid=false" +
+			", maximized=" + strconv.FormatBool(maximized) +
+			", hit=" + nativeHitTestName(hit))
+		return
+	}
 	host.log.Debug("mullion: hittest diagnostic, source=titlebar_drag" +
-		", cursor_y=" + formatInt32(cursor.Y) +
-		", window_top=" + formatInt32(windowRect.Top) +
-		", top_border=" + formatInt32(scaleLogicalPixels(host.config.ResizeBorder, dpi)) +
-		", titlebar_height=" + formatInt32(scaleLogicalPixels(host.config.HitTestTitlebarHeight, dpi)) +
+		", geometry_valid=true" +
+		", cursor_y=" + strconv.FormatInt(geometry.cursorY, 10) +
+		", window_top=" + strconv.FormatInt(geometry.top, 10) +
+		", side_border=" + strconv.FormatInt(geometry.resizeWidth, 10) +
+		", top_border=" + strconv.FormatInt(geometry.resizeHeight, 10) +
+		", titlebar_height=" + strconv.FormatInt(geometry.titlebarBottom-geometry.top, 10) +
+		", controls_width=" + strconv.FormatInt(geometry.controlsWidth, 10) +
 		", maximized=" + strconv.FormatBool(maximized) +
 		", hit=" + nativeHitTestName(hit))
 }

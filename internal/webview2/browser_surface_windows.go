@@ -64,6 +64,15 @@ func (browser *Browser) Eval(script string) error {
 	return core.ExecuteScript(script, nil)
 }
 
+// PostWebMessage delivers an internal host event to the current document.
+func (browser *Browser) PostWebMessage(message string) error {
+	core := browser.CoreWebView2()
+	if core == nil {
+		return errors.New("webview2: post message before embed")
+	}
+	return core.PostWebMessageAsString(message)
+}
+
 // Show makes the control visible.
 //
 // Showing the host window is not enough: the controller has its own visibility,

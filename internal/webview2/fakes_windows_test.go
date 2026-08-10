@@ -321,6 +321,11 @@ var fakeSurfaceCoreVtbl = ICoreWebView2Vtbl{
 		state.operationCalls++
 		return state.operationResult
 	})),
+	PostWebMessageAsString: ComProc(windows.NewCallback(func(this, message uintptr) uintptr {
+		state := fakeComStateFor(this)
+		state.operationCalls++
+		return state.operationResult
+	})),
 }
 
 var fakeSurfaceControllerVtbl = ICoreWebView2ControllerVtbl{

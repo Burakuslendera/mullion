@@ -24,7 +24,11 @@ func TestHitTestResizeBorder(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := hitTestResizeBorder(windowRect, test.cursor, 8); got != test.want {
+			geometry, ok := newHitTestGeometry(hitTestMetrics{ResizeBorder: 8}, windowRect, test.cursor, 96)
+			if !ok {
+				t.Fatal("newHitTestGeometry() ok = false")
+			}
+			if got := hitTestResizeBorder(geometry); got != test.want {
 				t.Fatalf("hitTestResizeBorder() = %d, want %d", got, test.want)
 			}
 		})
@@ -33,17 +37,344 @@ func TestHitTestResizeBorder(t *testing.T) {
 
 func TestScaleLogicalPixels(t *testing.T) {
 	tests := []struct {
+		name string
+		px   int32
 		dpi  uint32
-		want int32
+		want int64
 	}{
-		{dpi: 96, want: 8},
-		{dpi: 120, want: 10},
-		{dpi: 144, want: 12},
-		{dpi: 192, want: 16},
+		{name: "negative is empty", px: -8, dpi: 144, want: 0},
+		{name: "zero is empty", px: 0, dpi: 144, want: 0},
+		{name: "zero DPI uses 96", px: 8, dpi: 0, want: 8},
+		{name: "exact", px: 8, dpi: 120, want: 10},
+		{name: "ceiling", px: 1, dpi: 97, want: 2},
 	}
 	for _, test := range tests {
-		if got := scaleLogicalPixels(8, test.dpi); got != test.want {
-			t.Fatalf("scaleLogicalPixels(8, %d) = %d, want %d", test.dpi, got, test.want)
+		t.Run(test.name, func(t *testing.T) {
+			if got := scaleLogicalPixels(test.px, test.dpi); got != test.want {
+				t.Fatalf("scaleLogicalPixels(%d, %d) = %d, want %d", test.px, test.dpi, got, test.want)
+			}
+		})
+	}
+
+	const maxInt32 = int32(1<<31 - 1)
+	const maxUint32 = ^uint32(0)
+	product := int64(maxInt32) * int64(maxUint32)
+	want := product / int64(defaultWindowDPI)
+	if product%int64(defaultWindowDPI) != 0 {
+		want++
+	}
+	if got := scaleLogicalPixels(maxInt32, maxUint32); got != want {
+		t.Fatalf("scaleLogicalPixels(MaxInt32, MaxUint32) = %d, want exact ceiling %d", got, want)
+	}
+}
+
+func TestNativeResolversKeepSeededLargeTitleBands(t *testing.T) {
+	const maxInt32 = int32(1<<31 - 1)
+	tests := []struct {
+		name       string
+		metrics    hitTestMetrics
+		windowRect rect
+		cursor     point
+		dpi        uint32
+	}{
+		{
+			name:       "one point five billion at 96 DPI",
+			metrics:    hitTestMetrics{TitlebarHeight: 1_500_000_000},
+			windowRect: rect{Left: 0, Top: 0, Right: 1000, Bottom: 600},
+			cursor:     point{X: 500, Y: 550},
+			dpi:        96,
+		},
+		{
+			name:       "one point five billion at 192 DPI",
+			metrics:    hitTestMetrics{TitlebarHeight: 1_500_000_000},
+			windowRect: rect{Left: 0, Top: 0, Right: 1000, Bottom: 600},
+			cursor:     point{X: 500, Y: 550},
+			dpi:        192,
+		},
+		{
+			name:       "positive int32 wrap seed at 240 DPI",
+			metrics:    hitTestMetrics{TitlebarHeight: 1_717_987_118},
+			windowRect: rect{Left: 0, Top: 0, Right: 1000, Bottom: 600},
+			cursor:     point{X: 500, Y: 550},
+			dpi:        240,
+		},
+		{
+			name:       "top near MaxInt32",
+			metrics:    hitTestMetrics{TitlebarHeight: maxInt32},
+			windowRect: rect{Left: 0, Top: maxInt32 - 600, Right: 1000, Bottom: maxInt32},
+			cursor:     point{X: 500, Y: maxInt32 - 1},
+			dpi:        192,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := nativeHitTestForRect(test.metrics, test.windowRect, test.cursor, test.dpi, false); got != htCaption {
+				t.Fatalf("nativeHitTestForRect() = %d, want HTCAPTION", got)
+			}
+			if got := nativeCaptionButtonHitForRect(test.metrics, test.windowRect, test.cursor, test.dpi, false); got != htClient {
+				t.Fatalf("nativeCaptionButtonHitForRect() = %d, want HTCLIENT outside controls", got)
+			}
+		})
+	}
+}
+
+func TestNativeResolversKeepExtremeResizeEdgesDisjoint(t *testing.T) {
+	const minInt32 = int32(-1 << 31)
+	const maxInt32 = int32(1<<31 - 1)
+	metrics := hitTestMetrics{ResizeBorder: maxInt32}
+	tests := []struct {
+		name       string
+		windowRect rect
+		edge       point
+		midpoint   point
+		want       int32
+	}{
+		{
+			name:       "left near MaxInt32",
+			windowRect: rect{Left: maxInt32 - 101, Top: 0, Right: maxInt32, Bottom: 101},
+			edge:       point{X: maxInt32 - 101, Y: 50},
+			midpoint:   point{X: maxInt32 - 51, Y: 50},
+			want:       htLeft,
+		},
+		{
+			name:       "right near MinInt32",
+			windowRect: rect{Left: minInt32, Top: 0, Right: minInt32 + 101, Bottom: 101},
+			edge:       point{X: minInt32 + 100, Y: 50},
+			midpoint:   point{X: minInt32 + 50, Y: 50},
+			want:       htRight,
+		},
+		{
+			name:       "top near MaxInt32",
+			windowRect: rect{Left: 0, Top: maxInt32 - 101, Right: 101, Bottom: maxInt32},
+			edge:       point{X: 50, Y: maxInt32 - 101},
+			midpoint:   point{X: 50, Y: maxInt32 - 51},
+			want:       htTop,
+		},
+		{
+			name:       "bottom near MinInt32",
+			windowRect: rect{Left: 0, Top: minInt32, Right: 101, Bottom: minInt32 + 101},
+			edge:       point{X: 50, Y: minInt32 + 100},
+			midpoint:   point{X: 50, Y: minInt32 + 50},
+			want:       htBottom,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := nativeHitTestForRect(metrics, test.windowRect, test.edge, 192, false); got != test.want {
+				t.Fatalf("nativeHitTestForRect(edge) = %d, want %d", got, test.want)
+			}
+			if got := nativeHitTestForRect(metrics, test.windowRect, test.midpoint, 192, false); got != htClient {
+				t.Fatalf("nativeHitTestForRect(midpoint) = %d, want HTCLIENT between opposite bands", got)
+			}
+			if got := nativeCaptionButtonHitForRect(metrics, test.windowRect, test.edge, 192, false); got != htClient {
+				t.Fatalf("nativeCaptionButtonHitForRect(edge) = %d, want HTCLIENT in resize band", got)
+			}
+		})
+	}
+}
+
+func TestNativeResolversKeepExtremeScaledControlThirds(t *testing.T) {
+	const minInt32 = int32(-1 << 31)
+	windowRect := rect{Left: minInt32, Top: 0, Right: minInt32 + 600, Bottom: 600}
+	metrics := hitTestMetrics{
+		TitlebarHeight: 600,
+		ControlsWidth:  1_500_000_000,
+	}
+	tests := []struct {
+		name   string
+		cursor point
+		want   int32
+	}{
+		{name: "minimize", cursor: point{X: minInt32 + 100, Y: 100}, want: htMinButton},
+		{name: "maximize", cursor: point{X: minInt32 + 300, Y: 100}, want: htMaxButton},
+		{name: "close", cursor: point{X: minInt32 + 500, Y: 100}, want: htClose},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := nativeCaptionButtonHitForRect(metrics, windowRect, test.cursor, 192, false); got != test.want {
+				t.Fatalf("nativeCaptionButtonHitForRect() = %d, want %d", got, test.want)
+			}
+			if got := nativeHitTestForRect(metrics, windowRect, test.cursor, 192, false); got != htClient {
+				t.Fatalf("nativeHitTestForRect() = %d, want HTCLIENT for production controls", got)
+			}
+		})
+	}
+}
+
+func TestNativeHitTestForRectSkipsHugeResizeBandWhenMaximized(t *testing.T) {
+	metrics := hitTestMetrics{
+		ResizeBorder:   1_500_000_000,
+		TitlebarHeight: 1_500_000_000,
+	}
+	windowRect := rect{Left: 0, Top: 0, Right: 1000, Bottom: 600}
+	cursor := point{X: 500, Y: 300}
+	if got := nativeHitTestForRect(metrics, windowRect, cursor, 192, false); got != htBottomRight {
+		t.Fatalf("nativeHitTestForRect(restored) = %d, want HTBOTTOMRIGHT in bounded resize band", got)
+	}
+	if got := nativeHitTestForRect(metrics, windowRect, cursor, 192, true); got != htCaption {
+		t.Fatalf("nativeHitTestForRect(maximized) = %d, want HTCAPTION after resize skip", got)
+	}
+}
+
+func TestHitTestGeometryBoundsMetricBandsWithoutWrapping(t *testing.T) {
+	windowRect := rect{Left: 0, Top: 0, Right: 10, Bottom: 7}
+	for _, test := range []struct {
+		name     string
+		metric   int32
+		resizeX  int64
+		resizeY  int64
+		title    int64
+		controls int64
+		wantHit  int32
+	}{
+		{name: "negative", metric: -1, wantHit: htClient},
+		{name: "zero", metric: 0, wantHit: htClient},
+		{name: "positive maximum", metric: int32(1<<31 - 1), resizeX: 5, resizeY: 3, title: 7, controls: 10, wantHit: htRight},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			geometry, ok := newHitTestGeometry(hitTestMetrics{
+				ResizeBorder:   test.metric,
+				TitlebarHeight: test.metric,
+				ControlsWidth:  test.metric,
+			}, windowRect, point{X: 5, Y: 3}, ^uint32(0))
+			if !ok {
+				t.Fatal("newHitTestGeometry() ok = false")
+			}
+			if geometry.resizeWidth != test.resizeX || geometry.resizeHeight != test.resizeY {
+				t.Fatalf("bounded resize = %d/%d, want %d/%d", geometry.resizeWidth, geometry.resizeHeight, test.resizeX, test.resizeY)
+			}
+			if got := geometry.titlebarBottom - geometry.top; got != test.title {
+				t.Fatalf("bounded title height = %d, want %d", got, test.title)
+			}
+			if geometry.controlsWidth != test.controls {
+				t.Fatalf("bounded controls width = %d, want %d", geometry.controlsWidth, test.controls)
+			}
+			if got := nativeHitTestForRect(hitTestMetrics{
+				ResizeBorder:   test.metric,
+				TitlebarHeight: test.metric,
+				ControlsWidth:  test.metric,
+			}, windowRect, point{X: 5, Y: 3}, ^uint32(0), false); got != test.wantHit {
+				t.Fatalf("nativeHitTestForRect(%s metric) = %d, want %d", test.name, got, test.wantHit)
+			}
+		})
+	}
+}
+
+func TestHitTestGeometrySupportsFullSignedRectSpan(t *testing.T) {
+	const minInt32 = int32(-1 << 31)
+	const maxInt32 = int32(1<<31 - 1)
+	windowRect := rect{Left: minInt32, Top: minInt32, Right: maxInt32, Bottom: maxInt32}
+	metrics := hitTestMetrics{
+		ResizeBorder:   maxInt32,
+		TitlebarHeight: maxInt32,
+		ControlsWidth:  maxInt32,
+	}
+	geometry, ok := newHitTestGeometry(metrics, windowRect, point{}, ^uint32(0))
+	if !ok {
+		t.Fatal("newHitTestGeometry(full signed rect) ok = false")
+	}
+	const fullSpan = int64(1<<32 - 1)
+	if geometry.right-geometry.left != fullSpan || geometry.bottom-geometry.top != fullSpan {
+		t.Fatalf("rect extents = %d/%d, want %d/%d", geometry.right-geometry.left, geometry.bottom-geometry.top, fullSpan, fullSpan)
+	}
+	if geometry.resizeWidth != fullSpan/2 || geometry.resizeHeight != fullSpan/2 {
+		t.Fatalf("resize bands = %d/%d, want independent midpoint %d", geometry.resizeWidth, geometry.resizeHeight, fullSpan/2)
+	}
+	if geometry.titlebarBottom != geometry.bottom || geometry.controlsLeft != geometry.left {
+		t.Fatalf("bounded title/controls endpoints = %d/%d, want %d/%d", geometry.titlebarBottom, geometry.controlsLeft, geometry.bottom, geometry.left)
+	}
+
+	buttons := []struct {
+		name   string
+		cursor point
+		want   int32
+	}{
+		{name: "minimize third", cursor: point{X: minInt32, Y: minInt32}, want: htMinButton},
+		{name: "maximize third", cursor: point{X: -715827883, Y: minInt32}, want: htMaxButton},
+		{name: "close third", cursor: point{X: 715827882, Y: minInt32}, want: htClose},
+	}
+	for _, test := range buttons {
+		t.Run(test.name, func(t *testing.T) {
+			if got := nativeCaptionButtonHitForRect(metrics, windowRect, test.cursor, ^uint32(0), true); got != test.want {
+				t.Fatalf("nativeCaptionButtonHitForRect(full span, %s) = %d, want %d", test.name, got, test.want)
+			}
+		})
+	}
+}
+
+func TestNativeCaptionButtonHitForRectSkipsResizeWhenMaximized(t *testing.T) {
+	metrics := hitTestMetrics{ResizeBorder: 8, TitlebarHeight: 36, ControlsWidth: 18}
+	windowRect := rect{Left: 0, Top: 0, Right: 100, Bottom: 100}
+	cursor := point{X: 99, Y: 0}
+	if got := nativeCaptionButtonHitForRect(metrics, windowRect, cursor, 96, false); got != htClient {
+		t.Fatalf("nativeCaptionButtonHitForRect(resizable corner) = %d, want HTCLIENT", got)
+	}
+	if got := nativeCaptionButtonHitForRect(metrics, windowRect, cursor, 96, true); got != htClose {
+		t.Fatalf("nativeCaptionButtonHitForRect(maximized corner) = %d, want HTCLOSE", got)
+	}
+}
+
+func TestHitTestGeometryResizeBandsDoNotOverlapAtMidpoint(t *testing.T) {
+	windowRect := rect{Left: 0, Top: 0, Right: 11, Bottom: 11}
+	metrics := hitTestMetrics{ResizeBorder: int32(1<<31 - 1)}
+	tests := []struct {
+		x    int32
+		want int32
+	}{
+		{x: 4, want: htLeft},
+		{x: 5, want: htClient},
+		{x: 6, want: htRight},
+	}
+	for _, test := range tests {
+		geometry, ok := newHitTestGeometry(metrics, windowRect, point{X: test.x, Y: 5}, ^uint32(0))
+		if !ok {
+			t.Fatal("newHitTestGeometry() ok = false")
+		}
+		if geometry.resizeLeftEnd > geometry.resizeRightStart || geometry.resizeTopEnd > geometry.resizeBottomStart {
+			t.Fatalf("opposite resize bands overlap: %#v", geometry)
+		}
+		if got := hitTestResizeBorder(geometry); got != test.want {
+			t.Fatalf("hitTestResizeBorder(midpoint x=%d) = %d, want %d", test.x, got, test.want)
+		}
+	}
+}
+
+func TestNativeResolversRejectInvalidRectsAndOutsideCursors(t *testing.T) {
+	validRect := rect{Left: 10, Top: 20, Right: 30, Bottom: 40}
+	outside := []point{
+		{X: 9, Y: 30},
+		{X: 30, Y: 30},
+		{X: 20, Y: 19},
+		{X: 20, Y: 40},
+	}
+	for _, cursor := range outside {
+		if _, ok := newHitTestGeometry(testMetrics, validRect, cursor, 96); ok {
+			t.Fatalf("newHitTestGeometry(outside=%#v) ok = true", cursor)
+		}
+		if got := nativeHitTestForRect(testMetrics, validRect, cursor, 96, false); got != htClient {
+			t.Fatalf("nativeHitTestForRect(outside=%#v) = %d, want HTCLIENT", cursor, got)
+		}
+		if got := nativeCaptionButtonHitForRect(testMetrics, validRect, cursor, 96, false); got != htClient {
+			t.Fatalf("nativeCaptionButtonHitForRect(outside=%#v) = %d, want HTCLIENT", cursor, got)
+		}
+	}
+
+	invalid := []rect{
+		{Left: 10, Top: 20, Right: 10, Bottom: 40},
+		{Left: 30, Top: 20, Right: 10, Bottom: 40},
+		{Left: 10, Top: 40, Right: 30, Bottom: 40},
+		{Left: 10, Top: 40, Right: 30, Bottom: 20},
+	}
+	for _, windowRect := range invalid {
+		cursor := point{X: 10, Y: 20}
+		if _, ok := newHitTestGeometry(testMetrics, windowRect, cursor, 96); ok {
+			t.Fatalf("newHitTestGeometry(invalid=%#v) ok = true", windowRect)
+		}
+		if got := nativeHitTestForRect(testMetrics, windowRect, cursor, 96, true); got != htClient {
+			t.Fatalf("nativeHitTestForRect(invalid=%#v) = %d, want HTCLIENT", windowRect, got)
+		}
+		if got := nativeCaptionButtonHitForRect(testMetrics, windowRect, cursor, 96, true); got != htClient {
+			t.Fatalf("nativeCaptionButtonHitForRect(invalid=%#v) = %d, want HTCLIENT", windowRect, got)
 		}
 	}
 }
@@ -64,7 +395,7 @@ func TestPointLParamRoundTripKeepsSignedCoordinates(t *testing.T) {
 
 func TestNativeHitTestForRectKeepsControlsClientSide(t *testing.T) {
 	windowRect := rect{Left: 100, Top: 100, Right: 1000, Bottom: 720}
-	controlsWidth := scaleLogicalPixels(testMetrics.ControlsWidth, 96)
+	controlsWidth := int32(scaleLogicalPixels(testMetrics.ControlsWidth, 96))
 	buttonWidth := controlsWidth / 3
 	left := windowRect.Right - controlsWidth
 	wantControls := []int32{htClient, htClient, htClient}
@@ -89,10 +420,10 @@ func TestNativeHitTestForRectKeepsControlsClientSide(t *testing.T) {
 
 func TestNativeCaptionButtonHitForRectIdentifiesControlsWithoutChangingProjectHitTest(t *testing.T) {
 	windowRect := rect{Left: 100, Top: 100, Right: 1000, Bottom: 720}
-	controlsWidth := scaleLogicalPixels(testMetrics.ControlsWidth, 96)
+	controlsWidth := int32(scaleLogicalPixels(testMetrics.ControlsWidth, 96))
 	buttonWidth := controlsWidth / 3
 	left := windowRect.Right - controlsWidth
-	titlebarY := windowRect.Top + scaleLogicalPixels(testMetrics.ResizeBorder, 96)
+	titlebarY := windowRect.Top + int32(scaleLogicalPixels(testMetrics.ResizeBorder, 96))
 	tests := []struct {
 		name string
 		x    int32
@@ -120,8 +451,8 @@ func TestNativeCaptionButtonHitForRectIdentifiesControlsWithoutChangingProjectHi
 func TestNativeHitTestForRectSeparatesTopResizeFromTitlebarDrag(t *testing.T) {
 	windowRect := rect{Left: 100, Top: 100, Right: 1000, Bottom: 720}
 	for _, dpi := range []uint32{96, 120, 144} {
-		border := scaleLogicalPixels(testMetrics.ResizeBorder, dpi)
-		titlebarHeight := scaleLogicalPixels(testMetrics.TitlebarHeight, dpi)
+		border := int32(scaleLogicalPixels(testMetrics.ResizeBorder, dpi))
+		titlebarHeight := int32(scaleLogicalPixels(testMetrics.TitlebarHeight, dpi))
 		tests := []struct {
 			name string
 			y    int32
@@ -144,7 +475,7 @@ func TestNativeHitTestForRectSeparatesTopResizeFromTitlebarDrag(t *testing.T) {
 func TestNativeHitTestForRectSkipsResizeBorderWhenMaximized(t *testing.T) {
 	windowRect := rect{Left: 100, Top: 100, Right: 1000, Bottom: 720}
 	for _, dpi := range []uint32{96, 120, 144} {
-		titlebarHeight := scaleLogicalPixels(testMetrics.TitlebarHeight, dpi)
+		titlebarHeight := int32(scaleLogicalPixels(testMetrics.TitlebarHeight, dpi))
 		if got := nativeHitTestForRect(testMetrics, windowRect, point{X: 500, Y: windowRect.Top}, dpi, true); got != htCaption {
 			t.Fatalf("nativeHitTestForRect(testMetrics, maximized titlebar, dpi=%d) = %d, want HTCAPTION", dpi, got)
 		}
@@ -265,28 +596,58 @@ func TestResizeHitTestForEdge(t *testing.T) {
 	}
 }
 
-func TestResizeFallbackPointMapsToResizeHit(t *testing.T) {
-	windowRect := rect{Left: 100, Top: 100, Right: 1000, Bottom: 720}
-	tests := []int32{
-		htLeft,
-		htRight,
-		htTop,
-		htBottom,
-		htTopLeft,
-		htTopRight,
-		htBottomLeft,
-		htBottomRight,
+func TestResizeFallbackPointMapsFullSignedRectToNativeResizeHits(t *testing.T) {
+	const minInt32 = int32(-1 << 31)
+	const maxInt32 = int32(1<<31 - 1)
+	windowRect := rect{Left: minInt32, Top: minInt32, Right: maxInt32, Bottom: maxInt32}
+	tests := []struct {
+		name string
+		hit  int32
+		want point
+	}{
+		{name: "left", hit: htLeft, want: point{X: minInt32, Y: -1}},
+		{name: "right", hit: htRight, want: point{X: maxInt32 - 1, Y: -1}},
+		{name: "top", hit: htTop, want: point{X: -1, Y: minInt32}},
+		{name: "bottom", hit: htBottom, want: point{X: -1, Y: maxInt32 - 1}},
+		{name: "top left", hit: htTopLeft, want: point{X: minInt32, Y: minInt32}},
+		{name: "top right", hit: htTopRight, want: point{X: maxInt32 - 1, Y: minInt32}},
+		{name: "bottom left", hit: htBottomLeft, want: point{X: minInt32, Y: maxInt32 - 1}},
+		{name: "bottom right", hit: htBottomRight, want: point{X: maxInt32 - 1, Y: maxInt32 - 1}},
 	}
-	for _, hit := range tests {
-		cursor, ok := resizeFallbackPoint(windowRect, hit)
-		if !ok {
-			t.Fatalf("resizeFallbackPoint(%d) ok = false, want true", hit)
-		}
-		if got := hitTestResizeBorder(windowRect, cursor, 8); got != hit {
-			t.Fatalf("fallback hit = %d, want %d for cursor %#v", got, hit, cursor)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cursor, ok := resizeFallbackPoint(windowRect, test.hit)
+			if !ok {
+				t.Fatalf("resizeFallbackPoint(%d) ok = false, want true", test.hit)
+			}
+			if cursor != test.want {
+				t.Fatalf("resizeFallbackPoint(%d) = %#v, want full-span endpoint %#v", test.hit, cursor, test.want)
+			}
+			if got := nativeHitTestForRect(hitTestMetrics{ResizeBorder: 1}, windowRect, cursor, 96, false); got != test.hit {
+				t.Fatalf("nativeHitTestForRect(fallback for %d) = %d, want %d", test.hit, got, test.hit)
+			}
+		})
 	}
 	if _, ok := resizeFallbackPoint(windowRect, htClient); ok {
 		t.Fatal("resizeFallbackPoint(HTCLIENT) ok = true, want false")
+	}
+}
+
+func TestResizeFallbackPointRejectsInvalidRects(t *testing.T) {
+	tests := []struct {
+		name       string
+		windowRect rect
+	}{
+		{name: "zero width", windowRect: rect{Left: 10, Top: 20, Right: 10, Bottom: 40}},
+		{name: "reversed width", windowRect: rect{Left: 30, Top: 20, Right: 10, Bottom: 40}},
+		{name: "zero height", windowRect: rect{Left: 10, Top: 40, Right: 30, Bottom: 40}},
+		{name: "reversed height", windowRect: rect{Left: 10, Top: 40, Right: 30, Bottom: 20}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if cursor, ok := resizeFallbackPoint(test.windowRect, htLeft); ok {
+				t.Fatalf("resizeFallbackPoint(invalid rect) = %#v, true; want false", cursor)
+			}
+		})
 	}
 }

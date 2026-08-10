@@ -13,69 +13,113 @@
     const captionControlsWidth = __CONTROLS_W__;
     let lastResize = { edge: "", at: 0 };
     let lastCursorState = "";
-    let maximised = false;
+    let maximised = true;
+    let moveSizeActive = true;
+    let resyncPending = true;
     let resyncTimer = 0;
+    let zonesEnabled = false;
     const cursorForEdge = (edge) => {
       if (edge === "left" || edge === "right") return "ew-resize";
       if (edge === "top" || edge === "bottom") return "ns-resize";
       if (edge === "top-left" || edge === "bottom-right") return "nwse-resize";
       return "nesw-resize";
     };
+    const viewport = () => {
+      const visual = window.visualViewport || {};
+      return {
+        width: Math.floor(Math.max(Number(root.clientWidth) || 0, Number(window.innerWidth) || 0, Number(visual.width) || 0)),
+        height: Math.floor(Math.max(Number(root.clientHeight) || 0, Number(window.innerHeight) || 0, Number(visual.height) || 0))
+      };
+    };
+    const effectiveBorder = (size) => Math.min(border, Math.floor(size / 2));
     const zoneStyles = {
-      left: "left:0;top:0;width:" + border + "px;height:100%;cursor:ew-resize",
-      right: "right:0;top:" + titlebarHeight + "px;width:" + border + "px;height:calc(100% - " + titlebarHeight + "px);cursor:ew-resize",
-      top: "left:0;top:0;right:" + captionControlsWidth + "px;height:" + border + "px;cursor:ns-resize",
-      bottom: "left:0;bottom:0;width:100%;height:" + border + "px;cursor:ns-resize",
-      "top-left": "left:0;top:0;width:" + border + "px;height:" + border + "px;cursor:nwse-resize",
-      "top-right": "right:" + captionControlsWidth + "px;top:0;width:" + border + "px;height:" + border + "px;cursor:nesw-resize",
-      "bottom-left": "left:0;bottom:0;width:" + border + "px;height:" + border + "px;cursor:nesw-resize",
-      "bottom-right": "right:0;bottom:0;width:" + border + "px;height:" + border + "px;cursor:nwse-resize"
+      left: "left:0;cursor:ew-resize",
+      right: "right:0;cursor:ew-resize",
+      top: "top:0;cursor:ns-resize",
+      bottom: "bottom:0;cursor:ns-resize",
+      "top-left": "left:0;top:0;cursor:nwse-resize",
+      "top-right": "right:0;top:0;cursor:nesw-resize",
+      "bottom-left": "left:0;bottom:0;cursor:nesw-resize",
+      "bottom-right": "right:0;bottom:0;cursor:nwse-resize"
     };
     const zones = Object.entries(zoneStyles).map(([edge, style]) => {
       const zone = document.createElement("div");
       zone.setAttribute("__EDGE_ATTR__", edge);
-      zone.style.cssText = "position:fixed;z-index:2147483647;background:transparent;pointer-events:auto;" + style;
+      zone.style.cssText = "position:fixed;z-index:2147483647;box-sizing:border-box;background:transparent;pointer-events:auto;app-region:no-drag;-webkit-app-region:no-drag;" + style;
       root.appendChild(zone);
-      return zone;
+      return { edge, node: zone };
     });
+    const refreshZoneDimensions = () => {
+      const { width, height } = viewport();
+      const resizeX = effectiveBorder(width);
+      const resizeY = effectiveBorder(height);
+      const resizeXpx = resizeX + "px";
+      const resizeYpx = resizeY + "px";
+      const middleWidth = Math.max(0, width - resizeX * 2) + "px";
+      const middleHeight = Math.max(0, height - resizeY * 2) + "px";
+      for (const { edge, node } of zones) {
+        if (edge === "left" || edge === "right") {
+          node.style.top = resizeYpx;
+          node.style.width = resizeXpx;
+          node.style.height = middleHeight;
+        } else if (edge === "top" || edge === "bottom") {
+          node.style.left = resizeXpx;
+          node.style.width = middleWidth;
+          node.style.height = resizeYpx;
+        } else {
+          node.style.width = resizeXpx;
+          node.style.height = resizeYpx;
+        }
+      }
+    };
     const clearCursor = () => { root.style.cursor = ""; };
     const setZonesEnabled = (enabled) => {
-      for (const zone of zones) zone.style.display = enabled ? "block" : "none";
+      zonesEnabled = enabled;
+      for (const { node } of zones) node.style.display = enabled ? "block" : "none";
       if (!enabled) clearCursor();
       const state = enabled ? "enabled" : "disabled";
       if (lastCursorState === state) return;
       lastCursorState = state;
       api.diagnostic("resize-cursor", state);
     };
-    // A maximised window must not offer resize zones: the edges belong to the
-    // work area, and a resize there would silently un-maximise the window.
-    const syncZones = () => {
-      setZonesEnabled(false);
-      api.window.isMaximised()
-        .then((value) => { maximised = value === true; setZonesEnabled(!maximised); })
-        .catch(() => { maximised = false; setZonesEnabled(true); });
+    const applyFrameState = (state) => {
+      if (!state) return;
+      maximised = state.maximised === true;
+      moveSizeActive = state.moveSizeActive === true;
+      setZonesEnabled(!resyncPending && !maximised && !moveSizeActive);
     };
+    // A maximised window and a window already inside the native move/size loop
+    // must not offer a second gesture through the frontend overlay.
+    const syncZones = () => {
+      refreshZoneDimensions();
+      setZonesEnabled(false);
+      resyncPending = false;
+      api.__frame.refresh().catch(() => { setZonesEnabled(false); });
+    };
+    api.__frame.subscribe(applyFrameState);
     api.diagnostic("resize-cursor", "installed");
     syncZones();
     window.addEventListener("resize", () => {
+      resyncPending = true;
+      api.__frame.invalidate();
+      refreshZoneDimensions();
       setZonesEnabled(false);
       clearTimeout(resyncTimer);
       resyncTimer = setTimeout(syncZones, 150);
     });
     window.addEventListener("focus", syncZones);
-    const viewport = () => {
-      const visual = window.visualViewport || {};
-      return {
-        width: Math.max(Number(root.clientWidth) || 0, Number(window.innerWidth) || 0, Math.floor(Number(visual.width) || 0)),
-        height: Math.max(Number(root.clientHeight) || 0, Number(window.innerHeight) || 0, Math.floor(Number(visual.height) || 0))
-      };
-    };
     const edgeForEvent = (event) => {
       const { width, height } = viewport();
-      const left = event.clientX >= 0 && event.clientX < border;
-      const right = event.clientX <= width && event.clientX >= width - border;
-      const top = event.clientY >= 0 && event.clientY < border;
-      const bottom = event.clientY <= height && event.clientY >= height - border;
+      const x = Number(event.clientX);
+      const y = Number(event.clientY);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      if (x < 0 || x >= width || y < 0 || y >= height) return "";
+      const resizeX = effectiveBorder(width);
+      const resizeY = effectiveBorder(height);
+      const left = x < resizeX;
+      const right = x >= width - resizeX;
+      const top = y < resizeY;
+      const bottom = y >= height - resizeY;
       if (top && left) return "top-left";
       if (top && right) return "top-right";
       if (bottom && left) return "bottom-left";
@@ -92,9 +136,10 @@
       return edge in zoneStyles ? edge : "";
     };
     const onPointerDown = (event) => {
-      if (maximised || event.button !== 0 || event.isPrimary === false) return;
+      if (!zonesEnabled || maximised || moveSizeActive || event.button !== 0 || event.isPrimary === false) return;
       if (event.target instanceof Element && event.target.closest("[data-__NS__-no-drag]")) return;
-      const edge = edgeFromTarget(event.target) || edgeForEvent(event);
+      const coordinateEdge = edgeForEvent(event);
+      const edge = coordinateEdge === null ? edgeFromTarget(event.target) : coordinateEdge;
       if (!edge) return;
       event.preventDefault();
       event.stopPropagation();
@@ -113,8 +158,19 @@
     document.addEventListener("mouseleave", clearCursor, true);
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("mousedown", onPointerDown, true);
-    window.addEventListener("blur", clearCursor);
-    document.addEventListener("visibilitychange", () => { if (document.hidden) clearCursor(); });
+    window.addEventListener("blur", () => {
+      resyncPending = true;
+      api.__frame.invalidate();
+      setZonesEnabled(false);
+      clearCursor();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) return;
+      resyncPending = true;
+      api.__frame.invalidate();
+      setZonesEnabled(false);
+      clearCursor();
+    });
   };
   install();
 })();

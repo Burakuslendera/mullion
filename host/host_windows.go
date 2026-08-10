@@ -48,6 +48,13 @@ type Host struct {
 	assets    assetProvider
 	browser   *webview2.Browser
 
+	// moveSizeActive and frameStateGeneration are the native interaction state
+	// published to the injected pointer scripts. Both are UI-thread-confined,
+	// like browser: WM_ENTERSIZEMOVE/WM_EXITSIZEMOVE and WebMessageReceived are
+	// dispatched on the window's STA thread.
+	moveSizeActive       bool
+	frameStateGeneration uint64
+
 	// webViewEmbedding and windowDestroyed guard the in-flight embed. Embed
 	// pumps the message loop for up to a minute, so messages dispatched
 	// mid-embed re-enter the window procedure while host.browser is still nil:
@@ -85,6 +92,7 @@ type Host struct {
 	sendNativeCommand    func(windowHandle, uint32, uintptr, uintptr) (uintptr, error)
 	queryNativeMaximised func(windowHandle) bool
 	applyNativeCommand   func(windowHandle, uint32, uintptr) uintptr
+	postFrameState       func(string) error
 
 	// The error-surface admission state (issues #3, #56, #68; decisions/0017,
 	// 0021). The runtime reports the empty string as the source of a data:
@@ -275,6 +283,8 @@ func (host *Host) beginRun() error {
 
 	host.webViewEmbedding = false
 	host.windowDestroyed = false
+	host.moveSizeActive = false
+	host.frameStateGeneration = 0
 	host.assets = assetProvider{}
 	if host.diagnostics != nil {
 		host.diagnostics.reset()

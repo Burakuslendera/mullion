@@ -173,21 +173,29 @@ type Config struct {
 	// TitlebarHeight is the height of the custom title bar in logical pixels.
 	// The frontend's CSS title bar must be exactly this tall: the value drives
 	// both the injected resize overlay and the native WM_NCHITTEST caption band.
-	// Default 36.
+	// Every positive int32 value is accepted. Its exact DPI-scaled physical
+	// hit-test height is clipped to the current valid window rect. Default 36.
 	TitlebarHeight int32
 	// CaptionControlsWidth is the width of the caption button cluster on the
 	// right of the title bar, in logical pixels. The native hit test reports
-	// this region as client area so the buttons stay clickable. Default 138.
+	// this region as client area so the buttons stay clickable. Every positive
+	// int32 value is accepted; its exact DPI-scaled physical hit-test width is
+	// clipped to the current valid window rect. Default 138.
 	CaptionControlsWidth int32
 	// ResizeBorder is the width of the resize band along the window edges, in
-	// logical pixels. It is scaled by the window's DPI at hit-test time.
+	// logical pixels. Every positive int32 value is accepted. Its exact
+	// DPI-scaled physical width and height are clipped independently to half the
+	// current valid rect's width and height, so opposite edges cannot overlap.
 	// Default 8.
 	ResizeBorder int32
 
 	// HitTestTitlebarHeight and HitTestCaptionControlsWidth override the native
 	// hit-test geometry when it must diverge from the CSS geometry above - for
 	// example when a CSS transform scales the title bar. Zero means "same as the
-	// CSS value". Most applications leave these unset.
+	// CSS value". Every positive int32 override is accepted; its exact DPI-scaled
+	// physical hit-test geometry is clipped to the current valid rect using the
+	// same title-height and controls-width bounds above. Most applications leave
+	// these unset.
 	HitTestTitlebarHeight       int32
 	HitTestCaptionControlsWidth int32
 

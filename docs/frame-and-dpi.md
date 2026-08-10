@@ -98,46 +98,56 @@ SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
 
 ## 4. `WM_NCHITTEST`
 
-The hit-test is the entire interaction contract of a frameless window. It runs on
-the **native** side, against the window rect, in physical pixels.
+The hit-test is the entire interaction contract of a frameless window. It runs
+on the **native** side against the window rect in physical pixels; CSS may paint
+matching affordances, but it never owns this geometry.
 
-**Resize band.** `ResizeBorder` is 8 *logical* px, scaled by the active window's
-DPI at hit-test time (`GetDpiForWindow`); corners take priority over edges. Do
-**not** implement this band in CSS: a CSS band drifts away from the native regions
-the moment any scale factor is involved (DPI, a CSS transform, browser zoom), and
-the user gets a resize cursor over a region that does not resize. The native hit
-test owns the geometry; the frontend may paint matching cursor affordances on top
-of it. **Skip the band when maximized** — a maximized window cannot be edge-resized,
-and leaving it live produces resize cursors along the screen edge.
+**Scale exactly, then bound to the rect.** For every positive `int32` Config
+metric `m`, keep the scaled value in `int64`; there is no additional metric cap:
 
-**The title bar strip is `HTCAPTION`; the caption button cluster is `HTCLIENT`.**
+```
+effectiveDPI = dpi, except dpi == 0 means 96
+scaled(m, dpi) = ceil(int64(m) * int64(effectiveDPI) / 96)
+               = (int64(m) * int64(effectiveDPI) + 95) / 96
+```
 
-- **Symptom:** the close/maximize/minimize buttons in the HTML title bar cannot
-  be clicked — or worse, clicking them drags the window.
-- **Root cause:** `HTCAPTION` means "non-client caption", and mouse input over it
-  goes to the frame, never to the WebView. Anything the frontend must handle has
-  to be `HTCLIENT`.
-- **Fix:** the rightmost `CaptionControlsWidth` logical px of the title bar band
-  return `HTCLIENT`; the rest of the band returns `HTCAPTION` and gives you native
-  drag, double-click-to-maximize and the system menu for free.
+The ceiling is intentional. Do not narrow after the multiply: a legal metric can
+exceed `int32` at high DPI without exceeding the geometry that ultimately bounds
+it.
 
-**The delegated-`HTCAPTION` trap (maximized).**
+**Construct one bounded geometry.** A rect is valid only when `left < right` and
+`top < bottom`, and a cursor is eligible only inside the half-open rect
+`[left,right) x [top,bottom)`. An invalid rect or outside cursor is `HTCLIENT`.
+For width `w = right-left` and height `h = bottom-top`, all in `int64`, use:
 
-- **Symptom:** maximized, the user click-drags somewhere in the *content* — well
-  below the title bar — and the window restores and starts following the mouse.
-- **Root cause:** any hit-test result you leave to `DefWindowProc` is computed
-  against the *native* caption geometry, and for a maximized window Windows can
-  report a caption region far larger than your 36px strip. Anything reported as
-  `HTCAPTION` is a drag handle, and dragging a maximized window restores it.
-- **Fix:** never return a delegated caption result unclamped. Clamp `HTCAPTION` to
-  exactly the title bar strip — `top <= y < top + TitlebarHeight` of the
-  work-area-clamped window rect (§2). Everything below it is `HTCLIENT`, whatever
-  `DefWindowProc` thinks.
+```
+title    = min(scaled(titleMetric, dpi), h)
+controls = min(scaled(controlsMetric, dpi), w)
+resizeX  = min(scaled(resizeMetric, dpi), floor(w/2))
+resizeY  = min(scaled(resizeMetric, dpi), floor(h/2))
+```
 
-If the frontend's title bar is scaled by CSS and can no longer match the native
-band, set `HitTestTitlebarHeight` / `HitTestCaptionControlsWidth` rather than
-skewing the CSS. That is what those fields are for; most applications never touch
-them.
+Rect extents, cursor coordinates and every interval endpoint remain `int64`;
+only the final `HT*` result is `int32`. Independent horizontal and vertical
+half-extent saturation keeps opposite resize edges disjoint even for enormous
+metrics or a narrow rect.
+
+**Classify from that geometry.** When restored, test corners before edges, then
+the rightmost `controls` pixels of the bounded title strip, then the remaining
+title strip, then client. Corners therefore retain priority; caption controls
+remain `HTCLIENT`, while only the drag portion is `HTCAPTION`. When maximized,
+skip resize classification entirely, but preserve the same controls/title/client
+classification. A maximized content point must never be delegated to the native
+caption geometry.
+
+Hit-test diagnostics consume the same constructor: rejected geometry reports
+`geometry_valid=false`; valid rows report `geometry_valid=true` and effective
+`side_border`, `top_border`, `titlebar_height` and `controls_width` after rect
+bounding, exposing clipping and independent saturation without a second geometry.
+
+The injected resize overlay mirrors the independent half-extent bounds in CSS
+coordinates; its eight zones opt out of ancestor `app-region: drag`, and valid
+event coordinates outrank stale DOM targets. CSS hit-test overrides still use the rules above.
 
 ## 5. `WM_GETMINMAXINFO`
 
@@ -387,4 +397,4 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: §5's auto-hide paragraph now records that the maximized hit-test stays in-process — the `SHAppBarMessage` probe is confined to the two window-sizing paths (issue #36, decision 0019).
+> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: record that the frontend resize overlay shares issue #112's bounded geometry and must carve its zones out of the titlebar drag region.

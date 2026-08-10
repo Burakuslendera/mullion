@@ -89,6 +89,7 @@ func errorSurfaceMethodAllowed(method string) bool {
 		methodMinimise,
 		methodToggleMaximise,
 		methodIsMaximised,
+		methodFrameState,
 		methodClose:
 		return true
 	default:
@@ -108,6 +109,8 @@ func (host *Host) handleReservedMethod(request bridgeRequest) (string, bool) {
 		host.ToggleMaximise()
 	case methodIsMaximised:
 		return bridgeResult(request.ID, strconv.FormatBool(host.IsMaximised())), true
+	case methodFrameState:
+		return bridgeResult(request.ID, host.frontendFrameState().json()), true
 	case methodShow:
 		if err := host.Show(); err != nil {
 			return bridgeError(request.ID, "show failed"), true

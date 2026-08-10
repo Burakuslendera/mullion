@@ -11,18 +11,20 @@ import (
 // them to Config.Bridge, so a frontend gets a working title bar without the
 // application having to re-implement the window protocol.
 const (
-	methodStartDrag      = "WindowStartDrag"
-	methodStartResize    = "WindowStartResize"
-	methodMinimise       = "WindowMinimise"
-	methodToggleMaximise = "WindowToggleMaximise"
-	methodIsMaximised    = "WindowIsMaximised"
-	methodShow           = "WindowShow"
-	methodHide           = "WindowHide"
-	methodClose          = "WindowClose"
-	methodShellReady     = "WindowShellReady"
-	methodReady          = "WindowReady"
-	methodPhase          = "WindowPhase"
-	methodDiagnostic     = "WindowDiagnostic"
+	methodStartDrag        = "WindowStartDrag"
+	methodStartResize      = "WindowStartResize"
+	methodMinimise         = "WindowMinimise"
+	methodToggleMaximise   = "WindowToggleMaximise"
+	methodIsMaximised      = "WindowIsMaximised"
+	methodFrameState       = "WindowFrameState"
+	eventFrameStateChanged = "WindowFrameStateChanged"
+	methodShow             = "WindowShow"
+	methodHide             = "WindowHide"
+	methodClose            = "WindowClose"
+	methodShellReady       = "WindowShellReady"
+	methodReady            = "WindowReady"
+	methodPhase            = "WindowPhase"
+	methodDiagnostic       = "WindowDiagnostic"
 )
 
 // jsScripts holds the scripts injected into every document, rendered once for a
@@ -55,6 +57,8 @@ func (config Config) jsScripts() jsScripts {
 		"__M_MIN__", methodMinimise,
 		"__M_MAXTOGGLE__", methodToggleMaximise,
 		"__M_ISMAX__", methodIsMaximised,
+		"__M_FRAMESTATE__", methodFrameState,
+		"__E_FRAMESTATE__", eventFrameStateChanged,
 		"__M_SHOW__", methodShow,
 		"__M_HIDE__", methodHide,
 		"__M_CLOSE__", methodClose,

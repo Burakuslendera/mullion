@@ -202,9 +202,15 @@ One window procedure switch routes everything.
 - **`WM_DPICHANGED`** — applies the rect Windows suggests, pushes the new scale into
   the WebView's rasterization scale, and resyncs the WebView bounds. Fires when the
   window crosses monitors with different scale factors.
-- **`WM_SIZE`, `WM_MOVE`, `WM_MOVING`, `WM_WINDOWPOSCHANGING`, `WM_WINDOWPOSCHANGED`,
-  `WM_ENTERSIZEMOVE`, `WM_EXITSIZEMOVE`** — resync the controller's bounds to the
-  parent client rect; the WebView2 controller does not follow its parent automatically.
+- **`WM_SIZE`, `WM_MOVE`, `WM_MOVING`, `WM_WINDOWPOSCHANGING`, `WM_WINDOWPOSCHANGED`**
+  — resync the controller's bounds to the parent client rect; the WebView2 controller
+  does not follow its parent automatically.
+- **`WM_ENTERSIZEMOVE`, `WM_EXITSIZEMOVE`** — bracket the authoritative native
+  move/size state as well as resyncing bounds. The host publishes a monotonic
+  `{ maximised, moveSizeActive, generation }` snapshot to the injected pointer
+  scripts. Drag and resize remain disabled while the snapshot is pending, failed,
+  superseded or active, so a drag-down restore cannot expose a second gesture before
+  the original system loop exits (issue #124).
 - **`WM_ERASEBKGND`** — returns 1 without painting; the WebView covers the whole client
   area, so erasing the background only produces flicker.
 - **`WM_INITMENU`** — syncs system-menu item state with real window state as the menu
@@ -216,6 +222,13 @@ One window procedure switch routes everything.
   the render watchdog, shuts the WebView down, posts `WM_QUIT`.
 
 Everything else falls through to `DefWindowProc`.
+
+Known Windows bug: on Windows 11 build 26200.8875, interrupting a held maximised
+drag-down with `Win+Shift+S` and then pressing Escape returns the window to its
+pre-loop maximised placement. Stock Notepad reproduces the same rollback. Mullion
+sends no second maximise command on that path: the shell messages retain
+`DefWindowProc` cancellation semantics, and compensating for the rollback would
+make a mullion window behave differently from a stock window.
 
 ## Talking to WebView2, and serving assets
 
@@ -371,4 +384,4 @@ production gates under Windows/386 WOW64; ARM64 is compile-only. Non-Windows
 `Run` returns `ErrUnsupportedPlatform`; no portable window abstraction is
 attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: document source-plan preflight, exact startup capability, and HRESULT-preserving generation-bound fallback admission.
+> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: identify the stock-Notepad shell-overlay rollback as a Windows bug and record why mullion does not override DefWindowProc cancellation.

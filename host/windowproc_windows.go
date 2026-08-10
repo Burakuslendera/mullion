@@ -82,9 +82,16 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		host.syncWebViewBounds("wm_move")
 	case wmMoving:
 		host.syncWebViewBounds("wm_moving")
+		// A Windows 11 bug can roll an interrupted maximised drag-down back to
+		// its pre-loop placement after a shell overlay is cancelled; stock
+		// Notepad reproduces it. This state gates only mullion's pointer
+		// overlays. Keep DefWindowProc's cancellation path authoritative rather
+		// than issuing a synthetic maximise/restore command here.
 	case wmEnterSizeMove:
+		host.setMoveSizeActive(true)
 		host.syncWebViewBounds("wm_entersizemove")
 	case wmExitSizeMove:
+		host.setMoveSizeActive(false)
 		host.syncWebViewBounds("wm_exitsizemove")
 		host.requestDeferredBoundsSync(boundsSyncWParamDeferredExitSizeMove)
 	}

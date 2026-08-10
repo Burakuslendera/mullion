@@ -34,6 +34,10 @@ func TestBridgeHandlesWindowControlsWithoutAConfiguredBridge(t *testing.T) {
 	if reply != `{"id":"7","ok":true,"result":false}` {
 		t.Fatalf("IsMaximised reply = %q", reply)
 	}
+	frameReply := host.handleWebMessage(`{"id":"8","method":"`+methodFrameState+`","args":[]}`, true)
+	if frameReply != `{"id":"8","ok":true,"result":{"maximised":false,"moveSizeActive":false,"generation":0}}` {
+		t.Fatalf("FrameState reply = %q", frameReply)
+	}
 }
 
 // TestBridgeForwardsUnknownMethodsVerbatim locks the other half of the contract:
@@ -188,6 +192,7 @@ func TestBridgeRestrictedSourcePreservesWatchdogEvidenceAndWindowControls(t *tes
 		{methodMinimise, "[]", "minimize requested"},
 		{methodToggleMaximise, "[]", "maximize toggle requested"},
 		{methodIsMaximised, "[]", ""},
+		{methodFrameState, "[]", ""},
 		{methodClose, "[]", "quit requested"},
 	}
 	for id, control := range controls {

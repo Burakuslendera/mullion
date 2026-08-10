@@ -21,10 +21,52 @@
       reject(new Error("mullion: bridge unavailable"));
     }
   });
+  const frameListeners = new Set();
+  let frameState = null;
+  let frameRequestGeneration = 0;
+  const acceptFrameState = (candidate) => {
+    if (!candidate ||
+        typeof candidate.maximised !== "boolean" ||
+        typeof candidate.moveSizeActive !== "boolean" ||
+        !Number.isSafeInteger(candidate.generation) ||
+        candidate.generation < 0) return frameState;
+    if (frameState && candidate.generation < frameState.generation) return frameState;
+    frameState = Object.freeze({
+      maximised: candidate.maximised,
+      moveSizeActive: candidate.moveSizeActive,
+      generation: candidate.generation,
+    });
+    for (const listener of frameListeners) {
+      try { listener(frameState); } catch {}
+    }
+    return frameState;
+  };
+  const invalidateFrameStateRequest = () => { ++frameRequestGeneration; };
+  const refreshFrameState = () => {
+    const requestGeneration = ++frameRequestGeneration;
+    return invoke("__M_FRAMESTATE__").then((candidate) => {
+      if (requestGeneration !== frameRequestGeneration) return frameState;
+      return acceptFrameState(candidate);
+    });
+  };
+  const subscribeFrameState = (listener) => {
+    if (typeof listener !== "function") return () => {};
+    frameListeners.add(listener);
+    if (frameState) listener(frameState);
+    return () => { frameListeners.delete(listener); };
+  };
+  const pushFrameState = (candidate) => {
+    invalidateFrameStateRequest();
+    acceptFrameState(candidate);
+  };
   window.chrome.webview.addEventListener("message", (event) => {
     let payload = event.data;
     if (typeof payload === "string") {
       try { payload = JSON.parse(payload); } catch { return; }
+    }
+    if (payload && payload.event === "__E_FRAMESTATE__") {
+      pushFrameState(payload.state);
+      return;
     }
     if (!payload || !payload.id || typeof payload.ok !== "boolean") return;
     const entry = pending.get(payload.id);
@@ -36,6 +78,11 @@
   window.__NS__ = {
     __bound: true,
     invoke,
+    __frame: Object.freeze({
+      refresh: refreshFrameState,
+      invalidate: invalidateFrameStateRequest,
+      subscribe: subscribeFrameState,
+    }),
     window: {
       minimise: () => notify("__M_MIN__"),
       toggleMaximise: () => notify("__M_MAXTOGGLE__"),

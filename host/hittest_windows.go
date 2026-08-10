@@ -41,11 +41,76 @@ func isWindowVisible(hwnd windowHandle) bool {
 	return result != 0
 }
 
-func scaleLogicalPixels(px int32, dpi uint32) int32 {
+func scaleLogicalPixels(px int32, dpi uint32) int64 {
+	if px <= 0 {
+		return 0
+	}
 	if dpi == 0 {
 		dpi = defaultWindowDPI
 	}
-	return int32((int64(px)*int64(dpi) + defaultWindowDPI - 1) / defaultWindowDPI)
+	scaled := int64(px) * int64(dpi)
+	result := scaled / int64(defaultWindowDPI)
+	if scaled%int64(defaultWindowDPI) != 0 {
+		result++
+	}
+	return result
+}
+
+// hitTestGeometry is the single screen-space representation used by native
+// frame hit-testing. Win32 supplies int32 coordinates, but a valid RECT can span
+// the full signed range, so all measurements and interval endpoints are int64.
+type hitTestGeometry struct {
+	left, top, right, bottom                 int64
+	cursorX, cursorY                         int64
+	resizeLeftEnd, resizeRightStart          int64
+	resizeTopEnd, resizeBottomStart          int64
+	titlebarBottom, controlsLeft             int64
+	minimizeButtonEnd, maximizeButtonEnd     int64
+	resizeWidth, resizeHeight, controlsWidth int64
+}
+
+func newHitTestGeometry(metrics hitTestMetrics, windowRect rect, cursor point, dpi uint32) (hitTestGeometry, bool) {
+	left := int64(windowRect.Left)
+	top := int64(windowRect.Top)
+	right := int64(windowRect.Right)
+	bottom := int64(windowRect.Bottom)
+	cursorX := int64(cursor.X)
+	cursorY := int64(cursor.Y)
+	if left >= right || top >= bottom ||
+		cursorX < left || cursorX >= right || cursorY < top || cursorY >= bottom {
+		return hitTestGeometry{}, false
+	}
+
+	width := right - left
+	height := bottom - top
+	resize := scaleLogicalPixels(metrics.ResizeBorder, dpi)
+	resizeWidth := min(resize, width/2)
+	resizeHeight := min(resize, height/2)
+	titlebarHeight := min(scaleLogicalPixels(metrics.TitlebarHeight, dpi), height)
+	controlsWidth := min(scaleLogicalPixels(metrics.ControlsWidth, dpi), width)
+	buttonWidth := controlsWidth / 3
+	controlsLeft := right - controlsWidth
+	minimizeButtonEnd := controlsLeft + buttonWidth
+
+	return hitTestGeometry{
+		left:              left,
+		top:               top,
+		right:             right,
+		bottom:            bottom,
+		cursorX:           cursorX,
+		cursorY:           cursorY,
+		resizeLeftEnd:     left + resizeWidth,
+		resizeRightStart:  right - resizeWidth,
+		resizeTopEnd:      top + resizeHeight,
+		resizeBottomStart: bottom - resizeHeight,
+		titlebarBottom:    top + titlebarHeight,
+		controlsLeft:      controlsLeft,
+		minimizeButtonEnd: minimizeButtonEnd,
+		maximizeButtonEnd: minimizeButtonEnd + buttonWidth,
+		resizeWidth:       resizeWidth,
+		resizeHeight:      resizeHeight,
+		controlsWidth:     controlsWidth,
+	}, true
 }
 
 func dpiForWindow(hwnd windowHandle) uint32 {
@@ -113,24 +178,25 @@ func windowRectForMaximizedHitTest(hwnd windowHandle, windowRect rect) rect {
 }
 
 func nativeHitTestForRect(metrics hitTestMetrics, windowRect rect, cursor point, dpi uint32, maximized bool) int32 {
+	geometry, ok := newHitTestGeometry(metrics, windowRect, cursor, dpi)
+	if !ok {
+		return htClient
+	}
 	if !maximized {
-		border := scaleLogicalPixels(metrics.ResizeBorder, dpi)
-		if hit := hitTestResizeBorder(windowRect, cursor, border); hit != htClient {
+		if hit := hitTestResizeBorder(geometry); hit != htClient {
 			return hit
 		}
 	}
-	titlebarHeight := scaleLogicalPixels(metrics.TitlebarHeight, dpi)
-	controlsWidth := scaleLogicalPixels(metrics.ControlsWidth, dpi)
-	inTitlebar := cursor.Y >= windowRect.Top && cursor.Y < windowRect.Top+titlebarHeight
-	inControls := cursor.X >= windowRect.Right-controlsWidth && cursor.X < windowRect.Right
+	inTitlebar := geometry.cursorY < geometry.titlebarBottom
+	inControls := geometry.cursorX >= geometry.controlsLeft
 	profile := activeNativeFrameProfile()
 	if inTitlebar && inControls && nativeFrameProfileUsesCaptionButtonHitTest(profile) {
-		return hitTestCaptionButtons(windowRect, cursor, controlsWidth)
+		return hitTestCaptionButtons(geometry)
 	}
 	if inTitlebar && inControls &&
 		(nativeFrameProfileUsesMaximizeCaptionButtonHitTest(profile) ||
 			(maximized && nativeFrameProfileUsesZoomedMaximizeCaptionButtonHitTest(profile))) {
-		if hit := hitTestCaptionButtons(windowRect, cursor, controlsWidth); hit == htMaxButton {
+		if hit := hitTestCaptionButtons(geometry); hit == htMaxButton {
 			return htMaxButton
 		}
 		return htClient
@@ -142,53 +208,42 @@ func nativeHitTestForRect(metrics hitTestMetrics, windowRect rect, cursor point,
 }
 
 func nativeCaptionButtonHitForRect(metrics hitTestMetrics, windowRect rect, cursor point, dpi uint32, maximized bool) int32 {
+	geometry, ok := newHitTestGeometry(metrics, windowRect, cursor, dpi)
+	if !ok {
+		return htClient
+	}
 	if !maximized {
-		border := scaleLogicalPixels(metrics.ResizeBorder, dpi)
-		if hit := hitTestResizeBorder(windowRect, cursor, border); hit != htClient {
+		if hit := hitTestResizeBorder(geometry); hit != htClient {
 			return htClient
 		}
 	}
-	titlebarHeight := scaleLogicalPixels(metrics.TitlebarHeight, dpi)
-	controlsWidth := scaleLogicalPixels(metrics.ControlsWidth, dpi)
-	inTitlebar := cursor.Y >= windowRect.Top && cursor.Y < windowRect.Top+titlebarHeight
-	inControls := cursor.X >= windowRect.Right-controlsWidth && cursor.X < windowRect.Right
-	if !inTitlebar || !inControls {
+	if geometry.cursorY >= geometry.titlebarBottom || geometry.cursorX < geometry.controlsLeft {
 		return htClient
 	}
-	return hitTestCaptionButtons(windowRect, cursor, controlsWidth)
+	return hitTestCaptionButtons(geometry)
 }
 
-func hitTestCaptionButtons(windowRect rect, cursor point, controlsWidth int32) int32 {
-	if controlsWidth <= 0 {
+func hitTestCaptionButtons(geometry hitTestGeometry) int32 {
+	if geometry.controlsWidth < 3 {
 		return htClient
 	}
-	buttonWidth := controlsWidth / 3
-	if buttonWidth <= 0 {
-		return htClient
-	}
-	left := windowRect.Right - controlsWidth
 	switch {
-	case cursor.X >= left && cursor.X < left+buttonWidth:
+	case geometry.cursorX >= geometry.controlsLeft && geometry.cursorX < geometry.minimizeButtonEnd:
 		return htMinButton
-	case cursor.X >= left+buttonWidth && cursor.X < left+2*buttonWidth:
+	case geometry.cursorX >= geometry.minimizeButtonEnd && geometry.cursorX < geometry.maximizeButtonEnd:
 		return htMaxButton
-	case cursor.X >= left+2*buttonWidth && cursor.X < windowRect.Right:
+	case geometry.cursorX >= geometry.maximizeButtonEnd && geometry.cursorX < geometry.right:
 		return htClose
 	default:
 		return htClient
 	}
 }
 
-func hitTestResizeBorder(windowRect rect, cursor point, border int32) int32 {
-	if border <= 0 {
-		return htClient
-	}
-	withinX := cursor.X >= windowRect.Left && cursor.X < windowRect.Right
-	withinY := cursor.Y >= windowRect.Top && cursor.Y < windowRect.Bottom
-	onLeft := withinY && cursor.X >= windowRect.Left && cursor.X < windowRect.Left+border
-	onRight := withinY && cursor.X < windowRect.Right && cursor.X >= windowRect.Right-border
-	onTop := withinX && cursor.Y >= windowRect.Top && cursor.Y < windowRect.Top+border
-	onBottom := withinX && cursor.Y < windowRect.Bottom && cursor.Y >= windowRect.Bottom-border
+func hitTestResizeBorder(geometry hitTestGeometry) int32 {
+	onLeft := geometry.cursorX < geometry.resizeLeftEnd
+	onRight := geometry.cursorX >= geometry.resizeRightStart
+	onTop := geometry.cursorY < geometry.resizeTopEnd
+	onBottom := geometry.cursorY >= geometry.resizeBottomStart
 	switch {
 	case onTop && onLeft:
 		return htTopLeft
@@ -212,29 +267,39 @@ func hitTestResizeBorder(windowRect rect, cursor point, border int32) int32 {
 }
 
 func resizeFallbackPoint(windowRect rect, hit int32) (point, bool) {
-	centerX := windowRect.Left + (windowRect.Right-windowRect.Left)/2
-	centerY := windowRect.Top + (windowRect.Bottom-windowRect.Top)/2
-	left := windowRect.Left
-	right := windowRect.Right - 1
-	top := windowRect.Top
-	bottom := windowRect.Bottom - 1
+	geometry, ok := newHitTestGeometry(
+		hitTestMetrics{},
+		windowRect,
+		point{X: windowRect.Left, Y: windowRect.Top},
+		defaultWindowDPI,
+	)
+	if !ok {
+		return point{}, false
+	}
+
+	centerX := geometry.left + (geometry.right-geometry.left)/2
+	centerY := geometry.top + (geometry.bottom-geometry.top)/2
+	left := geometry.left
+	right := geometry.right - 1
+	top := geometry.top
+	bottom := geometry.bottom - 1
 	switch hit {
 	case htLeft:
-		return point{X: left, Y: centerY}, true
+		return point{X: int32(left), Y: int32(centerY)}, true
 	case htRight:
-		return point{X: right, Y: centerY}, true
+		return point{X: int32(right), Y: int32(centerY)}, true
 	case htTop:
-		return point{X: centerX, Y: top}, true
+		return point{X: int32(centerX), Y: int32(top)}, true
 	case htBottom:
-		return point{X: centerX, Y: bottom}, true
+		return point{X: int32(centerX), Y: int32(bottom)}, true
 	case htTopLeft:
-		return point{X: left, Y: top}, true
+		return point{X: int32(left), Y: int32(top)}, true
 	case htTopRight:
-		return point{X: right, Y: top}, true
+		return point{X: int32(right), Y: int32(top)}, true
 	case htBottomLeft:
-		return point{X: left, Y: bottom}, true
+		return point{X: int32(left), Y: int32(bottom)}, true
 	case htBottomRight:
-		return point{X: right, Y: bottom}, true
+		return point{X: int32(right), Y: int32(bottom)}, true
 	default:
 		return point{}, false
 	}

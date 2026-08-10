@@ -152,6 +152,7 @@ func TestReturnedSurfaceOperationFailuresAreNotInternallyReported(t *testing.T) 
 		{"Navigate", func() error { return browser.Navigate("https://example.test/") }},
 		{"Init", func() error { return browser.Init("void 0") }},
 		{"Eval", func() error { return browser.Eval("void 0") }},
+		{"PostWebMessage", func() error { return browser.PostWebMessage(`{"event":"test"}`) }},
 		{"Show", browser.Show},
 		{"Hide", browser.Hide},
 	}
