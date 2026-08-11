@@ -44,8 +44,8 @@ $binaryExtensions = @(".png")
 $checkoutPin = "11d5960a326750d58380" + "78e36cf38b85af677262"
 $setupGoPin = "40f1582b2485089dde7a" + "bd97c1529aa768e1baff"
 $allowances = @(
-    [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($checkoutPin) + "$"); Action = "actions/checkout"; Expected = 2; Consumed = 0 }
-    [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($setupGoPin) + "$"); Action = "actions/setup-go"; Expected = 2; Consumed = 0 }
+    [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($checkoutPin) + "$"); Action = "actions/checkout"; Expected = 3; Consumed = 0 }
+    [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($setupGoPin) + "$"); Action = "actions/setup-go"; Expected = 3; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/decisions/0025-urls-are-logged-as-urls.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/decisions/0028-message-keeps-the-urls-inside-it.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 3; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/guard-authority-details.md"; Rule = "UNC host"; Group = "host"; Value = '(?i)BUILD-NAS'; Expected = 1; Consumed = 0 }

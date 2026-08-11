@@ -157,11 +157,12 @@ requirement.
   is handled before either reading or resolving the pinned runtime path.
   `internal/doctor/architecture_gate_unsupported_windows_test.go` drives the
   production probe and pins the absence of machine-probe results.
-- `.github/workflows/ci.yml` runs those architecture-tagged production tests and
-  the real `cmd/mullion doctor` command as a Windows/386 process under WOW64,
-  while ARM64 remains compile-only. The amd64 lane runs runtime-dependent tests
-  with `-count=1` and directly executes `mullion doctor`, so test caching or
-  removal cannot manufacture runtime/export evidence.
+- `.github/workflows/ci.yml` gives the supported process ABI a dedicated,
+  unconditional Windows/x64 singleton using stable Go, an opt-in WebView2
+  runtime check and an uncached full suite. The two-version Windows matrix still
+  executes the architecture-tagged production tests and real `cmd/mullion
+  doctor`; Windows/386 runs under WOW64 while ARM64 remains compile-only. This
+  separates positive runtime evidence from portability and rejection evidence.
 - On 2026-08-06 the original audit ran `go test -count=1 ./...`; all three
   Windows targets compiled, and the amd64 live smoke used WebView2
   151.0.4129.59 for two sequential window sessions. That observation preceded
@@ -169,4 +170,4 @@ requirement.
 
 ---
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: add the dedicated Windows/x64 CI lane as explicit positive evidence for the only supported process ABI.

@@ -333,6 +333,10 @@ func TestLeakScanHashAllowancesBindExactPins(t *testing.T) {
 		"        \"uses\": actions/checkout@" + checkout,
 		"      - name: setup",
 		"        uses: actions/setup-go@" + setupGo,
+		"  third:",
+		"    steps:",
+		"      - uses: actions/checkout@" + checkout,
+		"      - uses: actions/setup-go@" + setupGo,
 	}, "\n")
 	explicitScalarDecoys := strings.Join([]string{
 		"decoy: |4",
@@ -522,13 +526,69 @@ func TestLeakScanWorkflowKeepsFullHistoryGate(t *testing.T) {
 	}
 }
 
+// The two existing Go-version matrices expand to four jobs. This unconditional
+// singleton is the fifth and names the only supported process ABI directly.
+func TestCIWorkflowKeepsExplicitWindowsX64Lane(t *testing.T) {
+	workflow := currentLeakScanWorkflow(t)
+	x64 := workflowJobBlock(t, workflow, "windows-x64")
+	for _, key := range []string{"if", "continue-on-error", "strategy"} {
+		if workflowJobHasKey(x64, key) {
+			t.Fatalf("Windows/x64 job has forbidden %s authority", key)
+		}
+	}
+	for _, line := range []string{"name: windows x64", "runs-on: windows-latest"} {
+		if !workflowJobHasLine(x64, line) {
+			t.Fatalf("Windows/x64 job lost %q", line)
+		}
+	}
+	for _, line := range []string{"GOOS: windows", "GOARCH: amd64", `MULLION_REQUIRE_WEBVIEW2: "1"`} {
+		if !workflowJobHasChildLine(x64, "env", line) {
+			t.Fatalf("Windows/x64 job lost environment contract %q", line)
+		}
+	}
+
+	checkoutPin := "11d5960a326750d58380" + "78e36cf38b85af677262"
+	setupGoPin := "40f1582b2485089dde7a" + "bd97c1529aa768e1baff"
+	var checkouts, setups, builds, tests []string
+	for _, step := range workflowStepBlocks(x64) {
+		switch {
+		case workflowStepHasPrefix(step, "actions/checkout@"):
+			checkouts = append(checkouts, step)
+		case workflowStepHasPrefix(step, "actions/setup-go@"):
+			setups = append(setups, step)
+		case workflowStepHasLine(step, "name: build Windows/x64"):
+			builds = append(builds, step)
+		case workflowStepHasLine(step, "name: test Windows/x64"):
+			tests = append(tests, step)
+		}
+	}
+	if len(checkouts) != 1 || len(setups) != 1 || len(builds) != 1 || len(tests) != 1 {
+		t.Fatalf("Windows/x64 steps: checkout=%d setup=%d build=%d test=%d; want one each",
+			len(checkouts), len(setups), len(builds), len(tests))
+	}
+	if !workflowStepUsesAction(checkouts[0], "actions/checkout", checkoutPin) ||
+		!workflowStepUsesAction(setups[0], "actions/setup-go", setupGoPin) ||
+		!workflowStepHasChildLine(setups[0], "with", "go-version: stable") {
+		t.Fatal("Windows/x64 action pins or stable Go selection changed")
+	}
+	if !workflowStepHasLine(builds[0], "run: go build ./...") ||
+		!workflowStepHasLine(tests[0], "run: go test -count=1 ./...") {
+		t.Fatal("Windows/x64 build or uncached full-suite command changed")
+	}
+	for _, step := range []string{checkouts[0], setups[0], builds[0], tests[0]} {
+		if workflowStepHasKey(step, "if") || workflowStepHasKey(step, "continue-on-error") {
+			t.Fatal("Windows/x64 authority step became conditional or non-fatal")
+		}
+	}
+}
+
 func TestWorkflowJobBlockIgnoresBlankAndCommentDelimiters(t *testing.T) {
 	workflow := currentLeakScanWorkflow(t)
-	const nextJob = "\n  portable:"
+	const nextJob = "\n  windows-x64:"
 	mutation := "\n  # Comments and blank lines do not end the windows mapping.\n\n    continue-on-error: true" + nextJob
 	mutated := strings.Replace(workflow, nextJob, mutation, 1)
 	if mutated == workflow {
-		t.Fatal("current workflow fixture no longer has the portable job boundary")
+		t.Fatal("current workflow fixture no longer has the Windows/x64 job boundary")
 	}
 	windows := workflowJobBlock(t, mutated, "windows")
 	if !workflowJobHasKey(windows, "continue-on-error") {
@@ -576,6 +636,31 @@ func workflowJobHasKey(job, want string) bool {
 		}
 	}
 	return false
+}
+
+func workflowJobHasLine(job, want string) bool {
+	wantKey, wantValue, ok := workflowMapping(strings.TrimSpace(want))
+	if !ok {
+		return false
+	}
+	for _, line := range strings.Split(job, "\n") {
+		if workflowLineIndent(line) != 4 {
+			continue
+		}
+		key, value, ok := workflowMapping(strings.TrimSpace(line))
+		if ok && key == wantKey && value == wantValue {
+			return true
+		}
+	}
+	return false
+}
+
+func workflowJobHasChildLine(job, parent, want string) bool {
+	wantKey, wantValue, ok := workflowMapping(strings.TrimSpace(want))
+	if !ok {
+		return false
+	}
+	return workflowChildMappingMatches(job, 4, parent, wantKey, wantValue, true)
 }
 
 func workflowStepBlocks(job string) []string {
@@ -671,16 +756,20 @@ func workflowStepHasChildKey(step, parent, want string) bool {
 }
 
 func workflowStepChildMappingMatches(step, parent, wantKey, wantValue string, matchValue bool) bool {
-	mappingIndent := workflowStepMappingIndent(step)
+	return workflowChildMappingMatches(step, workflowStepMappingIndent(step), parent, wantKey, wantValue, matchValue)
+}
+
+func workflowChildMappingMatches(text string, mappingIndent int, parent, wantKey, wantValue string, matchValue bool) bool {
 	parentActive := false
 	childIndent := -1
-	for _, line := range strings.Split(step, "\n") {
+	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if key, value, ok := workflowStepMappingAtIndent(line, mappingIndent); ok {
-			parentActive = key == parent && value == ""
+		if workflowLineIndent(line) == mappingIndent {
+			key, value, ok := workflowMapping(trimmed)
+			parentActive = ok && key == parent && value == ""
 			childIndent = -1
 			continue
 		}

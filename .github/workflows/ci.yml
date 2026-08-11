@@ -104,10 +104,30 @@ jobs:
       - run: go build -tags mullion_caption_passthrough_diag ./...
       - run: go test -count=1 -tags mullion_caption_passthrough_diag ./...
 
+  # Keep the supported process ABI visible as its own singleton lane. The two
+  # Windows matrix jobs also run on amd64, but their names describe Go versions;
+  # this job makes target drift or accidental matrix-only coverage explicit.
+  windows-x64:
+    name: windows x64
+    runs-on: windows-latest
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      MULLION_REQUIRE_WEBVIEW2: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+      - name: build Windows/x64
+        run: go build ./...
+      - name: test Windows/x64
+        run: go test -count=1 ./...
+
   portable:
     # Non-Windows stubs and unsupported Windows architectures stay
     # compile-portable. These builds are not runtime-support claims; WebView2
-    # hosting is supported only by the windows/amd64 job above.
+    # hosting is proved by the Windows matrix and explicit x64 job above.
     runs-on: ubuntu-latest
     # Same two-ended range as the windows job, for the same reason (0033).
     strategy:

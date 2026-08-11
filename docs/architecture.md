@@ -379,9 +379,10 @@ window is actually shown. An application that starts in a tray must treat the fi
 Windows/386 and Windows/ARM64 remain compile-portable, but `Run` returns public
 `ErrUnsupportedArchitecture` (for `errors.Is`) before DPI, discovery, shared
 callback allocation, COM, class or HWND work. Doctor rejects the same process
-before reading a pinned runtime path or probing the machine. CI executes these
-production gates under Windows/386 WOW64; ARM64 is compile-only. Non-Windows
-`Run` returns `ErrUnsupportedPlatform`; no portable window abstraction is
-attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
+before reading a pinned runtime path or probing the machine. CI gives the
+supported target its own explicit Windows/x64 runtime-and-suite job, executes
+the rejection gates under Windows/386 WOW64, and keeps ARM64 compile-only.
+Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
+abstraction is attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: identify the stock-Notepad shell-overlay rollback as a Windows bug and record why mullion does not override DefWindowProc cancellation.
+> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: record the dedicated Windows/x64 CI lane beside the executable WOW64 rejection and ARM64 compile-only boundaries.
