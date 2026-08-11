@@ -167,7 +167,10 @@ func TestLeakScanRejectsUTF32BOMs(t *testing.T) {
 			root := newLeakScanRepository(t, map[string][]byte{"utf32.txt": body})
 			result := runLeakScan(t, root)
 			assertLeakScanFailed(t, result)
-			if !strings.Contains(result.output, "unsupported UTF-32 byte order mark") {
+			// PowerShell can wrap the final word of an uncaught exception to the
+			// Unix host width. The stable classifier plus the nonzero verdict
+			// above proves this was the intended strict-decoding failure.
+			if !strings.Contains(result.output, "unsupported UTF-32 byte order") {
 				t.Fatalf("UTF-32 input was not rejected by strict decoding:\n%s", result.output)
 			}
 		})

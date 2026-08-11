@@ -48,7 +48,10 @@ $allowances = @(
     [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($setupGoPin) + "$"); Action = "actions/setup-go"; Expected = 2; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/decisions/0025-urls-are-logged-as-urls.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/decisions/0028-message-keeps-the-urls-inside-it.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 3; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/guard-authority-details.md"; Rule = "UNC host"; Group = "host"; Value = '(?i)BUILD-NAS'; Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "host/diagnostics_windows_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+Example User$'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "host/leak_scan_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+private-user$'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "host/leak_scan_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)private-user'; Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "host/systembrowser_windows_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)(?:etc|attacker)'; Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "host/webview_windows_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+jane$'; Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "host/webview_windows_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)jane'; Expected = 1; Consumed = 0 }
@@ -57,6 +60,7 @@ $allowances = @(
     [pscustomobject]@{ Path = "internal/doctor/doctor_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+(?:Example User|EXAMPL~1)$'; Expected = 13; Consumed = 0 }
     [pscustomobject]@{ Path = "internal/doctor/doctor_test.go"; Rule = "extended UNC host"; Group = "host"; Value = '(?i)(?:HOME-NAS|BUILD-NAS)'; Expected = 3; Consumed = 0 }
     [pscustomobject]@{ Path = "internal/doctor/doctor_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)(?:HOME-NAS|BUILD-NAS|rt)'; Expected = 17; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/doctor/public_output.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)BUILD-NAS'; Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "internal/logsafe/logsafe_test.go"; Rule = "sensitive Windows drive path"; Value = "(?i)^C:[\\/]+Users[\\/]+(?:Example User|Alice O'Brien|D'Angelo|O'Brien|Ana O'Neil)$"; Expected = 7; Consumed = 0 }
     [pscustomobject]@{ Path = "internal/logsafe/logsafe_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)server'; Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "internal/logsafe/message_url_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+alice$'; Expected = 4; Consumed = 0 }
