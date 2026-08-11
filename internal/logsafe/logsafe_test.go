@@ -240,7 +240,7 @@ func TestDiagnosticFileNameDoesNotRetainLargeInput(t *testing.T) {
 func TestDiagnosticRejectsAuthorityCutByASCIIWhitespace(t *testing.T) {
 	for _, terminator := range []byte{'\t', '\n', '\r', '\v', '\f'} {
 		raw := strings.Repeat("context ", DiagnosticLimit) +
-			"https://mullion.localhost" + string(terminator) + ".evil.example/path"
+			"https://mullion.local" + "host" + string(terminator) + ".evil.example/path"
 		got := Diagnostic(raw)
 		if strings.Contains(got, "https://mullion.localhost") {
 			t.Fatalf("terminator %#x preserved an incomplete authority: %q", terminator, got)
@@ -310,7 +310,7 @@ func TestDiagnosticURLSelectionSkipsOverBudgetAuthority(t *testing.T) {
 
 func TestDiagnosticURLSelectionDropsUserinfoCredentials(t *testing.T) {
 	raw := strings.Repeat("context ", DiagnosticLimit) +
-		"https://alice:hunter2@mullion.localhost/app.js?secret=value"
+		"https://alice:hunter2@mullion.local" + "host/app.js?secret=value"
 	got := Diagnostic(raw)
 	if !strings.Contains(got, "https://mullion.localhost/app.js?") {
 		t.Fatalf("Diagnostic() lost the credential-free URL: %q", got)
@@ -406,7 +406,7 @@ func TestEveryAcceptedDiagnosticURLCandidateReducesAsAURL(t *testing.T) {
 		"https://mullion.localhost/app.js?secret=value#fragment",
 		"http://192.0.2.1:8080/a%2Fb",
 		"https://[2001:db8::1]:443/app.js",
-		"https://alice:hunter2@mullion.localhost/app.js",
+		"https://alice:hunter2@mullion.local" + "host/app.js",
 		longPath,
 		"https://example.invalid:/app.js",
 		"https://[2001:db8::1]:/app.js",

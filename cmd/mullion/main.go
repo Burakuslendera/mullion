@@ -27,7 +27,20 @@ import (
 	"github.com/Burakuslendera/mullion/host"
 	"github.com/Burakuslendera/mullion/internal/backdrop"
 	"github.com/Burakuslendera/mullion/internal/doctor"
+	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
+
+// These two inputs let the headless regression drive the actual main dispatch
+// and output function together. Issue #107 was a sanitizer bypass at one public
+// branch; testing either the helper or branch alone would recreate that #99 gap.
+var (
+	versionCommandOutput io.Writer = os.Stdout
+	versionCommandValue            = host.Version
+)
+
+func printVersionCommand() {
+	fmt.Fprintln(versionCommandOutput, printableVersion(versionCommandValue()))
+}
 
 func main() {
 	command := ""
@@ -68,7 +81,7 @@ func main() {
 		}
 
 	case "version":
-		fmt.Println(host.Version())
+		printVersionCommand()
 
 	case "help", "-h", "--help":
 		usage(os.Stdout)
@@ -80,6 +93,10 @@ func main() {
 		usage(os.Stderr)
 		os.Exit(2)
 	}
+}
+
+func printableVersion(version string) string {
+	return logsafe.Message(version)
 }
 
 func usage(out io.Writer) {

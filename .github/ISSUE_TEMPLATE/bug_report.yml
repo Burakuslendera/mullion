@@ -104,8 +104,10 @@ body:
         load - including whether that runtime still exports the entry point mullion
         calls, which is the difference between "a runtime is installed" and "mullion
         can start". It opens no window and starts no browser. Nothing is sent
-        anywhere: it prints to your console and you decide what to paste. Paths under
-        your home directory come out as %USERPROFILE%.
+        anywhere: it prints to your console and you decide what to paste. Known
+        current-home spellings become %USERPROFILE% and UNC machine names become
+        <host>; foreign profiles and filesystem aliases not reported by Windows
+        remain outside that redaction.
 
 
         Do not retype it from memory. The command measures the monitors with
@@ -152,8 +154,9 @@ body:
       description: >-
         Attach a Logger and paste what it produced. For a hit-test, drag or resize
         problem set MULLION_HITTEST_DIAG=1; for a caption or tooltip problem set
-        MULLION_TOOLTIP_TRACE=1. Paths in these messages are already reduced to
-        file names, so a log does not leak your directories.
+        MULLION_TOOLTIP_TRACE=1. URL diagnostics retain a complete host and a
+        bounded, validated path projection; review other application Logger
+        values under your own disclosure policy before publishing them.
       render: shell
     validations:
       required: false

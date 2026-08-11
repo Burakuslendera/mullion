@@ -72,10 +72,15 @@ day a range request has to be honoured, this record is due for review.
   the URI, the expected path and the expected category.
 - `docs/assets.md`, "Asset serving without a port": the same table, plus the
   COM stream-lifetime rules that make it work.
-- No `net.Listen` and no `http.Server` exists anywhere in the host package; the
-  grep for them is part of the verification checklist and must stay empty.
+- `TestNoNetworkListener` parses every Go file and checks listener/server plus
+  supported Winsock loaders by import identity. It follows cross-file constants,
+  package assignments, generic string/function/`LazyDLL` aliases and explicit or
+  extensionless modules. Candidate-relative shipped/Go strings cover browser
+  decimal/octal/hex IPv4, root dots, special-scheme separator runs, mapped
+  wildcard IPv6 and token-specific exceptions. Actual-child modules lock
+  selection, failures and wiring; runtime assembly/reflection remain outside it.
 
 
 ---
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: repoint the asset boundary and COM stream evidence after the reference-document split.
+> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: define the no-port authority through generic string/DLL aliases and assigned loaders, browser legacy/surplus-separator/mapped endpoint forms, token-specific exceptions, actual-entrypoint locks and explicit semantic ceilings.

@@ -137,10 +137,11 @@ func develVersion(info *debug.BuildInfo) string {
 	return version
 }
 
-// runtimeSummary is the one line Run logs at startup. It exists so that a pasted
-// log answers the first three questions of any bug report - which build, on what
-// architecture, against which browser runtime - without a round trip.
-func runtimeSummary(webViewVersion string, goVersion string, arch string) string {
+// runtimeSummary is the one line Run logs at startup. The build string is an
+// explicit input so tests exercise the same presentation boundary as Run rather
+// than a detached printableVersion helper. A pasted line then answers which
+// build, architecture and browser runtime were involved without a round trip.
+func runtimeSummary(mullionVersion, webViewVersion, goVersion, arch string) string {
 	if webViewVersion == "" {
 		webViewVersion = "unknown"
 	}
@@ -148,8 +149,12 @@ func runtimeSummary(webViewVersion string, goVersion string, arch string) string
 	// is sanitised (internal/webview2.sanitizeVersion) at the source; logsafe here
 	// is defence in depth for any other origin before the line reaches a Logger
 	// that may render it in a terminal.
-	return "mullion: version=" + Version() +
+	return "mullion: version=" + printableVersion(mullionVersion) +
 		", go=" + goVersion +
 		", arch=" + arch +
 		", webview2=" + logsafe.Message(webViewVersion)
+}
+
+func printableVersion(version string) string {
+	return logsafe.Message(version)
 }

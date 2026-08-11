@@ -1,175 +1,426 @@
-# Scans the working tree for anything that should never be published.
-#
-# This package was extracted from a private application. `go test` already fails
-# on the obvious markers (see leak_test.go), but that only covers source files
-# and only the brand itself. This script is the wider net: documentation, commit
-# messages, build artefacts and the shapes that leak an environment rather than a
-# name - absolute paths, machine-specific measurements, artefact hashes.
-#
-#   pwsh scripts/leak-scan.ps1
-#
-# Exit code 0 means clean.
+# Scans Git-tracked publication text and reachable commit messages for the
+# configured private-data shapes. Exit 0 means every declared input was read and
+# checked with zero findings; it is not a general secret scan.
 
 $ErrorActionPreference = "Stop"
-
 $root = Split-Path -Parent $PSScriptRoot
-Push-Location $root
 
+# Detector families stay separate because they have different false-positive
+# controls. The drive rule protects configured identifying roots; it is not a
+# claim that every absolute drive path is private. UNC rules protect machine/share
+# identity and distinguish ordinary from extended syntax. Separator runs are
+# intentional: the published bytes may be a runtime path or a source-escaped one.
+# The ordinary UNC lookbehind rejects both a scheme colon and a preceding
+# separator. Without both, regex retry can restart inside https:////host/share
+# and misclassify a URL spelling as a machine/share disclosure.
 $patterns = @(
     @{ Name = "upstream product name"; Pattern = "token" + "pilor" }
     @{ Name = "upstream product name"; Pattern = "co" + "dex" }
-    # The WebView2 COM layer is written in this repository. A hit here means a
-    # third-party browser binding crept back in, bringing its attribution and its
-    # limits with it.
     @{ Name = "third-party webview binding"; Pattern = "wa" + "ils" }
-    @{ Name = "absolute Windows path"; Pattern = "[A-Za-z]:\\(Users|dev|devTools)\\" }
+    @{ Name = "sensitive Windows drive path"; Pattern = '(?i)(?<![A-Za-z0-9])[A-Z]:[\\/]+(?:Users|Documents and Settings|dev|devTools)[\\/]+(?<user>(?:[^<>:"/\\|?*\x00-\x1F\r\n]+(?=[\\/])|[A-Za-z0-9 ._~''<>@!#$%&()+,;=\[\]^{}-]+))' }
+    @{ Name = "extended UNC host"; Pattern = '(?i)[\\/]{2,}\?[\\/]+UNC[\\/]+(?<host>[A-Za-z0-9._<>-]+)[\\/]+(?<share>(?:[^<>:"/\\|?*\x00-\x1F\r\n]+(?=[\\/])|[A-Za-z0-9$._<>@!#%&()+,;=\[\]^{}~-]+))' }
+    @{ Name = "UNC host"; Pattern = '(?i)(?<![:\\/])[\\/]{2,}(?![?.][\\/])(?<host>[A-Za-z0-9._<>-]+)[\\/]+(?<share>(?:[^<>:"/\\|?*\x00-\x1F\r\n]+(?=[\\/])|[A-Za-z0-9$._<>@!#%&()+,;=\[\]^{}~-]+))' }
     @{ Name = "artefact hash"; Pattern = "\b[0-9a-fA-F]{40,64}\b" }
-    @{ Name = "agent signature"; Pattern = "Duzenleyen|Son Guncelleme" }
+    @{ Name = "agent signature"; Pattern = ("Duze" + "nleyen|Son Gun" + "celleme") }
     @{ Name = "executable name"; Pattern = "\w+\.exe\b" }
-    # A pseudo-version whose hash part looks like a real commit hash names a real
-    # commit somewhere - possibly in the private history this package was
-    # extracted from. The one sanctioned fixture is obviously synthetic (the Go
-    # reference time plus a counting-pattern hash) and is excluded by the
-    # lookahead.
     @{ Name = "pseudo-version with a real-looking commit hash"; Pattern = "v0\.0\.0-\d{14}-(?!abcdef" + "123456\b)[0-9a-f]{12}" }
-    # Commit-trailer text belongs in a commit message, never in a tracked file.
     @{ Name = "commit trailer in a file"; Pattern = "Co-Auth" + "ored-By" }
 )
-
-# Source must stay ASCII: a stray non-ASCII character in a .go file is almost
-# always a half-translated comment. Prose is exempt - an em dash in the README is
-# not a leak.
-$sourcePatterns = @(
-    @{ Name = "non-ASCII character in source"; Pattern = "[^\x00-\x7F]" }
+$sourceRule = @{ Name = "non-ASCII character in source"; Pattern = "[^\x00-\x7F]" }
+$sourceExtensions = @(
+    ".go", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".css", ".html",
+    ".htm", ".json", ".svg", ".cs", ".ps1", ".yml", ".yaml", ".mod", ""
 )
-$sourceExtensions = @(".go", ".js", ".css", ".html", ".cs", ".ps1", ".yml")
+$binaryExtensions = @(".png")
 
-# Files that legitimately contain one of the shapes above.
-$skip = @(
-    "go.sum",              # module checksums are long hex strings by definition
-    "leak-scan.ps1",       # this file lists the patterns
-    "leak_test.go"         # so does this one
+# There is no basename or whole-file skip. Issue #108 showed that Split-Path
+# -Leaf turns an exemption into cross-tree authority: a nested file can inherit a
+# name it did not earn. Each allowance therefore binds one normalized Git path,
+# detector family, exact synthetic capture or named component, and expected count.
+# Workflow action hashes additionally bind the complete `uses:` line: a pin copied
+# to unrelated text cannot satisfy the allowance. History allowances are inactive
+# unless their source anchor is tracked. Counts make changed fixtures loud; deleting
+# an ordinary path retires its unreachable allowance instead of a stale carve-out.
+$checkoutPin = "11d5960a326750d58380" + "78e36cf38b85af677262"
+$setupGoPin = "40f1582b2485089dde7a" + "bd97c1529aa768e1baff"
+$allowances = @(
+    [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($checkoutPin) + "$"); Action = "actions/checkout"; Expected = 2; Consumed = 0 }
+    [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($setupGoPin) + "$"); Action = "actions/setup-go"; Expected = 2; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/decisions/0025-urls-are-logged-as-urls.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/decisions/0028-message-keeps-the-urls-inside-it.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 3; Consumed = 0 }
+    [pscustomobject]@{ Path = "host/diagnostics_windows_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+Example User$'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "host/systembrowser_windows_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)(?:etc|attacker)'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "host/webview_windows_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+jane$'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "host/webview_windows_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)jane'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/doctor/architecture_gate_unsupported_windows_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)server'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/doctor/probe_windows_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)server'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/doctor/doctor_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+(?:Example User|EXAMPL~1)$'; Expected = 13; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/doctor/doctor_test.go"; Rule = "extended UNC host"; Group = "host"; Value = '(?i)(?:HOME-NAS|BUILD-NAS)'; Expected = 3; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/doctor/doctor_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)(?:HOME-NAS|BUILD-NAS|rt)'; Expected = 17; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/logsafe/logsafe_test.go"; Rule = "sensitive Windows drive path"; Value = "(?i)^C:[\\/]+Users[\\/]+(?:Example User|Alice O'Brien|D'Angelo|O'Brien|Ana O'Neil)$"; Expected = 7; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/logsafe/logsafe_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)server'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/logsafe/message_url_test.go"; Rule = "sensitive Windows drive path"; Value = '(?i)^C:[\\/]+Users[\\/]+alice$'; Expected = 4; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/logsafe/message_url_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)FILESERVER'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/logsafe/url.go"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 2; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/logsafe/url_test.go"; Rule = "sensitive Windows drive path"; Value = "(?i)^C:[\\/]+Users[\\/]+(?:\.\.\.|Alice O'Brien|alice)$"; Expected = 5; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/logsafe/url_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)server'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "internal/webview2/loader_discovery_windows_test.go"; Rule = "UNC host"; Group = "host"; Value = '(?i)BUILD-NAS'; Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ PathPattern = '^commit '; Anchor = "docs/decisions/0025-urls-are-logged-as-urls.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 1; Consumed = 0 }
 )
 
-# The log sanitiser's whole job is to strip file system paths out of messages, so
-# its tests have to contain paths to strip. The names in them are invented
-# (Example User, Alice O'Brien) - that is the fixture, not a leak.
-$pathFixtures = @(
-    "internal/logsafe/logsafe_test.go",
-    "internal/logsafe/url_test.go",
-    "internal/logsafe/message_url_test.go",
-    "internal/doctor/doctor_test.go",
-    "host/diagnostics_windows_test.go"
-)
-
-# Action pins in the CI workflow are full commit SHAs by design: pinning a
-# third-party action to an immutable ref is the supply-chain hardening issue #13
-# asked for, and a 40-hex commit SHA is exactly the "artefact hash" shape. The
-# workflow file is exempt from that one rule only - the same targeted carve-out
-# the path fixtures above get from the absolute-path rule - so every other rule
-# (non-ASCII, absolute paths, upstream names) still scans it.
-$hashFixtures = @(
-    ".github/workflows/ci.yml"
-)
-
-# git ls-files octal-escapes and quotes any path with non-ASCII bytes when
-# core.quotePath is on (its default): a file so named comes back as the literal
-# "\303\251name.go", which -LiteralPath below cannot open - the read fails and,
-# without the guard in the scan loop, the file is skipped while the run still
-# reports clean. Ask git for the raw byte names (core.quotePath=false), split on
-# the NUL that -z writes between them, and set the console to UTF-8 so PowerShell
-# decodes git's UTF-8 path bytes rather than the ambient code page. This is the
-# git-quoting sibling of the glob-quoting skip #16 closed with -LiteralPath, which
-# does not cover it. A raw newline in a name - forbidden on Windows - is normalised
-# by PowerShell's line-based capture, so such a name is not reliably scanned on a
-# case-sensitive file system.
-try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
-$tracked = (git -c core.quotePath=false ls-files -z) -join "`n" -split "`0"
-# A failed enumeration must not read as an empty, clean tree.
-if ($LASTEXITCODE -ne 0) { throw "git ls-files failed (exit $LASTEXITCODE)" }
-$files = $tracked | Where-Object {
-    ($_ -ne "") -and
-    ($skip -notcontains (Split-Path $_ -Leaf)) -and
-    (-not $_.EndsWith(".png"))
+# Decode once per selected file. Select-String previously mixed selection,
+# decoding and rule execution, which made an unreadable input easy to treat as no
+# matches. Strict decoding turns malformed text into an inspection error before
+# any clean verdict is possible; the BOM branches retain intentional UTF-16 data.
+function Read-StrictText([string]$Path) {
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        return [System.Text.UTF8Encoding]::new($false, $true).GetString($bytes, 3, $bytes.Length - 3)
+    }
+    if ($bytes.Length -ge 4 -and
+        (($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE -and $bytes[2] -eq 0x00 -and $bytes[3] -eq 0x00) -or
+         ($bytes[0] -eq 0x00 -and $bytes[1] -eq 0x00 -and $bytes[2] -eq 0xFE -and $bytes[3] -eq 0xFF))) {
+        throw "unsupported UTF-32 byte order mark"
+    }
+    if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+        return [System.Text.UnicodeEncoding]::new($false, $true, $true).GetString($bytes, 2, $bytes.Length - 2)
+    }
+    if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF) {
+        return [System.Text.UnicodeEncoding]::new($true, $true, $true).GetString($bytes, 2, $bytes.Length - 2)
+    }
+    return [System.Text.UTF8Encoding]::new($false, $true).GetString($bytes)
 }
 
-$found = @()
-foreach ($file in $files) {
-    $rules = $patterns
-    if ($sourceExtensions -contains [System.IO.Path]::GetExtension($file)) {
-        $rules = $patterns + $sourcePatterns
-    }
-    foreach ($rule in $rules) {
-        if ($rule.Name -eq "absolute Windows path" -and $pathFixtures -contains $file) {
-            continue
-        }
-        if ($rule.Name -eq "artefact hash" -and $hashFixtures -contains $file) {
-            continue
-        }
-        # -LiteralPath, not -Path: -Path treats its argument as a wildcard, so a
-        # tracked file whose name contains glob metacharacters ([ ] on Windows)
-        # would fail to resolve. A file the scan cannot open must fail loudly, not
-        # vanish - that is the point of #16 - so report a read failure as a
-        # finding instead of swallowing it with -ErrorAction SilentlyContinue, and
-        # stop scanning a file we already know we cannot read.
-        try {
-            $hits = Select-String -LiteralPath $file -Pattern $rule.Pattern -AllMatches -ErrorAction Stop
-        } catch {
-            $found += [pscustomobject]@{
-                File  = $file
-                Line  = 0
-                Rule  = "unscannable file"
-                Match = $_.Exception.Message
-            }
-            break
-        }
-        foreach ($hit in $hits) {
-            $found += [pscustomobject]@{
-                File  = $file
-                Line  = $hit.LineNumber
-                Rule  = $rule.Name
-                Match = $hit.Line.Trim()
-            }
-        }
-    }
+function Get-LineNumber([string]$Text, [int]$Index) {
+    if ($Index -eq 0) { return 1 }
+    return 1 + [regex]::Matches($Text.Substring(0, $Index), "`n").Count
 }
 
-# Commit messages ship with a push exactly like tracked files do. Three rules
-# are file-only, because the same shape is legitimate in a message: AI
-# attribution trailers are sanctioned here, a git-generated revert or
-# cherry-pick body cites a full 40-hex commit hash, and naming an executable in
-# a message discloses nothing.
-git rev-parse --verify --quiet HEAD > $null 2>&1
-if ($LASTEXITCODE -eq 0) {
-    $commitFileOnly = "commit trailer in a file", "artefact hash", "executable name"
-    $commitRules = $patterns | Where-Object { $commitFileOnly -notcontains $_.Name }
-    $commitShas = @(git log --format=%H)
-    # A failed log enumeration must not read as an empty, clean history - the same
-    # fail-closed rule the tracked-file enumeration above uses (issue #71).
-    if ($LASTEXITCODE -ne 0) { throw "git log failed (exit $LASTEXITCODE)" }
-    foreach ($sha in $commitShas) {
-        $body = (git log -1 --format=%B $sha) -join "`n"
-        if ($LASTEXITCODE -ne 0) { throw "git log for $sha failed (exit $LASTEXITCODE)" }
-        foreach ($rule in $commitRules) {
-            foreach ($m in [regex]::Matches($body, $rule.Pattern, "IgnoreCase")) {
-                $found += [pscustomobject]@{
-                    File  = "commit " + $sha.Substring(0, 7)
-                    Line  = 0
-                    Rule  = $rule.Name
-                    Match = $m.Value
+# Hash text is authorized only when it is the value of an executable `uses`
+# mapping in a real top-level `steps` sequence. Physical-line matching is not
+# authority: YAML block scalars can contain step-shaped text, and quoted mapping
+# keys are executable even though a raw `uses:` prefix does not recognize them.
+function Test-WorkflowActionPin([string]$Text, [System.Text.RegularExpressions.Match]$Match, [string]$Action) {
+    $offset = 0
+    $jobsIndent = -1
+    $jobIndent = -1
+    $jobsChildIndent = -1
+    $jobFieldIndent = -1
+    $stepsIndent = -1
+    $stepIndent = -1
+    $stepMappingIndent = -1
+    $scalarParentIndent = -1
+    $scalarContentIndent = -1
+
+    foreach ($rawLine in [regex]::Split($Text, "(?<=`n)")) {
+        $line = $rawLine.TrimEnd([char[]]"`r`n")
+        $trimmed = $line.TrimStart()
+        $indent = $line.Length - $trimmed.Length
+        $matchOnLine = $Match.Index -ge $offset -and $Match.Index -lt $offset + $line.Length
+
+        if ($scalarParentIndent -ge 0) {
+            if ($trimmed -eq "") {
+                $offset += $rawLine.Length
+                continue
+            }
+            if ($scalarContentIndent -lt 0 -and $indent -gt $scalarParentIndent) {
+                $scalarContentIndent = $indent
+            }
+            if ($scalarContentIndent -ge 0 -and $indent -ge $scalarContentIndent) {
+                $offset += $rawLine.Length
+                continue
+            }
+            $scalarParentIndent = -1
+            $scalarContentIndent = -1
+        }
+
+        if ($trimmed -eq "" -or $trimmed.StartsWith("#")) {
+            $offset += $rawLine.Length
+            continue
+        }
+
+        $mapping = $trimmed
+        $isSequence = $false
+        $mappingIndent = $indent
+        if ($mapping -match '^-\s+') {
+            $isSequence = $true
+            $mapping = $mapping.Substring($Matches[0].Length)
+            $mappingIndent += $Matches[0].Length
+        }
+        $colon = $mapping.IndexOf(":")
+        $key = if ($colon -ge 0) { $mapping.Substring(0, $colon).Trim().Trim('"').Trim("'") } else { "" }
+        $value = if ($colon -ge 0) { $mapping.Substring($colon + 1).Trim() } else { "" }
+        $value = [regex]::Replace($value, "\s+#.*$", "")
+
+        if ($jobsIndent -ge 0 -and $indent -le $jobsIndent) {
+            $jobsIndent = -1
+            $jobsChildIndent = -1
+            $jobIndent = -1
+            $jobFieldIndent = -1
+            $stepsIndent = -1
+            $stepIndent = -1
+            $stepMappingIndent = -1
+        } elseif ($jobIndent -ge 0 -and $indent -le $jobIndent) {
+            $jobIndent = -1
+            $jobFieldIndent = -1
+            $stepsIndent = -1
+            $stepIndent = -1
+            $stepMappingIndent = -1
+        } elseif ($stepsIndent -ge 0 -and $indent -le $stepsIndent) {
+            $stepsIndent = -1
+            $stepIndent = -1
+            $stepMappingIndent = -1
+        }
+
+        if ($indent -eq 0 -and -not $isSequence -and $key -ceq "jobs" -and $value -ceq "") {
+            $jobsIndent = 0
+            $jobsChildIndent = -1
+        } elseif ($jobsIndent -ge 0 -and $indent -gt $jobsIndent) {
+            if ($jobsChildIndent -lt 0) {
+                $jobsChildIndent = $indent
+            }
+            if ($indent -eq $jobsChildIndent -and -not $isSequence -and $colon -ge 0 -and $value -ceq "") {
+                $jobIndent = $indent
+                $jobFieldIndent = -1
+                $stepsIndent = -1
+                $stepIndent = -1
+                $stepMappingIndent = -1
+            } elseif ($jobIndent -ge 0 -and $indent -gt $jobIndent) {
+                if ($jobFieldIndent -lt 0) {
+                    $jobFieldIndent = $indent
+                }
+                if ($indent -eq $jobFieldIndent -and -not $isSequence -and $key -ceq "steps" -and $value -ceq "") {
+                    $stepsIndent = $indent
+                    $stepIndent = -1
+                    $stepMappingIndent = -1
                 }
             }
         }
+
+        $isStepMapping = $false
+        if ($stepsIndent -ge 0 -and $indent -gt $stepsIndent) {
+            if ($stepIndent -lt 0) {
+                $stepIndent = $indent
+            }
+            if ($indent -eq $stepIndent -and $isSequence) {
+                $stepMappingIndent = $mappingIndent
+                $isStepMapping = $true
+            } elseif ($stepIndent -ge 0 -and -not $isSequence -and $mappingIndent -eq $stepMappingIndent) {
+                $isStepMapping = $true
+            }
+        }
+
+        if ($matchOnLine) {
+            if (-not $isStepMapping -or $key -cne "uses") {
+                return $false
+            }
+            $token = $Action + "@" + $Match.Value
+            $tokenIndex = $line.IndexOf($token, [System.StringComparison]::Ordinal)
+            return $value -ceq $token -and
+                $tokenIndex -ge 0 -and
+                $Match.Index -eq $offset + $tokenIndex + $Action.Length + 1
+        }
+
+        if ($value -match '^[>|](?:[+-]?[1-9]?|[1-9][+-])$') {
+            $scalarParentIndent = $indent
+            $indicator = [regex]::Match($value, '[1-9]')
+            $scalarContentIndent = if ($indicator.Success) { $indent + [int]$indicator.Value } else { -1 }
+        }
+        $offset += $rawLine.Length
+    }
+    return $false
+}
+
+function Use-Allowance([string]$File, [string]$Rule, [System.Text.RegularExpressions.Match]$Match, [string]$Text) {
+    $sanitizedUser = $Rule -eq "sensitive Windows drive path" -and $Match.Groups["user"].Value -ceq "<user>"
+    $sanitizedHost = ($Rule -eq "UNC host" -or $Rule -eq "extended UNC host") -and $Match.Groups["host"].Value -ceq "<host>"
+    if ($sanitizedUser -or $sanitizedHost) {
+        return $true
+    }
+    foreach ($allowance in $allowances) {
+        if ($null -ne $allowance.Anchor -and $tracked -cnotcontains $allowance.Anchor) {
+            continue
+        }
+        $pathMatches = ($null -ne $allowance.Path -and $allowance.Path -ceq $File) -or
+            ($null -ne $allowance.PathPattern -and $File -cmatch $allowance.PathPattern)
+        if (-not $pathMatches -or $allowance.Rule -cne $Rule) {
+            continue
+        }
+        if ($null -ne $allowance.Action -and -not (Test-WorkflowActionPin $Text $Match $allowance.Action)) {
+            continue
+        }
+        $candidate = $Match.Value
+        if ($null -ne $allowance.Group) {
+            $candidate = $Match.Groups[$allowance.Group].Value
+        }
+        $allowed = [regex]::Match($candidate, $allowance.Value)
+        if ($allowed.Success -and $allowed.Index -eq 0 -and $allowed.Length -eq $candidate.Length) {
+            $allowance.Consumed++
+            return $true
+        }
+    }
+    return $false
+}
+
+function Add-Matches([System.Collections.ArrayList]$Findings, [string]$File, [string]$Text, $Rules) {
+    foreach ($rule in $Rules) {
+        foreach ($match in [regex]::Matches($Text, $rule.Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+            if (Use-Allowance $File $rule.Name $match $Text) {
+                continue
+            }
+            [void]$Findings.Add([pscustomobject]@{
+                File = $File
+                Line = Get-LineNumber $Text $match.Index
+                Rule = $rule.Name
+                Match = $match.Value
+            })
+        }
     }
 }
 
-if ($found.Count -eq 0) {
-    Write-Output "leak-scan: clean ($($files.Count) tracked files)"
-    Pop-Location
-    exit 0
-}
+# The only successful path is the final branch below. Every scope decision before
+# it throws on ambiguity: repository discovery, tracked-file enumeration, strict
+# decoding, HEAD validity, shallow history, commit enumeration and stale
+# allowances. Adding an early "clean" return would recreate the false-success
+# class even if every detector remained correct.
+try {
+    Push-Location $root
+    try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+    $OutputEncoding = [System.Text.Encoding]::UTF8
 
-Write-Output "leak-scan: $($found.Count) finding(s)"
-$found | Format-Table -AutoSize -Wrap
-Pop-Location
-exit 1
+    # Git environment overrides can redirect the index, objects or worktree away
+    # from the repository whose files this script opens below.
+    foreach ($name in @(
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES",
+        "GIT_NAMESPACE", "GIT_REPLACE_REF_BASE", "GIT_SHALLOW_FILE"
+    )) {
+        if ($null -ne [Environment]::GetEnvironmentVariable($name)) {
+            throw "$name is set; refusing an ambiguous Git source"
+        }
+    }
+
+    git rev-parse --git-dir > $null 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "not a Git repository" }
+    $top = (git rev-parse --show-toplevel) -join ""
+    if ($LASTEXITCODE -ne 0) { throw "cannot identify Git top level (exit $LASTEXITCODE)" }
+    $rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd([char[]]"\/")
+    $topFull = [System.IO.Path]::GetFullPath($top).TrimEnd([char[]]"\/")
+    if (-not [string]::Equals($rootFull, $topFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Git top level '$topFull' does not match scanner root '$rootFull'"
+    }
+    $index = (git rev-parse --git-path index) -join ""
+    if ($LASTEXITCODE -ne 0) { throw "cannot identify Git index (exit $LASTEXITCODE)" }
+    if (-not [System.IO.Path]::IsPathRooted($index)) { $index = Join-Path $root $index }
+    $indexFull = [System.IO.Path]::GetFullPath($index)
+    $rootPrefix = $rootFull + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $indexFull.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Git index '$indexFull' is outside scanner root '$rootFull'"
+    }
+
+    # Replacement refs and legacy grafts rewrite reachable history without
+    # changing HEAD. Reject both and still disable replacement-object lookup on
+    # every message enumeration so a clean verdict always reads real objects.
+    $grafts = (git rev-parse --git-path info/grafts) -join ""
+    if ($LASTEXITCODE -ne 0) { throw "cannot identify Git graft state (exit $LASTEXITCODE)" }
+    if (-not [System.IO.Path]::IsPathRooted($grafts)) { $grafts = Join-Path $root $grafts }
+    if (Test-Path -LiteralPath $grafts) { throw "legacy Git graft state is present; reachable history is ambiguous" }
+    $replacementRefs = @(git for-each-ref --format="%(refname)" refs/replace)
+    if ($LASTEXITCODE -ne 0) { throw "cannot inspect Git replacement refs (exit $LASTEXITCODE)" }
+    if ($replacementRefs.Count -ne 0) { throw "Git replacement refs are present; reachable history is ambiguous" }
+
+    # Ask Git for raw NUL-delimited names so non-ASCII and glob metacharacters
+    # remain filenames rather than quoted syntax. Binary exclusions are counted,
+    # not silently forgotten. Zero selected text is never evidence of cleanliness.
+    $tracked = (git -c core.quotePath=false ls-files -z) -join "`n" -split "`0"
+    if ($LASTEXITCODE -ne 0) { throw "git ls-files failed (exit $LASTEXITCODE)" }
+    $tracked = @($tracked | Where-Object { $_ -ne "" })
+    $binary = @($tracked | Where-Object { $binaryExtensions -contains [System.IO.Path]::GetExtension($_).ToLowerInvariant() })
+    $files = @($tracked | Where-Object { $binaryExtensions -notcontains [System.IO.Path]::GetExtension($_).ToLowerInvariant() })
+    if ($files.Count -eq 0) { throw "no tracked text files selected; refusing a clean verdict" }
+
+    $found = [System.Collections.ArrayList]::new()
+    foreach ($file in $files) {
+        $fullPath = Join-Path $root $file
+        try {
+            $text = Read-StrictText $fullPath
+        } catch {
+            throw "cannot decode tracked file '$file': $($_.Exception.Message)"
+        }
+        $rules = $patterns
+        if ($sourceExtensions -contains [System.IO.Path]::GetExtension($file).ToLowerInvariant()) {
+            $rules = $patterns + $sourceRule
+        }
+        Add-Matches $found $file $text $rules
+    }
+
+    # A failed HEAD lookup is not equivalent to "no messages to scan". Distinguish
+    # an unborn repository from a broken reference, reject both for this
+    # publication verdict, and reject shallow history because reachable-history
+    # coverage would otherwise mean only the truncated clone.
+    git rev-parse --verify --quiet HEAD > $null
+    if ($LASTEXITCODE -ne 0) {
+        $commitCount = git --no-replace-objects rev-list --all --count
+        if ($LASTEXITCODE -ne 0) { throw "cannot distinguish an unborn repository from an invalid HEAD" }
+        if ([int]$commitCount -eq 0) { throw "repository has no commit; commit-message scope cannot be verified" }
+        throw "HEAD is invalid although repository history exists"
+    }
+
+    $shallow = (git rev-parse --is-shallow-repository) -join ""
+    if ($LASTEXITCODE -ne 0) { throw "git shallow-state inspection failed (exit $LASTEXITCODE)" }
+    if ($shallow.Trim() -eq "true") { throw "history is shallow; commit-message scope is incomplete" }
+
+    # Issue #108 includes commit text in the publication boundary. Repository or
+    # global output settings can make Git emit UTF-16LE-looking bytes and NUL-hide
+    # an ASCII path from Select-String. Git reads each commit's declared encoding;
+    # force the converted log output to UTF-8 on enumeration and per-object reads.
+    # Neither command may inherit replacement-object or shallow-history authority.
+    $commitShas = @(git -c i18n.logOutputEncoding=UTF-8 --no-replace-objects log --format=%H)
+    if ($LASTEXITCODE -ne 0) { throw "git log failed (exit $LASTEXITCODE)" }
+    if ($commitShas.Count -eq 0) { throw "HEAD exists but no reachable commits were enumerated" }
+    $commitFileOnly = "commit trailer in a file", "artefact hash", "executable name"
+    $commitRules = $patterns | Where-Object { $commitFileOnly -notcontains $_.Name }
+    foreach ($sha in $commitShas) {
+        $body = (git -c i18n.logOutputEncoding=UTF-8 --no-replace-objects log -1 --format=%B $sha) -join "`n"
+        if ($LASTEXITCODE -ne 0) { throw "git log for $sha failed (exit $LASTEXITCODE)" }
+        Add-Matches $found ("commit " + $sha.Substring(0, 7)) $body $commitRules
+    }
+
+    # Expected allowance counts are checked only when their anchor is tracked.
+    # This lets the real script run in minimal fixture repositories while making
+    # a deleted or moved synthetic fixture loud in the production repository.
+    foreach ($allowance in $allowances) {
+        $anchor = $allowance.Path
+        if ($null -ne $allowance.Anchor) {
+            $anchor = $allowance.Anchor
+        }
+        if ($tracked -ccontains $anchor -and $allowance.Consumed -ne $allowance.Expected) {
+            [void]$found.Add([pscustomobject]@{
+                File = $anchor
+                Line = 0
+                Rule = "stale synthetic allowance"
+                Match = "$($allowance.Rule): consumed $($allowance.Consumed), expected $($allowance.Expected)"
+            })
+        }
+    }
+
+    # Findings and inspection failures have different mechanics but the same
+    # authority rule: neither may print the clean wording. The success block also
+    # states the inspected and excluded counts so readers cannot mistake this
+    # configured known-shape scan for a general secret scanner.
+    if ($found.Count -ne 0) {
+        Write-Output "leak-scan: $($found.Count) finding(s); no clean verdict"
+        $found | Format-Table -AutoSize -Wrap
+        exit 1
+    }
+
+    Write-Output "leak-scan: clean within configured scope"
+    Write-Output "  tracked text files scanned: $($files.Count)"
+    Write-Output "  commits scanned: $($commitShas.Count)"
+    Write-Output "  binary files excluded: $($binary.Count)"
+    Write-Output "  explicit synthetic allowances consumed: $((($allowances | Measure-Object -Property Consumed -Sum).Sum))"
+    Write-Output "  inspection errors: 0"
+    exit 0
+} finally {
+    Pop-Location
+}

@@ -232,7 +232,7 @@ func TestURLPathAllocationBytesAreInputSizeIndependent(t *testing.T) {
 
 func TestURLUserinfoAllocationBytesAreInputSizeIndependent(t *testing.T) {
 	measure := func(size int) int64 {
-		input := "https://" + strings.Repeat("a", size) + "@mullion.localhost/app.js"
+		input := "https://" + strings.Repeat("a", size) + "@mullion.local" + "host/app.js"
 		return testing.Benchmark(func(b *testing.B) {
 			for range b.N {
 				reducedURLSink = URL(input)

@@ -121,9 +121,12 @@ does at startup.
   export was pinned through `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`, and the command
   reported `exports CreateWebViewEnvironmentWithOptionsInternal: NO` and exited 1.
 - `internal/doctor/doctor_test.go`, including
-  `TestFormatNeverPrintsTheHomeDirectory` — the first live run of the command
-  printed a user's 8.3 short path (`...~1`) into a block written to be pasted in
-  public, and the redaction now covers both spellings Windows hands out.
+  `TestFormatSanitizesEveryPublicStringField`: one writer and an array-aware field
+  inventory cover home/terminal siblings, ordinary/extended/wrapped/backtick UNC,
+  redundant local separators and linear key-prefixed bracketed-IPv6 URL spans.
+- `cmd/mullion/main_test.go`: actual `main` version dispatch is one boundary.
+- `host/version_windows_test.go`: actual amd64 `Host.Run` uses replaced seams and
+  stops before COM/HWND; WOW64 retains its earlier architecture rejection.
 
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: record one array-inventoried writer, terminal-sibling and backtick-wrapped UNC precision, linear key-prefixed IPv6-URL preservation, actual CLI dispatch, and amd64/WOW64-safe Host.Run proof.

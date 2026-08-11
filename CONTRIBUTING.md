@@ -37,7 +37,7 @@ $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; go build ./... # supported WebView
 $env:GOOS = 'windows'; $env:GOARCH = '386'; go test -count=1 ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture' # WOW64 execution
 $env:GOOS = 'windows'; $env:GOARCH = 'arm64'; go build ./... # compile portability only
 Remove-Item Env:GOOS, Env:GOARCH
-pwsh scripts/leak-scan.ps1                      # nothing private is published
+pwsh scripts/leak-scan.ps1                      # configured shapes in tracked text and complete reachable history
 Push-Location examples/basic; go run .; Pop-Location # live demo
 ```
 
@@ -181,4 +181,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: refine the protected headless rule with the approved deterministic pre-native public Run exception and require assertions on every forbidden seam.
+> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: make the leak-scan ladder comment name its bounded tracked-text and reachable-history scope rather than promising a general privacy proof.

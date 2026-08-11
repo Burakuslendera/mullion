@@ -39,9 +39,9 @@ narrower than "the name appears in the file", is this record's content.
 The loopback tier gains **one exemption, and it is a name rather than a file.**
 The scan removes occurrences of the exact token `mullion.localhost` from a file's
 source before matching, **but only where the name stands alone.** Everything else
-is unchanged: the listener markers stay banned in every file, the file-level
-exemption stays exactly `loopback.go`/`loopback_test.go`, and a bare `localhost`
-or `127.0.0.1` still fails anywhere else.
+is unchanged: listener/DLL markers have no file exception; full endpoint-only
+authority is limited to the loopback and source-plan fixture files; the three
+other fixture locations admit only their exact token; same basenames get nothing.
 
 Standing alone means no label character in front of it, and nothing behind it
 that continues a name or turns one into an address: another label, an FQDN's
@@ -110,11 +110,18 @@ and it should not move without someone reading why.
 to a constant it scans for. The pin makes the coupling loud rather than quiet: if
 `defaultVirtualHost` changes, the failure names this record.
 
-**Go source cannot name the TLD in prose.** The exemption is the full name, so a
-comment that writes the reserved TLD on its own still fails the scan. The
-`VirtualHost` field comment refers to it as "the TLD that RFC reserves" for that
-reason, which is the phrasing `verification.md` already used. It is a small tax on
-documentation, and it is the price of the tier staying a substring match.
+**Go comments are outside this guard.** The AST pass deliberately does not parse
+comments, so policy prose can name the reserved TLD without becoming a finding.
+String literals and imported API selectors remain inspected regardless of build
+tags. This scope is explicit: the guard proves selected syntax, not arbitrary Go
+prose or semantic whole-program behaviour.
+
+**Endpoint fixture authority is explicit and token-specific.** Full endpoint-only
+authority belongs to `host/loopback.go`, `host/loopback_test.go`,
+`host/source_plan_test.go` and `host/source_plan_windows_test.go`. The unsupported
+architecture file admits one exact split legacy token; errorpage/system-browser
+files admit only their bracketed token, never another endpoint in the same literal.
+No path exempts API/DLL findings; same basenames elsewhere have no authority.
 
 **The exemption is narrower than the thing it protects.** `Config.VirtualHost` is
 a caller's field, and nothing checks that a caller's name is under `.localhost`.
@@ -139,20 +146,19 @@ gap rather than an oversight.
 
 ## Evidence
 
-- `host/leak_test.go`: `stripExemptName`, the boundary test on both sides of the
-  token, and the pin that
-  fails when `defaultVirtualHost` stops matching the exempt token.
-- Twelve mutants run against the shipped rule, each written into a non-exempt file
-  and each checked against the real guard rather than a replica. Caught, as they
-  must be: a bare `localhost`, `127.0.0.1`, `net.Listen`, `mullion.localhost:8080`,
-  `preview.mullion.localhost`, `mullion.localhost.`, `mullion.localhost@evil.example`,
-  `mullion.localhost.evil.example`, `mullion.localhost%3A8080`, and the default
-  renamed out from under the exemption. Passed, as they must: the bare name, and
-  the name inside an origin URL.
-- What the mutants do **not** cover, and no text rule can: the name assembled at
-  run time. `net.JoinHostPort("mullion.localhost", "8080")` passes the guard, as
-  does any `+` concatenation. That is the ceiling of a source scan, and it is the
-  same ceiling the fourth rejected alternative names.
+- `host/network_guard_test.go`: module traversal, import-aware API identity,
+  lexical-shadow rejection and fail-closed errors.
+- `host/network_dll_guard_test.go`: supported loaders, assigned/parenthesized
+  targets, generic string/function/`LazyDLL` aliases, local/cross-file types and
+  explicit/extensionless module names.
+- `host/network_endpoint_guard_test.go`: candidate-relative scheme/relative/
+  standalone placement, browser legacy IPv4/root dots, special-scheme separator
+  runs, mapped wildcard IPv6, encoded external labels and token-specific authority.
+- `host/network_guard_policy_test.go`: shadows, generic/assigned DLL bindings,
+  virtual-host disqualifiers, clean controls and actual-child modules for the
+  named source forms, selected failures and verdict wiring.
+- The source guard excludes comments and cannot see names assembled only at run
+  time. `docs/guard-verification.md` records those syntactic proof ceilings.
 - `host/config.go`: `defaultVirtualHost`, and the field comment that carries the
   measurement and the caller-side gap.
 - `docs/assets.md`: the capture, the table, the six negatives, the
@@ -161,4 +167,4 @@ gap rather than an oversight.
 - Issues #85 (the wait) and #77 (the aborts it caused); both close with the
   rename this record unblocks.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: reconcile exact endpoint authority and lock assigned/generic string and DLL loaders, browser surplus separators, mapped wildcard IPv6, encoded external labels, virtual-host disqualifiers, actual-entrypoint failures and syntactic ceilings.

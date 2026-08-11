@@ -212,13 +212,14 @@ func nextNativeRunToken() uintptr {
 	}
 }
 
-// Native setup is routed through these seams so the unsupported-architecture
-// contract can prove that New stops before DPI work and Run stops before runtime
-// discovery. Tests restore each function before returning and never run in
+// Native setup and the startup build value are routed through these seams so
+// headless tests can stop Run before COM/HWND work while still exercising its
+// real public logging dispatch. Tests restore every function and never run in
 // parallel.
 var (
 	applyProcessDPIAwareness = enablePerMonitorV2DPIAwareness
 	discoverWebViewRuntime   = webview2.FindRuntime
+	runtimeSummaryVersion    = Version
 )
 
 // New prepares a host. It does not create a window; Run does that.
@@ -458,7 +459,7 @@ func (host *Host) Run() error {
 				// One line, at INFO, before anything can go wrong. A bug report
 				// then answers build, architecture, and browser runtime without
 				// a round trip.
-				host.log.Info(runtimeSummary(webViewVersion, runtime.Version(), runtime.GOARCH))
+				host.log.Info(runtimeSummary(runtimeSummaryVersion(), webViewVersion, runtime.Version(), runtime.GOARCH))
 			},
 			host.runAfterRuntimeDiscovery,
 		)

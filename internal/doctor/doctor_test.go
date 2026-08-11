@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -184,7 +185,8 @@ func TestMonitorScaleMatchesTheSettingsPanel(t *testing.T) {
 func TestRedactHomeKeepsThePathAndDropsTheUser(t *testing.T) {
 	const long = `C:\Users\Example User`
 	const short = `C:\Users\EXAMPL~1`
-	homes := []string{long, short}
+	unicodeHome := `C:\Users\` + "\u00c9lodie"
+	homes := []string{long, short, unicodeHome, `\\HOME-NAS\profiles\Example User`}
 
 	cases := []struct {
 		name string
@@ -193,18 +195,47 @@ func TestRedactHomeKeepsThePathAndDropsTheUser(t *testing.T) {
 	}{
 		{"under the home directory", long + `\rt\120.0.0.1`, `%USERPROFILE%\rt\120.0.0.1`},
 		{"case is not a hiding place", `c:\users\example user\rt`, `%USERPROFILE%\rt`},
+		{"Unicode case is not a hiding place", `c:\users\` + "\u00e9lodie" + `\rt`, `%USERPROFILE%\rt`},
 		// The one the live run found. Windows hands out the 8.3 name for a
 		// profile directory with a space in it, and six characters of the user
 		// name ride along inside it.
 		{"the 8.3 short name is redacted too", short + `\rt`, `%USERPROFILE%\rt`},
 		{"the home directory itself", long, `%USERPROFILE%`},
+		{"forward separators compare as the same path", `C:/Users/Example User/rt`, `%USERPROFILE%/rt`},
+		{"mixed separators compare as the same path", `C:\Users/Example User/rt`, `%USERPROFILE%/rt`},
+		{"extended drive prefix is not a UNC host", `\\?\C:\Users\Example User\rt`, `%USERPROFILE%\rt`},
+		{"known extended UNC home is fully redacted", `\\?\UNC\HOME-NAS\profiles\Example User\rt`, `%USERPROFILE%\rt`},
+		{"a path inside free text is redacted", `v0.1.0 (replaced by C:\Users\Example User\dev)`, `v0.1.0 (replaced by %USERPROFILE%\dev)`},
+		{"exact home before prose is redacted", "cannot use " + long + " (missing runtime)", `cannot use %USERPROFILE% (missing runtime)`},
+		{"exact home before one-word prose is redacted", "cannot use " + long + " (missing)", `cannot use %USERPROFILE% (missing)`},
+		{"angle-wrapped exact home is redacted", "folder <" + long + ">", `folder <%USERPROFILE%>`},
+		{"exact home before a closer is redacted", `failed at "` + long + `"`, `failed at "%USERPROFILE%"`},
 		{"a sibling with a longer name is not inside it", long + `2\rt`, long + `2\rt`},
+		{"a space-suffixed sibling is not inside it", long + ` 2\rt`, long + ` 2\rt`},
+		{"a terminal space-suffixed sibling is not exact-home prose", long + ` 2`, long + ` 2`},
+		{"a multi-word space-suffixed sibling is not inside it", long + ` old copy\rt`, long + ` old copy\rt`},
+		{"a punctuation-suffixed sibling is not inside it", long + `.Backup\rt`, long + `.Backup\rt`},
+		{"a terminal punctuation-suffixed sibling is not inside it", long + `.Backup`, long + `.Backup`},
 		{"a path elsewhere is left alone", `D:\fixed\120.0.0.1`, `D:\fixed\120.0.0.1`},
 		// A runtime on a network share is never under the home directory, so the
 		// redaction above never sees it; the internal host name is collapsed.
 		{"a UNC host is collapsed, keeping the share path", `\\BUILD-NAS\tools\webview2\120.0.0.1`, `\\<host>\tools\webview2\120.0.0.1`},
 		{"a forward-slash UNC host is collapsed too", `//BUILD-NAS/tools/rt`, `//<host>/tools/rt`},
+		{"an extended UNC host preserves its prefix", `\\?\UNC\BUILD-NAS\tools\rt`, `\\?\UNC\<host>\tools\rt`},
+		{"an angle-wrapped UNC host keeps its wrapper and share", `folder <\\BUILD-NAS\share>`, `folder <\\<host>\share>`},
+		{"an angle-wrapped extended UNC host keeps its prefix", `folder <\\?\UNC\BUILD-NAS\share>`, `folder <\\?\UNC\<host>\share>`},
+		{"a backtick-wrapped UNC host keeps its wrapper and share", "folder `" + `\\BUILD-NAS\share` + "`", "folder `" + `\\<host>\share` + "`"},
+		{"a closing backtick terminates a byte-zero UNC host", `\\BUILD-NAS` + "`", `\\<host>` + "`"},
 		{"a bare UNC host still loses its name", `\\BUILD-NAS`, `\\<host>`},
+		{"redundant local separators do not start UNC", long + `\rt\\rt\120.0`, `%USERPROFILE%\rt\\rt\120.0`},
+		{"a URL is not a UNC path", `https://example.invalid/path`, `https://example.invalid/path`},
+		{"a URL slash run is not a UNC path", `https:////BUILD-NAS/share`, `https:////BUILD-NAS/share`},
+		{"an IPv6 URL query slash run is not a UNC path", `https://[2001:db8::1]/a?next=//BUILD-NAS/share`, `https://[2001:db8::1]/a?next=//BUILD-NAS/share`},
+		{"a key-value IPv6 URL query slash run is not a UNC path", `source=https://[2001:db8::1]/a?next=//BUILD-NAS/share`, `source=https://[2001:db8::1]/a?next=//BUILD-NAS/share`},
+		{"a URL path slash run is not a UNC path", `fetch https://example.invalid/a//BUILD-NAS/share failed`, `fetch https://example.invalid/a//BUILD-NAS/share failed`},
+		{"an IPv6 URL path slash run is not a UNC path", `https://[2001:db8::1]/a//BUILD-NAS/share`, `https://[2001:db8::1]/a//BUILD-NAS/share`},
+		{"bare UNC host keeps prose punctuation", `failed on \\BUILD-NAS: runtime unavailable`, `failed on \\<host>: runtime unavailable`},
+		{"bare UNC host keeps a terminal period", `failed on \\BUILD-NAS. runtime unavailable`, `failed on \\<host>. runtime unavailable`},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -221,6 +252,20 @@ func TestRedactHomeKeepsThePathAndDropsTheUser(t *testing.T) {
 	// Nothing known: the path is left exactly as it came.
 	if got := redactHome(`D:\fixed`, nil); got != `D:\fixed` {
 		t.Errorf("redactHome with no home directory = %q, want it untouched", got)
+	}
+}
+
+func TestCollapseUNCHostsScansLongOrdinaryValueWithoutAllocating(t *testing.T) {
+	value := strings.Repeat("ordinary-value", 1024)
+	var got string
+	allocations := testing.AllocsPerRun(100, func() {
+		got = collapseUNCHosts(value)
+	})
+	if got != value {
+		t.Fatalf("collapseUNCHosts changed an ordinary value: got %q, want %q", got, value)
+	}
+	if allocations != 0 {
+		t.Fatalf("collapseUNCHosts allocated %.0f times for an unchanged ordinary value, want 0", allocations)
 	}
 }
 
@@ -242,6 +287,101 @@ func TestFormatNeverPrintsTheHomeDirectory(t *testing.T) {
 	}
 	if !strings.Contains(out, `%USERPROFILE%\webview2\120.0.0.1`) {
 		t.Fatalf("the redacted path lost its meaning:\n%s", out)
+	}
+}
+
+func TestFormatSanitizesEveryPublicStringField(t *testing.T) {
+	const home = `C:\Users\Example User`
+	path := func(marker string) string { return `C:/Users/Example User/` + marker }
+	marker := func(field string) string {
+		return "field-" + strings.ToLower(strings.NewReplacer("[]", "-items", ".", "-").Replace(field))
+	}
+
+	var printableFields []string
+	var collect func(reflect.Type, string)
+	collect = func(typ reflect.Type, prefix string) {
+		for index := range typ.NumField() {
+			field := typ.Field(index)
+			if field.PkgPath != "" {
+				continue
+			}
+			name := prefix + field.Name
+			if name == "Homes" {
+				continue // Redaction authority is input-only and must never print.
+			}
+			switch field.Type.Kind() {
+			case reflect.String:
+				printableFields = append(printableFields, name)
+			case reflect.Struct:
+				collect(field.Type, name+".")
+			case reflect.Array, reflect.Slice:
+				switch field.Type.Elem().Kind() {
+				case reflect.String:
+					printableFields = append(printableFields, name+"[]")
+				case reflect.Struct:
+					collect(field.Type.Elem(), name+"[].")
+				}
+			}
+		}
+	}
+	// #99 requires the inventory mechanism itself to be mutation-locked, not
+	// merely exercised accidentally by today's Report. Arrays and slices are
+	// separate reflection kinds; without this synthetic pair, adding Array
+	// beside Slice remains an unused green branch until a future [N]string or
+	// [N]struct producer bypasses the paste-ready writer.
+	arrayFixture := struct {
+		Warnings [1]string
+		Sections [1]struct{ Message string }
+	}{}
+	collect(reflect.TypeOf(arrayFixture), "")
+	if want := []string{"Warnings[]", "Sections[].Message"}; !reflect.DeepEqual(printableFields, want) {
+		t.Fatalf("array-backed public string fields = %v, want %v", printableFields, want)
+	}
+	printableFields = nil
+
+	collect(reflect.TypeOf(Report{}), "")
+
+	missing := Report{
+		Mullion: marker("Mullion"),
+		OS:      path(marker("OS")),
+		Arch:    path(marker("Arch")),
+		Go:      path(marker("Go")),
+		Homes:   []string{home},
+		WebView2: WebView2Section{
+			Problem:   path(marker("WebView2.Problem")),
+			PinnedEnv: path(marker("WebView2.PinnedEnv")),
+		},
+	}
+	found := Report{
+		Mullion: path(marker("Mullion")),
+		OS:      path(marker("OS")),
+		Arch:    path(marker("Arch")),
+		Go:      path(marker("Go")),
+		Homes:   []string{home},
+		WebView2: WebView2Section{
+			Found:         true,
+			Version:       path(marker("WebView2.Version")),
+			Source:        path(marker("WebView2.Source")),
+			Folder:        path(marker("WebView2.Folder")),
+			ExportName:    path(marker("WebView2.ExportName")),
+			ExportProblem: path(marker("WebView2.ExportProblem")),
+		},
+		GPUs: []string{`\\BUILD-NAS\devices\` + marker("GPUs[]")},
+	}
+
+	out := Format(missing) + Format(found)
+	for _, leak := range []string{"Example User", "BUILD-NAS"} {
+		if strings.Contains(out, leak) {
+			t.Fatalf("%q survived the public report boundary:\n%s", leak, out)
+		}
+	}
+	for _, field := range printableFields {
+		if want := marker(field); !strings.Contains(out, want) {
+			t.Errorf("printable field %s lacks an end-to-end sanitized marker %q:\n%s", field, want, out)
+		}
+	}
+	if !strings.Contains(out, `<host>\devices\`+marker("GPUs[]")) {
+		t.Fatalf("UNC redaction discarded the useful share path:\n%s", out)
 	}
 }
 

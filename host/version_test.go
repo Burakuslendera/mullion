@@ -160,13 +160,13 @@ func TestVersionFromUnknownIsAdmitted(t *testing.T) {
 // The startup line is the one a reporter pastes without being asked. It has to
 // carry the three facts that otherwise cost a round trip each.
 func TestRuntimeSummaryCarriesTheBuildFacts(t *testing.T) {
-	summary := runtimeSummary("150.0.4078.65", "go1.22.5", "amd64")
+	summary := runtimeSummary("v0.1.0", "150.0.4078.65", "go1.22.5", "amd64")
 	for _, want := range []string{"mullion: version=", "go=go1.22.5", "arch=amd64", "webview2=150.0.4078.65"} {
 		if !strings.Contains(summary, want) {
 			t.Fatalf("summary %q is missing %q", summary, want)
 		}
 	}
-	if !strings.Contains(runtimeSummary("", "go1.22.5", "amd64"), "webview2=unknown") {
+	if !strings.Contains(runtimeSummary("v0.1.0", "", "go1.22.5", "amd64"), "webview2=unknown") {
 		t.Fatal("a missing runtime version must be admitted, not omitted")
 	}
 }
@@ -176,7 +176,7 @@ func TestRuntimeSummaryCarriesTheBuildFacts(t *testing.T) {
 // registry value, so a control byte smuggled into it must not survive into the
 // log line (and thence a terminal-rendering Logger); logsafe strips it.
 func TestRuntimeSummaryNeutralisesControlBytes(t *testing.T) {
-	summary := runtimeSummary("9999.0\x1b]0;pwned\x07\x1b[2K", "go1.22.5", "amd64")
+	summary := runtimeSummary("v0.1.0", "9999.0\x1b]0;pwned\x07\x1b[2K", "go1.22.5", "amd64")
 	for _, r := range summary {
 		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
 			t.Fatalf("summary still carries control byte %#x: %q", r, summary)
@@ -184,5 +184,31 @@ func TestRuntimeSummaryNeutralisesControlBytes(t *testing.T) {
 	}
 	if !strings.Contains(summary, "9999.0") {
 		t.Fatalf("summary dropped the version digits: %q", summary)
+	}
+}
+
+func TestRuntimeSummaryReducesReplacementPaths(t *testing.T) {
+	version := "v0.1.0 (replaced by C:" + `\` + "Users" + `\` + "Alice" + `\dev\mullion` + ")"
+	summary := runtimeSummary(version, "150.0.4078.65", "go1.22.5", "amd64")
+	if strings.Contains(summary, "Alice") {
+		t.Fatalf("runtime summary disclosed the replacement path: %q", summary)
+	}
+	for _, want := range []string{"v0.1.0", "mullion", "webview2=150.0.4078.65"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("runtime summary discarded %q: %q", want, summary)
+		}
+	}
+}
+
+func TestPrintableVersionReducesReplacementPaths(t *testing.T) {
+	version := "v0.1.0 (replaced by C:" + `\` + "Users" + `\` + "Alice" + `\dev\mullion` + ")"
+	got := printableVersion(version)
+	if strings.Contains(got, "Alice") {
+		t.Fatalf("printable version disclosed the replacement path: %q", got)
+	}
+	for _, want := range []string{"v0.1.0", "mullion"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("printable version discarded %q: %q", want, got)
+		}
 	}
 }
