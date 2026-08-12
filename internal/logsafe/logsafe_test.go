@@ -450,7 +450,7 @@ func TestFieldKeepsUntrustedValueWithinOneStructuredField(t *testing.T) {
 }
 
 func TestFieldFileNameKeepsUntrustedPathWithinOneStructuredField(t *testing.T) {
-	got := FieldFileName(`C:\Users\Ada\assets\a, forged=1.js`)
+	got := FieldFileName(strings.Join([]string{"C:", "Users", "Ada", "assets", "a, forged=1.js"}, `\`))
 	if got != "a_ forged_1.js" {
 		t.Fatalf("FieldFileName() = %q, want a single folded file name", got)
 	}
