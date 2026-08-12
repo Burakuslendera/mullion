@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Burakuslendera/mullion/internal/webview2"
@@ -86,14 +85,17 @@ type Host struct {
 	boundsMu             sync.Mutex
 	lastBoundsSyncLog    boundsSyncLogState
 
-	// Headless production seams. Tests replace these only to observe the final
-	// Win32 boundary without creating a window; nil selects the real call.
-	postNativeCommand    func(windowHandle, uint32, uintptr, uintptr) error
-	sendNativeCommand    func(windowHandle, uint32, uintptr, uintptr) (uintptr, error)
-	queryNativeMaximised func(windowHandle) bool
-	applyNativeCommand   func(windowHandle, uint32, uintptr) uintptr
-	postFrameState       func(string) error
-
+	// Headless Win32 seams. Tests supply these to exercise message routing
+	// without creating a window; nil selects the real call.
+	nccalcIsZoomed            func(windowHandle) bool
+	nccalcMaximizeMonitorInfo func(windowHandle) (monitorInfo, bool)
+	defaultWindowProc         func(windowHandle, uint32, uintptr, uintptr) uintptr
+	postNativeCommand         func(windowHandle, uint32, uintptr, uintptr) error
+	sendNativeCommand         func(windowHandle, uint32, uintptr, uintptr) (uintptr, error)
+	queryNativeMaximised      func(windowHandle) bool
+	applyNativeCommand        func(windowHandle, uint32, uintptr) uintptr
+	postFrameState            func(string) error
+	syncWindowBounds          func(string)
 	// The error-surface admission state (issues #3, #56, #68; decisions/0017,
 	// 0021). The runtime reports the empty string as the source of a data:
 	// document (issue #56, measured live on 150.0.4078.65 at both the event args
@@ -198,19 +200,48 @@ type Host struct {
 	externalOpenSlots chan struct{}
 }
 
-// nativeRunTokens are process-global, not per Host. Windows can recycle an
-// HWND across two different Host values; a per-Host first-generation token
-// would then collide and let the older Host's delayed command control the new
-// owner's window.
-var nativeRunTokens atomic.Uint64
+// sharedNativeRunTokens is process-global, not per Host. Windows can recycle an
+// HWND across Host values; a per-Host first-generation token would let an older
+// delayed command target a new owner's window. Reservation also retains every
+// live uintptr rather than merely incrementing: the value crosses Win32 in an
+// LPARAM, so a counter wraps at uintptr width and must skip a still-active
+// session instead of silently colliding with it.
+type nativeRunTokenRegistry struct {
+	mu     sync.Mutex
+	next   uintptr
+	active map[uintptr]struct{}
+}
 
-func nextNativeRunToken() uintptr {
+func newNativeRunTokenRegistry() *nativeRunTokenRegistry {
+	return &nativeRunTokenRegistry{active: make(map[uintptr]struct{})}
+}
+
+func (registry *nativeRunTokenRegistry) reserve() uintptr {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
 	for {
-		if token := uintptr(nativeRunTokens.Add(1)); token != 0 {
-			return token
+		registry.next++
+		if registry.next == 0 {
+			continue
 		}
+		if _, live := registry.active[registry.next]; live {
+			continue
+		}
+		registry.active[registry.next] = struct{}{}
+		return registry.next
 	}
 }
+
+func (registry *nativeRunTokenRegistry) release(token uintptr) {
+	if token == 0 {
+		return
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	delete(registry.active, token)
+}
+
+var sharedNativeRunTokens = newNativeRunTokenRegistry()
 
 // Native setup and the startup build value are routed through these seams so
 // headless tests can stop Run before COM/HWND work while still exercising its
@@ -279,7 +310,7 @@ func (host *Host) beginRun() error {
 	}
 	host.running = true
 	host.mu.Lock()
-	host.activeRunToken = nextNativeRunToken()
+	host.activeRunToken = sharedNativeRunTokens.reserve()
 	host.mu.Unlock()
 
 	host.webViewEmbedding = false
@@ -348,8 +379,13 @@ func (host *Host) endRun() {
 	}
 	host.running = false
 	host.mu.Lock()
+	token := host.activeRunToken
 	host.activeRunToken = 0
 	host.mu.Unlock()
+	// withRunGuard reaches endRun only after runAfterRuntimeDiscovery has
+	// destroyed the HWND (or before one existed), so no queued private message
+	// can later be delivered to a recycled handle with this released token.
+	sharedNativeRunTokens.release(token)
 	host.runEnding = false
 	host.runCond.Broadcast()
 	host.runMu.Unlock()

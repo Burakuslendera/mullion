@@ -9,18 +9,18 @@ import (
 )
 
 func (host *Host) recordFrontendDiagnostic(kind string, detail string) {
-	kind = logsafe.Diagnostic(kind)
+	kind = logsafe.Field(kind)
 	switch kind {
 	case "phase":
-		phase := logsafe.Diagnostic(detail)
+		phase := logsafe.Field(detail)
 		host.diagnostics.recordFrontendPhase(phase)
 		host.log.Debug("mullion: frontend diagnostic phase, phase=" + phase)
 	case "dom":
 		host.log.Debug("mullion: frontend dom snapshot, detail=" + logsafe.Diagnostic(detail))
 	case "resize-edge":
-		host.log.Debug("mullion: frontend resize edge, edge=" + logsafe.Diagnostic(detail))
+		host.log.Debug("mullion: frontend resize edge, edge=" + logsafe.Field(detail))
 	case "resize-cursor":
-		host.log.Debug("mullion: frontend resize cursor, state=" + logsafe.Diagnostic(detail))
+		host.log.Debug("mullion: frontend resize cursor, state=" + logsafe.Field(detail))
 	case "error":
 		host.diagnostics.recordFrontendPhase("mullion: frontend window error")
 		host.log.Error("mullion: frontend diagnostic error, message=" + logsafe.Diagnostic(detail))
@@ -39,5 +39,5 @@ func frontendDiagnosticAsset(raw string) string {
 	if index := strings.IndexAny(raw, "?#"); index >= 0 {
 		raw = raw[:index]
 	}
-	return logsafe.DiagnosticFileName(raw)
+	return logsafe.FieldFileName(raw)
 }

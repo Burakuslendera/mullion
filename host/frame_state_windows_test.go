@@ -19,6 +19,7 @@ func TestWindowProcPublishesAuthoritativeMoveSizeState(t *testing.T) {
 		}
 		return maximised
 	}
+	host.defaultWindowProc = func(windowHandle, uint32, uintptr, uintptr) uintptr { return 0 }
 	var posted []string
 	host.postFrameState = func(payload string) error {
 		posted = append(posted, payload)

@@ -69,12 +69,12 @@ func TestRuntimeArchitectureGatePrecedesNativeStartupAndReleasesRunGuard(t *test
 // high-frequency resize/move messages) is load-bearing: adding or dropping a
 // member silently changes hot-path behaviour.
 func TestIsHotBoundsSyncSource(t *testing.T) {
-	for _, source := range []string{"wm_size", "wm_move", "wm_moving", "wm_windowpos_changing", "wm_windowpos_changed"} {
+	for _, source := range []string{"wm_size", "wm_move"} {
 		if !isHotBoundsSyncSource(source) {
 			t.Errorf("isHotBoundsSyncSource(%q) = false, want true", source)
 		}
 	}
-	for _, source := range []string{"wm_dpi_changed", "show", "restore", "maximize", "deferred_restore", "frontend_ready", ""} {
+	for _, source := range []string{"wm_moving", "wm_dpi_changed", "wm_windowpos_changing", "wm_windowpos_changed", "show", "restore", "maximize", "deferred_restore", "frontend_ready", ""} {
 		if isHotBoundsSyncSource(source) {
 			t.Errorf("isHotBoundsSyncSource(%q) = true, want false", source)
 		}

@@ -12,7 +12,7 @@
 - [8. Restore flicker (`WM_ERASEBKGND`)](#8-restore-flicker-wm_erasebkgnd)
 - [9. Bounds sync](#9-bounds-sync)
 - [10. Measuring client coverage (a tooling trap)](#10-measuring-client-coverage-a-tooling-trap)
-- [11. Chromium zoom must be off](#11-chromium-zoom-must-be-off)
+- [11. Chromium zoom must be off](./webview2-zoom-and-native-hit-testing.md)
 - [Debugging checklist](#debugging-checklist)
 
 How mullion builds a frameless window out of a perfectly ordinary Win32 window,
@@ -52,14 +52,16 @@ window whose client area has been extended over the caption.
 
 This is the message that makes the frame disappear. Windows sends the proposed
 **client** rect for a given **window** rect and asks you to shrink it by the
-frame. Return the rect unshrunk and the client area covers the whole window,
-caption included. Two rules:
+frame. Claim that proposal as the client baseline so it covers the caption; on a
+restored window mullion also adds its deliberate one-pixel bottom compensation.
+Two rules:
 
-**Handle every `wParam`.** Windows sends `WM_NCCALCSIZE` with `wParam == TRUE`
-(rects valid, full negotiation) and with `wParam == FALSE` (single rect). Extend
-the client area only in the `TRUE` case and the `FALSE` case silently hands the
-frame back, so a thin strip of native caption flickers into existence during some
-transitions. Preserve the client extension in both.
+**Handle both pointer forms.** Windows sends `WM_NCCALCSIZE` with `wParam ==
+FALSE` and `lParam` pointing directly to one `RECT`, or with `wParam == TRUE`
+and `lParam` pointing to `NCCALCSIZE_PARAMS`, whose `rgrc[0]` is the proposed
+client rect. Modify exactly that rect in either form. Handling only `TRUE`
+silently hands the frame back during some transitions, so a thin native caption
+can flicker into existence.
 
 **Clamp to the work area when — and only when — maximized.**
 
@@ -69,10 +71,16 @@ transitions. Preserve the client extension in both.
   HWND so the invisible resize frame hangs *outside* the monitor work area — a
   standard-frame window hides that overhang under its own border. A frameless
   window has no border to hide it with, so the overhang eats your title bar.
-- **Fix:** if `IsZoomed()` is true, intersect the first proposed rect with the
-  nearest monitor's **work area** before writing it back. Do not do this when
-  restored — the restored rect is already correct, and clamping there just moves
-  the window.
+- **Fix:** if `IsZoomed()` is true, intersect the proposed rect with the nearest
+  monitor's **work area** before writing it back. Do not do this when restored:
+  restored geometry needs only the bottom compensation above, and clamping it
+  moves the window.
+
+**Degrade without handing back the frame.** A null `lParam` delegates because
+Windows supplied no client rect that the host may safely claim.
+If a maximized monitor lookup or work-area intersection fails, claim the
+unchanged proposed rect and log the reason: the geometry may be imperfect until
+the next calculation, but delegating would restore a native caption.
 
 ## 3. `SetWindowPos` and the `SWP_FRAMECHANGED` trap
 
@@ -332,14 +340,26 @@ rect -> `controller.PutBounds`) on **all** of:
 | show | the window may have been resized while hidden |
 | navigation completed | content exists; size must be right before the first paint |
 | frontend ready | last chance to catch a mismatch — warn if the surface is tiny |
-| `WM_SIZE` | the obvious one |
-| `WM_MOVE`, `WM_MOVING` | monitor change mid-drag; also notify position changed |
+| `WM_SIZE` | post-apply size geometry |
+| `WM_MOVE` | post-apply position geometry; also notify position changed |
 | `WM_DPICHANGED` | the client rect changes with the frame |
+| deferred `WM_EXITSIZEMOVE` | resync after the shell has settled the final resize |
 
 Miss one and you get the classic failure: correct window, content offset or
-clipped. `WM_MOVING` in particular is what keeps the surface aligned while the
-user drags a restored window across a monitor boundary. Move/size sync is hot —
+clipped. `WM_WINDOWPOSCHANGING` and `WM_MOVING` expose proposed geometry and must
+not sync: a `WM_MOVING` notification would tell WebView2 the parent is still at
+its previous location. `DefWindowProc` turns the applied
+`WM_WINDOWPOSCHANGED` into `WM_SIZE` and `WM_MOVE`, so claiming
+`WM_WINDOWPOSCHANGED` would repeat controller round trips. Move/size sync is hot —
 coalesce the *logging*, not the sync.
+
+**Test boundary.** Headless tests pin the two pointer selections, restored
+compensation, maximized clamp/degradation policy, and the routing rule that only
+post-apply `WM_SIZE`/`WM_MOVE` synchronise bounds. They use synthetic pointers
+and controller seams, so they cannot prove Win32's real message order, a
+WebView child covering the visible client area, or a monitor crossing. Exercise
+restored/maximized transitions and a mixed-DPI move live on Windows; those are
+desktop observations, not headless guarantees.
 
 ## 10. Measuring client coverage (a tooling trap)
 
@@ -358,28 +378,7 @@ the right child HWND.
   not in the window; the "largest child" pattern is latently broken and must not
   be reintroduced.
 
-## 11. Chromium zoom must be off
-
-On the WebView2 settings object — note that the two live on *different* interfaces
-in the settings chain, so pinch zoom is reached through a `QueryInterface` for
-`ICoreWebView2Settings5` and is a no-op on a runtime that does not offer it:
-
-```go
-settings.PutIsZoomControlEnabled(false)   // ICoreWebView2Settings
-settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
-```
-
-- **Symptom:** after an accidental `Ctrl+scroll`, the title bar no longer lines up
-  with the drag region, the caption buttons are near but not under the cursor, and
-  the resize band is off by a few pixels.
-- **Root cause:** user zoom rescales the CSS layer only. The native hit-test
-  regions (`TitlebarHeight`, `CaptionControlsWidth`, `ResizeBorder`) are computed
-  from logical px and DPI and know nothing about it. The two coordinate systems
-  drift apart, and no event lets the native side follow along reliably.
-- **Fix:** disable zoom control and pinch zoom at controller setup. If you need a
-  zoom feature, scale the UI with your own CSS variables — a scale factor you own
-  can be mirrored into `HitTestTitlebarHeight` / `HitTestCaptionControlsWidth`;
-  Chromium's cannot.
+For Chromium zoom and native hit-testing alignment, see [WebView2 zoom and native hit testing](./webview2-zoom-and-native-hit-testing.md).
 
 ## Debugging checklist
 
@@ -394,7 +393,7 @@ settings5.PutIsPinchZoomEnabled(false)    // ICoreWebView2Settings5
 | Content too big/overflows (scrollbar) after moving to another monitor | rasterization scale not updated on the DPI change (§7) |
 | Blank flash on restore | `WM_ERASEBKGND` not handled (§8) |
 | Content offset after a drag or DPI change | a missing bounds-sync trigger (§9) |
-| Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled (§11) |
+| Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled ([WebView2 zoom and native hit testing](./webview2-zoom-and-native-hit-testing.md)) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: record that the frontend resize overlay shares issue #112's bounded geometry and must carve its zones out of the titlebar drag region.
+> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: make the two WM_NCCALCSIZE pointer forms, restored compensation, degradation policy, and headless-versus-live frame/bounds boundary explicit.

@@ -173,6 +173,60 @@ func TestRunTokensAreProcessGlobalAcrossHosts(t *testing.T) {
 	}
 }
 
+// Private-command identities travel through LPARAM as uintptr values. At counter
+// wrap, a live first-session value must stay reserved; after its owner ends, the
+// same value may be issued again without weakening the collision guard.
+func TestNativeRunTokenRegistrySkipsLiveTokenAtUintptrWrap(t *testing.T) {
+	registry := newNativeRunTokenRegistry()
+	live := registry.reserve()
+	if live != 1 {
+		t.Fatalf("first native Run token = %#x, want 1", live)
+	}
+
+	registry.next = ^uintptr(0)
+	next := registry.reserve()
+	if next == 0 || next == live {
+		t.Fatalf("wrapped native Run token = %#x, want a non-zero value distinct from live %#x", next, live)
+	}
+
+	registry.release(live)
+	registry.next = ^uintptr(0)
+	if reused := registry.reserve(); reused != live {
+		t.Fatalf("released native Run token = %#x after wrap, want %#x", reused, live)
+	}
+}
+
+func TestEndRunReleasesActiveNativeRunToken(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	run := beginHeadlessLifecycleRun(t, host, windowHandle(0x4a4b))
+
+	sharedNativeRunTokens.mu.Lock()
+	_, liveBeforeEnd := sharedNativeRunTokens.active[run.token]
+	sharedNativeRunTokens.mu.Unlock()
+	if !liveBeforeEnd {
+		t.Fatal("beginRun did not reserve its active native Run token")
+	}
+
+	host.mu.Lock()
+	host.hwnd = 0
+	host.mu.Unlock()
+	host.endRun()
+
+	sharedNativeRunTokens.mu.Lock()
+	_, liveAfterEnd := sharedNativeRunTokens.active[run.token]
+	sharedNativeRunTokens.mu.Unlock()
+	if liveAfterEnd {
+		t.Fatal("endRun retained a native Run token after its session ended")
+	}
+}
+
+func privateCommandPayload(message uint32) uintptr {
+	if message == wmNativeStartResize {
+		return htLeft
+	}
+	return 7
+}
+
 func TestPrivateCommandsRejectOldRunTokenAfterIdenticalHWNDReuse(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 	const hwnd = windowHandle(0x5a5a)
@@ -204,7 +258,7 @@ func TestPrivateCommandsRejectOldRunTokenAfterIdenticalHWNDReuse(t *testing.T) {
 
 	before := logger.String()
 	for _, message := range commands {
-		host.windowProc(hwnd, message, 7, oldRun.token)
+		host.windowProc(hwnd, message, privateCommandPayload(message), oldRun.token)
 	}
 	if len(applied) != 0 {
 		t.Fatalf("old Run commands mutated recycled HWND: %#v", applied)
@@ -213,12 +267,50 @@ func TestPrivateCommandsRejectOldRunTokenAfterIdenticalHWNDReuse(t *testing.T) {
 		t.Fatalf("old Run commands logged against recycled HWND:\n%s", after)
 	}
 	for _, message := range commands {
-		host.windowProc(hwnd, message, 7, newRun.token)
+		host.windowProc(hwnd, message, privateCommandPayload(message), newRun.token)
 	}
 	for _, message := range commands {
 		if applied[message] != 1 {
 			t.Errorf("active command %#x applied %d times, want 1", message, applied[message])
 		}
+	}
+}
+
+// The active-Run token/HWND gate runs first, then resize payload validation
+// rejects every non-edge value before the operation seam. A malformed private
+// message therefore cannot release capture or reach DefWindowProc's non-client
+// click path.
+func TestResizeCommandRejectsInvalidPayloadBeforeOperationSeam(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	const hwnd = windowHandle(0x5a5b)
+	run := beginHeadlessLifecycleRun(t, host, hwnd)
+	var applied []uintptr
+	host.applyNativeCommand = func(_ windowHandle, message uint32, wParam uintptr) uintptr {
+		if message != wmNativeStartResize {
+			t.Fatalf("operation seam received message %#x, want resize", message)
+		}
+		applied = append(applied, wParam)
+		return 0
+	}
+
+	invalid := []uintptr{0, htClient, htClose, ^uintptr(0)}
+	if uint64(^uintptr(0)) > uint64(0xffffffff) {
+		high := uint64(htLeft) | uint64(1)<<32
+		invalid = append(invalid, uintptr(high))
+	}
+	for _, payload := range invalid {
+		host.windowProc(hwnd, wmNativeStartResize, payload, run.token)
+	}
+	if len(applied) != 0 {
+		t.Fatalf("invalid resize payloads reached operation seam: %#v", applied)
+	}
+	if count := strings.Count(logger.String(), "mullion: resize rejected, reason=invalid hit"); count != len(invalid) {
+		t.Fatalf("invalid resize rejection logs = %d, want %d:\n%s", count, len(invalid), logger.String())
+	}
+
+	host.windowProc(hwnd, wmNativeStartResize, htLeft, run.token)
+	if len(applied) != 1 || applied[0] != htLeft {
+		t.Fatalf("valid resize payload did not reach operation seam unchanged: %#v", applied)
 	}
 }
 

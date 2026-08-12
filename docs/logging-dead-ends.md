@@ -118,6 +118,18 @@ the field separator it exists to defend against. A host of
 `evil.example,<C1>user_initiated=false` becomes a second, forged field. Refusing
 the host outright was the only version that held.
 
+**Reducing a value is not encoding a field.** `Message`, `Diagnostic`, and
+`DiagnosticFileName` deliberately preserve ordinary punctuation, including `,`
+and `=`, because free text must remain readable and URLs must remain URLs. That
+made a frontend diagnostic, asset path, or bridge method such as
+`ready, forged=1` produce two apparent fields in the comma-separated
+`key=value` grammar. The correction is not to make every message unreadable:
+`Field` and `FieldFileName` compose the existing bounded/privacy reducers and
+fold those two delimiters only for structured values. Free-text `message=`,
+`reason=`, and `detail=` values retain their existing reducers and are rendered
+after authoritative fields. A structured producer must select the field reducer;
+its caller's input origin does not make the grammar safe.
+
 **The first of those came back, twice.** Issue #80 taught `Message` to keep the
 URLs inside a sentence (decisions/0028), and "never cut a host at all" had to be
 re-derived in two shapes nobody was watching for. A value bounded *before* it was
@@ -160,5 +172,8 @@ The decisions are [0025](decisions/0025-urls-are-logged-as-urls.md) and
 2. **An ambiguous status code is not a diagnosis.** The same failure status meant two different things; the state that told them apart was already recorded at the navigation's start. (§1)
 3. **A sanitiser can remove the wrong half.** Reducing more than intended is not automatically safe: the URL reducer deleted the host and kept the query, which is the identifying half gone and the disclosing half kept. (§2)
 4. **Never use a blind input prefix.** Bound the parsed output, or select bounded input only after proving a URL authority stays whole; a well-formed lie beats visible garbage past every reader. (§2)
+5. **A reducer is not a field encoder.** Free text may retain punctuation, but a
+   value in a comma-separated `key=value` record must fold the delimiters before
+   it is logged. (§2)
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: corrected the issue #88 selector contract to reject decoys and continue, strip valid userinfo credentials, validate the entire path, and stream complete escape/rune units with input-size-independent allocation bytes.
+> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: record the structured-field delimiter-injection dead end and the Field/FieldFileName boundary that preserves the existing free-text and URL reducers.

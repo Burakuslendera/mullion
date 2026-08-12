@@ -150,11 +150,11 @@ func runtimeSummary(mullionVersion, webViewVersion, goVersion, arch string) stri
 	// is defence in depth for any other origin before the line reaches a Logger
 	// that may render it in a terminal.
 	return "mullion: version=" + printableVersion(mullionVersion) +
-		", go=" + goVersion +
-		", arch=" + arch +
-		", webview2=" + logsafe.Message(webViewVersion)
+		", go=" + logsafe.Field(goVersion) +
+		", arch=" + logsafe.Field(arch) +
+		", webview2=" + logsafe.Field(webViewVersion)
 }
 
 func printableVersion(version string) string {
-	return logsafe.Message(version)
+	return logsafe.Field(version)
 }

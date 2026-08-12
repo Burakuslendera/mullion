@@ -29,6 +29,26 @@ func TestColourLinePlainWhenDisabled(t *testing.T) {
 	}
 }
 
+// TestColourLoggerMapsEachSeverityToItsDocumentedSGRCode locks the level
+// routing, rather than only colourLine's wrapping mechanics (issue #20).
+func TestColourLoggerMapsEachSeverityToItsDocumentedSGRCode(t *testing.T) {
+	var output bytes.Buffer
+	logger := &colourLogger{w: &output, colour: true}
+
+	logger.Debug("debug")
+	logger.Info("info")
+	logger.Warn("warn")
+	logger.Error("error")
+
+	want := ansiDim + "debug" + ansiReset + "\n" +
+		"info\n" +
+		ansiYellow + "warn" + ansiReset + "\n" +
+		ansiBoldRed + "error" + ansiReset + "\n"
+	if got := output.String(); got != want {
+		t.Fatalf("colour level output = %q, want %q", got, want)
+	}
+}
+
 // TestColourLoggerToNonTerminalIsPlain locks the invariant that a redirected
 // sink (a file or a pipe - here a bytes.Buffer, which is not a terminal) never
 // receives escape sequences, so a captured log stays clean.

@@ -526,6 +526,15 @@ func TestLeakScanWorkflowKeepsFullHistoryGate(t *testing.T) {
 	}
 }
 
+// TestCIWorkflowRestrictsTokenToContentsRead keeps the workflow token from
+// silently regaining GitHub's default write grants (issue #13).
+func TestCIWorkflowRestrictsTokenToContentsRead(t *testing.T) {
+	workflow := currentLeakScanWorkflow(t)
+	if !strings.Contains(workflow, "permissions:\n  contents: read\n\njobs:") {
+		t.Fatal("CI workflow must declare top-level permissions: contents: read before jobs")
+	}
+}
+
 // The two existing Go-version matrices expand to four jobs. This unconditional
 // singleton is the fifth and names the only supported process ABI directly.
 func TestCIWorkflowKeepsExplicitWindowsX64Lane(t *testing.T) {

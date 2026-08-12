@@ -8,7 +8,7 @@
 - [Message routing](#message-routing)
 - [Talking to WebView2, and serving assets](#talking-to-webview2-and-serving-assets)
 - [Bridge protocol](#bridge-protocol)
-- [Startup gates and watchdog](#startup-gates-and-watchdog)
+- [Native-routing test boundary](#native-routing-test-boundary)
 - [Known limitations](#known-limitations)
 
 ## Overview
@@ -73,13 +73,21 @@ first result even when the source is also invalid.
    is unregistered when `Run` returns; every post-create exit destroys first and
    drains any quit posted by teardown, so a later session can register it again.
 
-5. **`HWND` creation.** The window procedure is bound at class registration, so the
-   first messages the window ever receives — `WM_NCCALCSIZE` among them — already
-   reach the library's routing. The frameless geometry is therefore correct on the
-   first frame instead of being corrected afterwards. The creation rect is computed
-   first: `Config.Width`/`Height` are scaled by the primary monitor's effective DPI
-   and centered in its work area, falling back to the shell's default position only
-   when the monitor cannot be resolved
+5. **`HWND` creation.** A single, capture-free window-procedure trampoline is
+   allocated lazily only after the architecture gate and UTF-16 preflight pass.
+   `CreateWindowEx` receives a unique pending scalar token; a failed create rolls
+   that pending entry back, while `WM_NCCREATE` promotes it to the new `HWND` and
+   stores it in `GWLP_USERDATA`. Every later dispatch validates both.
+   `WM_NCDESTROY` clears the userdata and removes every association for that
+   handle, preventing callback-table growth, retained `Host` graphs and
+   recycled-handle misdispatch.
+   The window procedure is bound at class registration, so the first
+   messages the window ever receives — `WM_NCCALCSIZE` among them — already reach
+   the library's routing. The frameless geometry is therefore correct on the first
+   frame instead of being corrected afterwards. The creation rect is computed first:
+   `Config.Width`/`Height` are scaled by the primary monitor's effective DPI and
+   centered in its work area, falling back to the shell's default position only when
+   the monitor cannot be resolved
    ([decisions/0018](./decisions/0018-initial-placement-centered-on-primary.md)).
 
 6. **WebView2 embed.** The controller is created as a child of an `HWND` that already
@@ -138,14 +146,15 @@ where the window procedure applies it:
 | `Minimise()` | `WM_APP+24` | post |
 | `ToggleMaximise()` | `WM_APP+25` | post |
 | `StartDrag()` | `WM_APP+26` | post |
-| `StartResize(edge)` | `WM_APP+27` | post; edge travels in `wParam` as a hit-test code |
+| `StartResize(edge)` | `WM_APP+27` | post; `wParam` is one of the eight resize hit-test codes, validated again by the receiver |
 | deferred bounds resync; `MarkFrontendReady()` / `MarkFrontendShellReady()` bounds sync | `WM_APP+28` | post; the source label travels in `wParam` |
 | `SetTitle(title)` | `WM_APP+29` | send; a call-lifetime UTF-16 pointer travels in `wParam` |
 
 Every private message in this table carries the originating active-Run token in
 `lParam`; existing `wParam` payloads remain unchanged. The window procedure
 compares token and HWND before the first command-specific log, browser call or
-Win32 mutation. An API call belongs to the Run active when the method enters.
+Win32 mutation, then validates command-specific payloads before their operation
+seam. An API call belongs to the Run active when the method enters.
 Entry increments a short locked admission count, then releases the mutex before
 native, WebView, caller or Logger code: re-entrant Logger/bridge calls therefore
 cannot self-deadlock. Teardown closes library-callback admission and waits for
@@ -180,9 +189,10 @@ holds a buffer, a file handle or a counter of its own needs its own lock.
 
 Drag and resize are handed back to the window manager rather than emulated:
 `StartDrag` releases capture and sends `WM_NCLBUTTONDOWN` with `HTCAPTION`;
-`StartResize` sends the same message with the edge's hit-test code. Snap, aero shake
-and edge magnetism then work because Windows, not the library, runs the modal
-move-size loop.
+`StartResize` accepts only the eight edge hit-test codes before it can release
+capture and send that message. The receiver repeats that validation *after*
+validating its active Run token and `HWND`; a malformed private resize message is
+logged and dropped before it can release capture or reach `DefWindowProc`.
 
 ## Message routing
 
@@ -202,9 +212,9 @@ One window procedure switch routes everything.
 - **`WM_DPICHANGED`** — applies the rect Windows suggests, pushes the new scale into
   the WebView's rasterization scale, and resyncs the WebView bounds. Fires when the
   window crosses monitors with different scale factors.
-- **`WM_SIZE`, `WM_MOVE`, `WM_MOVING`, `WM_WINDOWPOSCHANGING`, `WM_WINDOWPOSCHANGED`**
-  — resync the controller's bounds to the parent client rect; the WebView2 controller
-  does not follow its parent automatically.
+- **`WM_SIZE`, `WM_MOVE`** — own the post-apply controller-bounds resync. The
+  controller does not follow its parent automatically; `WM_MOVING` and
+  `WM_WINDOWPOSCHANGING` expose only proposed geometry and must not notify it.
 - **`WM_ENTERSIZEMOVE`, `WM_EXITSIZEMOVE`** — bracket the authoritative native
   move/size state as well as resyncing bounds. The host publishes a monotonic
   `{ maximised, moveSizeActive, generation }` snapshot to the injected pointer
@@ -229,6 +239,18 @@ pre-loop maximised placement. Stock Notepad reproduces the same rollback. Mullio
 sends no second maximise command on that path: the shell messages retain
 `DefWindowProc` cancellation semantics, and compensating for the rollback would
 make a mullion window behave differently from a stock window.
+
+## Native-routing test boundary
+
+Windows-tagged headless tests exercise the scalar callback registry and private
+command seam without allocating an `HWND`: pending-token rollback, `WM_NCCREATE`
+promotion, `WM_NCDESTROY` eviction, recycled-handle rejection, and the
+token/`HWND`-then-resize-payload validation order are deterministic contracts.
+They do **not** prove that Windows delivers the creation/destruction messages or
+that a real non-client gesture enters the shell move-size loop. Verify those
+native routing effects, together with frame, Snap, and mixed-DPI appearance, in
+a live Windows session; do not treat a passing headless seam test as evidence of
+desktop behaviour.
 
 ## Talking to WebView2, and serving assets
 
@@ -305,67 +327,8 @@ passed to `Config.Bridge`
 
 ## Startup gates and watchdog
 
-A WebView2 control can embed successfully, navigate successfully, report
-navigation-completed successfully — and still paint nothing. That white window is the
-single most common field failure of this architecture, and neither the OS nor the
-runtime reports it. Two independent timers exist because of it.
-
-**Show gate.** After the embed the window is not shown immediately: the host waits for
-the frontend to call `shellReady()`, which maps to `Host.MarkFrontendShellReady()` and
-posts the tagged show message, keeping the user from seeing an empty window while the
-first document is still parsing. The wait is bounded by `Config.ShowTimeout`; when it
-expires the host shows the window anyway and logs the reason. Shell readiness may
-arrive while the embed pump is still running, before `Run` reaches the gate start.
-That readiness is latched without attempting a pre-window show post; gate start then
-arms the fallback and performs exactly one release attempt. Queue failure leaves the
-fallback armed, and a queued show whose embed/visibility application fails reopens
-and re-arms the gate. Fired and stopped timers detach immediately and retain their
-originating Run token, including across sequential runs.
-
-**Render watchdog.** Armed before `Navigate`, cancelled by `Host.MarkFrontendReady()` —
-the frontend's `ready()` call, made only after it has actually rendered. Timer
-identity is a lock-protected generation chosen before `time.AfterFunc`; even a
-zero-duration callback cannot race its own identity assignment or impersonate a
-later session. If `Config.RenderTimeout` elapses first, the host logs an error
-carrying everything it knows:
-
-```
-phase=<last frontend phase>   asset=<last asset served>
-asset_category=…   asset_status=…
-document=<n>  stylesheet=<n>  script=<n>
-last_bridge=<method:status>
-```
-
-The counts are what make the payload diagnostic rather than decorative.
-`document=1, stylesheet=0, script=0` is an asset-serving failure — the stream lifetime
-bug in [assets.md](./assets.md) produces exactly this shape. `document=0` is a navigation or filter failure.
-Healthy counts with `phase` stuck early is a frontend fault. `last_bridge=unknown` means
-no bridge call ever arrived — the injected shim never ran. One line separates four root
-causes that all present as the same white rectangle. Both timeouts are configurable; a negative value disables the mechanism.
-
-**Read the counts knowing what they count.** They are bucketed from the
-`Content-Type` mullion answered with, not from the file name and not from
-WebView2's resource context: `text/html` increments `document`, `text/css`
-`stylesheet`, anything containing `javascript` `script`, and **everything else is
-counted nowhere**. The content type in turn comes from the name (decisions/0031),
-so the chain is name → type → bucket, and a name mullion cannot classify breaks
-it at the first link.
-
-Two consequences a reader chasing a blank window needs, and neither is obvious
-from the line itself:
-
-- **Healthy counts do not mean the assets arrived.** Images, fonts, `.json`,
-  `.wasm` and anything served `application/octet-stream` fall in the unbucketed
-  class. A frontend whose real payload is a WebAssembly module reports
-  `script=0` while working perfectly, and reports `script=0` when the module
-  404s too.
-- **A successfully served asset in that class produces no log line at all.**
-  `logAssetResponseDebug` skips it deliberately — one page load can pull dozens
-  of images and fonts, and logging each buries the three lines that say whether
-  the document, its stylesheets and its scripts arrived. The suppression applies
-  only to responses under `400`. A *failed* request is always logged, at `WARN`
-  for `4xx` and `ERROR` for `5xx`, whatever its type, so a missing font is
-  visible even though a present one is not.
+The show gate, render watchdog, and diagnostic counter interpretation moved verbatim
+to [startup-gates-and-watchdog.md](./startup-gates-and-watchdog.md).
 
 ## Known limitations
 
@@ -385,4 +348,4 @@ the rejection gates under Windows/386 WOW64, and keeps ARM64 compile-only.
 Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: record the dedicated Windows/x64 CI lane beside the executable WOW64 rejection and ARM64 compile-only boundaries.
+> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: correct post-apply bounds ownership; document the callback/private-resize failure boundary and its headless-versus-live verification limit.

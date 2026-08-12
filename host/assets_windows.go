@@ -100,9 +100,9 @@ func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebVi
 }
 
 func (provider *assetProvider) logAssetResponseError(response assetResponse) {
-	message := "mullion: asset response error, status=" + logsafe.Diagnostic(response.reason) +
-		", category=" + logsafe.Diagnostic(response.request.category) +
-		", asset=" + logsafe.DiagnosticFileName(response.request.path)
+	message := "mullion: asset response error, status=" + logsafe.Field(response.reason) +
+		", category=" + logsafe.Field(response.request.category) +
+		", asset=" + logsafe.FieldFileName(response.request.path)
 	if response.status >= http.StatusInternalServerError {
 		provider.log.Error(message)
 		return

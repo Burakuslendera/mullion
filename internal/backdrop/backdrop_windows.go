@@ -3,6 +3,7 @@
 package backdrop
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -121,11 +122,13 @@ func CallbackAllocated() bool {
 	return wndProcCallback.Load() != 0
 }
 
+// showMu serializes Show invocations. The window procedure runs on the locked
+// Show thread, so only that session may mutate its process-global state.
+//
 // watchedTarget is the window the backdrop lifted at startup, or 0.
-// activeBackdrop is its owned HWND until WM_DESTROY. The command runs exactly
-// one backdrop at a time, so package variables are the whole state the window
-// procedure and Show's loop-exit cleanup share.
+// activeBackdrop is its owned HWND until WM_DESTROY.
 var (
+	showMu         sync.Mutex
 	watchedTarget  uintptr
 	activeBackdrop uintptr
 )
@@ -152,10 +155,7 @@ func backdropWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		_, _, _ = procDestroyWindow.Call(hwnd)
 		return 0
 	case wmDestroy:
-		if activeBackdrop == hwnd {
-			activeBackdrop = 0
-		}
-		watchedTarget = 0
+		clearBackdropWatchState(hwnd, &activeBackdrop, &watchedTarget)
 		_, _, _ = procKillTimer.Call(hwnd, watchTimerID)
 		_, _, _ = procPostQuitMessage.Call(0)
 		return 0
@@ -186,6 +186,32 @@ func drainBackdropQuitMessage() {
 			return
 		}
 	}
+}
+
+// clearBackdropWatchState removes the process-global association as destruction
+// starts. Only the current owner may clear it: an obsolete callback must not
+// erase a later session's target after HWND values have been recycled.
+func clearBackdropWatchState(hwnd uintptr, active, watched *uintptr) {
+	if *active != hwnd {
+		return
+	}
+	*active = 0
+	*watched = 0
+}
+
+// armBackdropWatch starts a fresh watch transaction. Target identity becomes
+// observable to WM_TIMER only after SetTimer succeeds; failure leaves no stale
+// target for a later Show to observe.
+func armBackdropWatch(target uintptr, watched *uintptr, arm func() error) error {
+	*watched = 0
+	if target == 0 {
+		return nil
+	}
+	if err := arm(); err != nil {
+		return err
+	}
+	*watched = target
+	return nil
 }
 
 // targetStillUp reports whether the lifted window still exists on screen,
@@ -219,9 +245,20 @@ func targetStillUp(target uintptr) bool {
 // and the backdrop closes itself within a timer tick. An empty targetClass,
 // or no such window, just covers the desktop until dismissed by hand.
 func Show(colour Colour, targetClass string) error {
+	showMu.Lock()
+	defer showMu.Unlock()
+
 	// A Win32 window and its message loop are thread-affine.
 	runtime.LockOSThread()
+	// The message loop is thread-affine only while this invocation owns it.
+	// Releasing after every return avoids pinning a caller's goroutine forever
+	// once WM_DESTROY and the class/brush defers have completed.
 	defer runtime.UnlockOSThread()
+
+	// Show may be invoked again after an earlier backdrop closed. Clear before
+	// any fallible native step so every return path begins without a retained
+	// target association.
+	watchedTarget = 0
 
 	// Per-monitor-v2 before the HWND exists (the rule every window in this
 	// repository follows), so the virtual-screen metrics and the window
@@ -291,9 +328,17 @@ func Show(colour Colour, targetClass string) error {
 		_, _, _ = procDestroyWindow.Call(hwnd)
 	}, drainBackdropQuitMessage)
 
-	if target := raiseTargetAbove(hwnd, targetClass); target != 0 {
-		watchedTarget = target
-		_, _, _ = procSetTimer.Call(hwnd, watchTimerID, watchTimerMillis, 0)
+	if err := armBackdropWatch(raiseTargetAbove(hwnd, targetClass), &watchedTarget, func() error {
+		timer, _, err := procSetTimer.Call(hwnd, watchTimerID, watchTimerMillis, 0)
+		if timer != 0 {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("SetTimer: %w", err)
+		}
+		return errors.New("SetTimer returned zero")
+	}); err != nil {
+		return err
 	}
 
 	var msg message

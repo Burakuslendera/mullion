@@ -24,16 +24,21 @@ func (host *Host) createWindow() error {
 	if err != nil {
 		return err
 	}
-	// Validate caller-controlled strings before allocating the process-lifetime
-	// callback slot. createWin32Window repeats this at its ownership boundary so
-	// direct changes there cannot move a fallible conversion after registration.
+	// Validate caller-controlled strings before reserving a pending Host identity.
+	// createWin32Window repeats this at its ownership boundary so a direct change
+	// cannot leave a pending registry entry after a fallible conversion.
 	if _, _, err := prepareWindowStrings(host.config.ClassName, host.config.Title); err != nil {
 		return err
 	}
 	host.instance = instance
-	if host.wndProc == 0 {
-		host.wndProc = newWindowCallback(host.windowProc, host.reportWindowProcPanic)
-	}
+	host.wndProc = sharedWindowProcCallback()
+	token := sharedWindowProcHosts.reserve(host)
+	created := false
+	defer func() {
+		if !created {
+			sharedWindowProcHosts.rollback(token, host)
+		}
+	}()
 
 	// Centered on the primary work area, DPI-scaled (issue #59, decision 0018).
 	// A failed resolution falls back to the shell's default position with the
@@ -51,10 +56,11 @@ func (host *Host) createWindow() error {
 	}
 
 	host.log.Debug("mullion: win32 class/window create requested")
-	hwnd, err := host.createWin32Window(host.config.ClassName, host.config.Title, instance, host.wndProc, x, y, width, height)
+	hwnd, err := host.createWin32Window(host.config.ClassName, host.config.Title, instance, host.wndProc, token, x, y, width, height)
 	if err != nil {
 		return err
 	}
+	created = true
 	host.mu.Lock()
 	host.hwnd = hwnd
 	host.mu.Unlock()

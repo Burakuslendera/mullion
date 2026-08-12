@@ -110,6 +110,27 @@ func DiagnosticFileName(path string) string {
 	return strings.Clone(name)
 }
 
+// Field reduces an untrusted value that will occupy one value in Mullion's
+// comma-separated key=value diagnostic grammar. It keeps Diagnostic's bound,
+// path, URL, and control-byte guarantees, then folds the two grammar delimiters
+// so one value cannot mint another field.
+func Field(value string) string {
+	return foldStructuredField(Diagnostic(value))
+}
+
+// FieldFileName is Field for a path-valued structured field. It preserves
+// DiagnosticFileName's tail-first privacy and byte-bound behaviour before
+// folding the diagnostic grammar delimiters.
+func FieldFileName(path string) string {
+	return foldStructuredField(DiagnosticFileName(path))
+}
+
+func foldStructuredField(value string) string {
+	value = strings.ReplaceAll(value, ",", "_")
+	value = strings.ReplaceAll(value, "=", "_")
+	return strings.Clone(value)
+}
+
 // boundDiagnosticInput caps the bytes that reach Message while reserving the
 // first meaningful URL. Screening and full-path validation are linear; the
 // selected production reduction has fixed-size allocation and output.

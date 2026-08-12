@@ -73,8 +73,8 @@ func nativeFrameProfileExtendsClientArea(profile nativeFrameProfile) bool {
 	return profile != nativeFrameProfileCaptionSysMenuNative
 }
 
-func nativeFrameProfileHandlesNCCalcSize(profile nativeFrameProfile, wParam uintptr) bool {
-	return wParam != 0 && nativeFrameProfileExtendsClientArea(profile)
+func nativeFrameProfileHandlesNCCalcSize(profile nativeFrameProfile) bool {
+	return nativeFrameProfileExtendsClientArea(profile)
 }
 
 func nativeFrameProfileUsesCaptionButtonHitTest(profile nativeFrameProfile) bool {

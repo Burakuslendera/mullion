@@ -18,6 +18,17 @@ type boundsSyncLogState struct {
 	controllerHeight int32
 }
 
+// syncBoundsForWindowMessage is the production route from synchronous window
+// messages. Its test seam observes which post-apply message owns a controller
+// sync without creating an HWND or a WebView2 controller.
+func (host *Host) syncBoundsForWindowMessage(source string) {
+	if host.syncWindowBounds != nil {
+		host.syncWindowBounds(source)
+		return
+	}
+	host.syncWebViewBounds(source)
+}
+
 func (host *Host) syncWebViewBounds(source string) {
 	hwnd := host.window()
 	if host.browser == nil {
@@ -25,37 +36,37 @@ func (host *Host) syncWebViewBounds(source string) {
 			return
 		}
 		if host.isWebViewDeferred() {
-			host.log.Debug("mullion: webview bounds sync deferred, source=" + logsafe.Message(source))
+			host.log.Debug("mullion: webview bounds sync deferred, source=" + logsafe.Field(source))
 			return
 		}
-		host.log.Warn("mullion: webview bounds sync skipped, source=" + logsafe.Message(source) + ", reason=webview unavailable")
+		host.log.Warn("mullion: webview bounds sync skipped, source=" + logsafe.Field(source) + ", reason=webview unavailable")
 		return
 	}
 	controller := host.browser.Controller()
 	if controller == nil {
-		host.log.Warn("mullion: webview bounds sync skipped, source=" + logsafe.Message(source) + ", reason=controller unavailable")
+		host.log.Warn("mullion: webview bounds sync skipped, source=" + logsafe.Field(source) + ", reason=controller unavailable")
 		return
 	}
 	client, err := getClientRect(hwnd)
 	if err != nil {
-		host.log.Warn("mullion: webview bounds sync failed, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
+		host.log.Warn("mullion: webview bounds sync failed, source=" + logsafe.Field(source) + ", reason=" + logsafe.Reason(err))
 		return
 	}
 	clientWidth := client.Right - client.Left
 	clientHeight := client.Bottom - client.Top
 	if clientWidth <= 0 || clientHeight <= 0 {
-		host.log.Warn("mullion: webview bounds sync failed, source=" + logsafe.Message(source) + ", reason=invalid client rect, client_width=" + formatInt32(clientWidth) + ", client_height=" + formatInt32(clientHeight))
+		host.log.Warn("mullion: webview bounds sync failed, source=" + logsafe.Field(source) + ", reason=invalid client rect, client_width=" + formatInt32(clientWidth) + ", client_height=" + formatInt32(clientHeight))
 		return
 	}
 
 	target := webViewBoundsTarget(hwnd, clientWidth, clientHeight)
 	if err := controller.PutBounds(target); err != nil {
-		host.log.Warn("mullion: webview bounds apply failed, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
+		host.log.Warn("mullion: webview bounds apply failed, source=" + logsafe.Field(source) + ", reason=" + logsafe.Reason(err))
 		return
 	}
 	if shouldNotifyBoundsSource(source) {
 		if err := host.browser.NotifyParentWindowPositionChanged(); err != nil {
-			host.log.Warn("mullion: webview position notify failed, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
+			host.log.Warn("mullion: webview position notify failed, source=" + logsafe.Field(source) + ", reason=" + logsafe.Reason(err))
 		}
 	}
 
@@ -87,10 +98,10 @@ func (host *Host) syncRasterizationScale(source string, dpi uint32) {
 	}
 	scale := rasterizationScaleForDPI(dpi)
 	if err := host.browser.SetRasterizationScale(scale); err != nil {
-		host.log.Warn("mullion: rasterization scale sync skipped, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
+		host.log.Warn("mullion: rasterization scale sync skipped, source=" + logsafe.Field(source) + ", reason=" + logsafe.Reason(err))
 		return
 	}
-	host.log.Debug("mullion: rasterization scale applied, source=" + logsafe.Message(source) +
+	host.log.Debug("mullion: rasterization scale applied, source=" + logsafe.Field(source) +
 		", dpi=" + strconv.FormatUint(uint64(dpi), 10) +
 		", scale=" + strconv.FormatFloat(scale, 'f', 2, 64))
 }
@@ -136,7 +147,7 @@ func (host *Host) recordBoundsSyncLog(clientWidth, clientHeight, controllerWidth
 
 func isHotBoundsSyncSource(source string) bool {
 	switch source {
-	case "wm_size", "wm_move", "wm_moving", "wm_windowpos_changing", "wm_windowpos_changed":
+	case "wm_size", "wm_move":
 		return true
 	default:
 		return false
@@ -145,11 +156,9 @@ func isHotBoundsSyncSource(source string) bool {
 
 func shouldNotifyBoundsSource(source string) bool {
 	switch source {
-	case "show", "wm_size", "wm_move", "wm_moving", "wm_dpi_changed",
-		"wm_windowpos_changing", "wm_windowpos_changed", "wm_entersizemove",
-		"wm_exitsizemove", "frontend_shell_ready", "frontend_ready",
-		"navigation_completed", "maximize", "restore", "deferred_window_state",
-		"deferred_restore", "deferred_maximize", "deferred_wm_exitsizemove":
+	case "show", "wm_size", "wm_move", "wm_dpi_changed",
+		"maximize", "restore", "deferred_window_state", "deferred_restore",
+		"deferred_maximize", "deferred_wm_exitsizemove":
 		return true
 	default:
 		return false
@@ -238,7 +247,7 @@ func webViewBoundsMismatch(clientWidth, clientHeight, controllerWidth, controlle
 }
 
 func formatWebViewBoundsSyncLog(source string, clientWidth, clientHeight int32, dpi uint32, controllerWidth, controllerHeight int32) string {
-	return "mullion: webview bounds sync, source=" + logsafe.Message(source) +
+	return "mullion: webview bounds sync, source=" + logsafe.Field(source) +
 		", client_width=" + formatInt32(clientWidth) +
 		", client_height=" + formatInt32(clientHeight) +
 		", dpi=" + strconv.FormatUint(uint64(dpi), 10) +
@@ -252,7 +261,7 @@ func formatWebViewBoundsMismatchLog(source string, clientWidth, clientHeight, co
 		prefix = "mullion: frontend ready but surface tiny/bounds mismatch"
 	}
 	return prefix +
-		", source=" + logsafe.Message(source) +
+		", source=" + logsafe.Field(source) +
 		", client_width=" + formatInt32(clientWidth) +
 		", client_height=" + formatInt32(clientHeight) +
 		", controller_width=" + formatInt32(controllerWidth) +

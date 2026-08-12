@@ -32,16 +32,16 @@ func TestActiveNativeFrameProfileStyleBits(t *testing.T) {
 	}
 }
 
-// Frameless contract: the client area is extended over the frame, and the
-// maximize-hover flyout paths stay off. Enabling either would put DWM back in
-// charge of caption messages on a window that no longer has a native caption.
+// Frameless contract: the client area is extended over the frame. The diagnostic
+// DWM and synthetic HTMAXBUTTON paths stay off: they cannot restore the native
+// maximize-hover flyout on client-extended geometry and destabilise the frame.
 func TestActiveNativeFrameProfileFramelessNoHoverPaths(t *testing.T) {
 	profile := activeNativeFrameProfile()
 	if !nativeFrameProfileExtendsClientArea(profile) {
 		t.Fatal("production profile must extend the client area over the frame, got false (frameless tab-strip)")
 	}
-	if !nativeFrameProfileHandlesNCCalcSize(profile, 1) {
-		t.Fatal("production profile must handle WM_NCCALCSIZE with wParam=1, got false")
+	if !nativeFrameProfileHandlesNCCalcSize(profile) {
+		t.Fatal("production profile must handle WM_NCCALCSIZE for both pointer forms, got false")
 	}
 	if nativeFrameProfileUsesMaximizeCaptionButtonHitTest(profile) {
 		t.Fatal("production profile must not use the synthetic htMaxButton hit-test, got true")

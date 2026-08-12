@@ -147,7 +147,7 @@ func (host *Host) MarkFrontendShellReady() {
 func (host *Host) MarkFrontendPhase(phase string) {
 	host.enterRun()
 	defer host.leaveRun()
-	phase = logsafe.Diagnostic(phase)
+	phase = logsafe.Field(phase)
 	host.diagnostics.recordFrontendPhase(phase)
 	host.log.Debug("mullion: frontend phase, phase=" + phase)
 }

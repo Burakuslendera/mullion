@@ -2,6 +2,8 @@
 
 package host
 
+import "github.com/Burakuslendera/mullion/internal/logsafe"
+
 func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam uintptr) uintptr {
 	if isNativeHostCommand(message) {
 		return host.dispatchNativeHostCommand(hwnd, message, wParam, lParam)
@@ -32,9 +34,14 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		runWindowDestroy(host.windowDestroyTeardown, func() { procPostQuitMessage.Call(0) })
 		return 0
 	case wmNCCalcSize:
-		if nativeFrameProfileHandlesNCCalcSize(activeNativeFrameProfile(), wParam) {
-			host.applyNativeNCCalcClientRect(hwnd, lParam)
-			return 0
+		if nativeFrameProfileHandlesNCCalcSize(activeNativeFrameProfile()) {
+			result := host.applyNativeNCCalcClientRect(hwnd, wParam, lParam)
+			if result.reason != "" {
+				host.log.Warn("mullion: nccalc client extension degraded, action=" + result.action.String() + ", reason=" + logsafe.Message(result.reason))
+			}
+			if result.action == nativeNCCalcClaim {
+				return 0
+			}
 		}
 	case wmNCHitTest:
 		hit := host.nativeHitTest(hwnd, lParam)
@@ -48,7 +55,7 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		if decision.override {
 			return decision.result
 		}
-		return defWindowProc(hwnd, message, wParam, lParam)
+		return host.callDefaultWindowProc(hwnd, message, wParam, lParam)
 	case wmGetMinMaxInfo:
 		if host.applyMonitorWorkArea(hwnd, lParam) {
 			return 0
@@ -72,16 +79,14 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		}
 		host.log.Warn("mullion: dpi bounds sync failed")
 	case wmSize:
-		host.syncWebViewBounds("wm_size")
+		host.syncBoundsForWindowMessage("wm_size")
 		host.syncTabTitlebarSystemMenuState("wm_size")
-	case wmWindowPosChanging:
-		host.syncWebViewBounds("wm_windowpos_changing")
-	case wmWindowPosChanged:
-		host.syncWebViewBounds("wm_windowpos_changed")
 	case wmMove:
-		host.syncWebViewBounds("wm_move")
+		host.syncBoundsForWindowMessage("wm_move")
 	case wmMoving:
-		host.syncWebViewBounds("wm_moving")
+		// WM_MOVING exposes a proposed rect before Windows applies it. WM_MOVE owns
+		// the position sync after DefWindowProc; syncing here would notify WebView2
+		// against the previous parent location.
 		// A Windows 11 bug can roll an interrupted maximised drag-down back to
 		// its pre-loop placement after a shell overlay is cancelled; stock
 		// Notepad reproduces it. This state gates only mullion's pointer
@@ -89,11 +94,18 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		// than issuing a synthetic maximise/restore command here.
 	case wmEnterSizeMove:
 		host.setMoveSizeActive(true)
-		host.syncWebViewBounds("wm_entersizemove")
 	case wmExitSizeMove:
 		host.setMoveSizeActive(false)
-		host.syncWebViewBounds("wm_exitsizemove")
 		host.requestDeferredBoundsSync(boundsSyncWParamDeferredExitSizeMove)
+	}
+	return host.callDefaultWindowProc(hwnd, message, wParam, lParam)
+}
+
+// callDefaultWindowProc preserves the production default dispatch while letting
+// headless routing tests observe fallback without invoking user32.
+func (host *Host) callDefaultWindowProc(hwnd windowHandle, message uint32, wParam, lParam uintptr) uintptr {
+	if host.defaultWindowProc != nil {
+		return host.defaultWindowProc(hwnd, message, wParam, lParam)
 	}
 	return defWindowProc(hwnd, message, wParam, lParam)
 }
@@ -118,6 +130,10 @@ func (host *Host) dispatchNativeHostCommand(hwnd windowHandle, message uint32, w
 	currentToken := host.activeRunToken
 	host.mu.RUnlock()
 	if hwnd == 0 || hwnd != current || token == 0 || token != currentToken {
+		return 0
+	}
+	if message == wmNativeStartResize && !isResizeHitTest(wParam) {
+		host.log.Warn("mullion: resize rejected, reason=invalid hit")
 		return 0
 	}
 	if host.applyNativeCommand != nil {

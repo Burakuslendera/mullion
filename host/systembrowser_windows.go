@@ -43,11 +43,11 @@ const externalOpenLimit = 8
 // scheme names, and off-origin content must not be able to reach one.
 func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 	if !isExternalBrowserSafe(uri) {
-		host.log.Debug("mullion: new window dropped, unsupported scheme, uri=" + logsafe.URL(uri))
+		host.log.Debug("mullion: new window dropped, unsupported scheme, uri=" + logsafe.Field(logsafe.URL(uri)))
 		return
 	}
 	host.log.Debug("mullion: new window routed to system browser, user_initiated=" +
-		strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.URL(uri))
+		strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.Field(logsafe.URL(uri)))
 	host.openInSystemBrowser(uri)
 }
 
@@ -101,11 +101,11 @@ func (host *Host) noteNavigationCancelledObserved(
 			navigationIdentityField(identity))
 	case isExternalBrowserSafe(uri):
 		host.log.Debug("mullion: navigation cancelled off origin, routed to system browser, user_initiated=" +
-			strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.URL(uri))
+			strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.Field(logsafe.URL(uri)))
 		host.openInSystemBrowser(uri)
 	default:
 		host.log.Debug("mullion: navigation cancelled off origin, unsupported scheme, uri=" +
-			logsafe.URL(uri))
+			logsafe.Field(logsafe.URL(uri)))
 	}
 }
 
@@ -172,7 +172,7 @@ func (host *Host) claimExternalOpenSlot(uri string) bool {
 		return true
 	default:
 		host.log.Warn("mullion: external open dropped, " + strconv.Itoa(externalOpenLimit) +
-			" launches already in flight, uri=" + logsafe.URL(uri))
+			" launches already in flight, uri=" + logsafe.Field(logsafe.URL(uri)))
 		return false
 	}
 }

@@ -49,7 +49,7 @@ func TestNativeFrameProfileRejectsMissingRequiredStyle(t *testing.T) {
 	}
 }
 
-func TestCaptionNCCalcUsesSnapCapableStyleBitsWithoutSysMenu(t *testing.T) {
+func TestCaptionNCCalcConfiguresDiagnosticCaptionButtonRoutesWithoutSysMenu(t *testing.T) {
 	production := styleForNativeFrameProfile(nativeFrameProfileCaptionNCCalc, uintptr(wsOverlappedWindow))
 	snapDiagnostic := styleForNativeFrameProfile(nativeFrameProfileCaptionSnapDiag, uintptr(wsOverlappedWindow))
 	for _, bit := range []struct {
@@ -64,27 +64,24 @@ func TestCaptionNCCalcUsesSnapCapableStyleBitsWithoutSysMenu(t *testing.T) {
 		}
 	}
 	if production&uintptr(wsCaption) == 0 {
-		t.Fatal("caption_nccalc must keep WS_CAPTION for native Snap Layout caption-button routing")
+		t.Fatal("caption_nccalc must keep WS_CAPTION for diagnostic caption-button routing")
 	}
 	if production&uintptr(wsSysMenu) != 0 {
 		t.Fatal("caption_nccalc must keep WS_SYSMENU off")
 	}
 	if !nativeFrameProfileUsesDWMMaximizeCaptionButton(nativeFrameProfileCaptionNCCalc) {
-		t.Fatal("caption_nccalc must route maximize caption-button messages through DWM")
+		t.Fatal("caption_nccalc must select DWM maximize caption-button diagnostic routing")
 	}
 	if !nativeFrameProfileUsesMaximizeCaptionButtonHitTest(nativeFrameProfileCaptionNCCalc) {
-		t.Fatal("caption_nccalc must expose only the maximize caption-button hit-test")
+		t.Fatal("caption_nccalc must select synthetic HTMAXBUTTON diagnostic routing")
 	}
 }
 
-func TestNativeFrameProfileHandlesNCCalcSizeOnlyForCalculatedRects(t *testing.T) {
-	if nativeFrameProfileHandlesNCCalcSize(nativeFrameProfileCaptionNCCalc, 0) {
-		t.Fatal("caption_nccalc must not consume WM_NCCALCSIZE with wParam=0")
+func TestNativeFrameProfileHandlesNCCalcSizeForBothPointerForms(t *testing.T) {
+	if !nativeFrameProfileHandlesNCCalcSize(nativeFrameProfileCaptionNCCalc) {
+		t.Fatal("caption_nccalc must consume WM_NCCALCSIZE for both pointer forms")
 	}
-	if !nativeFrameProfileHandlesNCCalcSize(nativeFrameProfileCaptionNCCalc, 1) {
-		t.Fatal("caption_nccalc must consume WM_NCCALCSIZE with wParam!=0")
-	}
-	if nativeFrameProfileHandlesNCCalcSize(nativeFrameProfileCaptionSysMenuNative, 1) {
+	if nativeFrameProfileHandlesNCCalcSize(nativeFrameProfileCaptionSysMenuNative) {
 		t.Fatal("caption_sysmenu_native_nccalc must use DefWindowProc NCCALCSIZE")
 	}
 }

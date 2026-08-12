@@ -49,7 +49,7 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 		// The fallback surface never awaits replies. Withholding one also keeps
 		// the restricted admission non-correlatable if frame message receipt is
 		// added in the future and a hostile data: iframe reaches this dispatch.
-		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Diagnostic(request.Method))
+		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Field(request.Method))
 		return ""
 	}
 
@@ -61,12 +61,12 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 		// Every method the fallback surface is allowed to use was handled above.
 		// Keep this branch as a closed default if a new reserved method is added
 		// without being deliberately admitted by errorSurfaceMethodAllowed.
-		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Diagnostic(request.Method))
+		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Field(request.Method))
 		return ""
 	}
 
 	if host.config.Bridge == nil {
-		host.log.Warn("mullion: bridge method unhandled, no bridge configured, method=" + logsafe.Diagnostic(request.Method))
+		host.log.Warn("mullion: bridge method unhandled, no bridge configured, method=" + logsafe.Field(request.Method))
 		return bridgeError(request.ID, "no bridge configured")
 	}
 	host.recordBridgeCall(request.Method, "received")
@@ -175,7 +175,7 @@ func bridgeError(id string, reason string) string {
 // recordBridgeCall feeds the diagnostics that the render watchdog reports when
 // the frontend never signals readiness.
 func (host *Host) recordBridgeCall(method string, status string) {
-	method = logsafe.Diagnostic(method)
+	method = logsafe.Field(method)
 	host.diagnostics.recordBridge(method, status)
-	host.log.Debug("mullion: bridge method " + logsafe.Message(status) + ", method=" + method)
+	host.log.Debug("mullion: bridge method " + logsafe.Field(status) + ", method=" + method)
 }

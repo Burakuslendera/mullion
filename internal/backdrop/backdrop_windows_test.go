@@ -2,7 +2,10 @@
 
 package backdrop
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // The message-loop cleanup owns every exit after CreateWindowEx. A GetMessage
 // error and a WM_QUIT posted without WM_DESTROY both leave activeBackdrop equal
@@ -42,6 +45,63 @@ func TestCleanupBackdropWindowOwnsEveryLoopExitWithoutDoubleDestroy(t *testing.T
 				}
 			} else if len(order) != 0 {
 				t.Fatalf("normal destruction cleanup = %v, want no second destroy", order)
+			}
+		})
+	}
+}
+
+func TestArmBackdropWatchClearsStaleTargetAndCommitsOnlyAfterTimerSuccess(t *testing.T) {
+	timerFailure := errors.New("timer failed")
+	tests := []struct {
+		name       string
+		target     uintptr
+		armErr     error
+		wantArms   int
+		wantTarget uintptr
+	}{
+		{name: "no target", target: 0, wantTarget: 0},
+		{name: "timer failure", target: 0x2222, armErr: timerFailure, wantArms: 1, wantTarget: 0},
+		{name: "timer success", target: 0x3333, wantArms: 1, wantTarget: 0x3333},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			watched := uintptr(0x1111)
+			var arms int
+			err := armBackdropWatch(test.target, &watched, func() error {
+				arms++
+				return test.armErr
+			})
+			if !errors.Is(err, test.armErr) {
+				t.Fatalf("armBackdropWatch error = %v, want %v", err, test.armErr)
+			}
+			if arms != test.wantArms {
+				t.Fatalf("timer arms = %d, want %d", arms, test.wantArms)
+			}
+			if watched != test.wantTarget {
+				t.Fatalf("watched target = %#x, want %#x", watched, test.wantTarget)
+			}
+		})
+	}
+}
+
+func TestClearBackdropWatchStateRejectsStaleAndLiveOwnership(t *testing.T) {
+	const active = uintptr(0x1234)
+	tests := []struct {
+		name        string
+		destroyed   uintptr
+		active      uintptr
+		wantActive  uintptr
+		wantWatched uintptr
+	}{
+		{name: "different window", destroyed: 0x5678, active: active, wantActive: active, wantWatched: 0x9999},
+		{name: "owned window", destroyed: active, active: active, wantActive: 0, wantWatched: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			current, watched := test.active, uintptr(0x9999)
+			clearBackdropWatchState(test.destroyed, &current, &watched)
+			if current != test.wantActive || watched != test.wantWatched {
+				t.Fatalf("state after destroy = active:%#x watched:%#x, want active:%#x watched:%#x", current, watched, test.wantActive, test.wantWatched)
 			}
 		})
 	}

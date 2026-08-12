@@ -37,8 +37,12 @@ capture is in front the moment the backdrop opens. The lifted window is then
 watched (a 200ms `WM_TIMER` checking `IsWindow`/`IsWindowVisible`/`IsIconic`):
 move and resize it freely, but close it, end its process, or minimise it and
 the backdrop closes itself — the session ends when the subject leaves the
-stage. `-colour #rrggbb` overrides the default dark grey; the parse is strict,
-is the command's entire input surface, and is tested headlessly. The window
+stage. `Show` sessions are serialized because the callback state is
+process-global. Watch arming is transactional: each session first clears any
+old target, and a failed `SetTimer` destroys the owned backdrop and returns an
+error rather than silently presenting an unwatched session. `-colour #rrggbb`
+overrides the default dark grey; its strict parser is the command's entire
+input surface, and is tested headlessly. The window
 half follows the repository's window rules: per-monitor-v2 declared before the
 HWND exists, a locked OS thread for the message loop, and one process-lifetime
 `NewCallback` allocated lazily only when `Show` reaches class creation. The lazy
@@ -92,7 +96,10 @@ cannot.
 - No test may create a window (0006), so geometry, z-order and real dismissal
   still owe a live check. The post-create ownership decision is headless-tested:
   both `GetMessage` error and a bare `WM_QUIT` destroy then drain, while normal
-  `WM_DESTROY` clears ownership and cannot double-destroy a recycled HWND.
+  `WM_DESTROY` clears only its current ownership and cannot double-destroy or
+  erase a later session through a recycled HWND. Watch arming is also
+  headless-tested: stale targets clear before every attempt and become active
+  only after a successful timer.
 - The not-topmost choice means the backdrop does not guarantee it covers
   everything at all times: whatever the user raises is above it. That is the
   point, and it is documented behaviour, not a bug to fix.
@@ -110,8 +117,10 @@ cannot.
 ## Evidence
 
 - `internal/backdrop`: colour parsing plus
-  `TestCleanupBackdropWindowOwnsEveryLoopExitWithoutDoubleDestroy` (headless);
-  `backdrop_windows.go` (live window half); `backdrop_other.go` (0007 stub).
+  `TestCleanupBackdropWindowOwnsEveryLoopExitWithoutDoubleDestroy` and
+  `TestArmBackdropWatchClearsStaleTargetAndCommitsOnlyAfterTimerSuccess`
+  (headless); `backdrop_windows.go` (live window half); `backdrop_other.go`
+  (0007 stub).
 - Live check on this machine, 2026-07-16: raised over a real two-monitor
   desktop (one window spanning the 3840x1080 virtual screen), the covered
   screen captured and 500 sampled pixels all measured as the configured
@@ -126,4 +135,4 @@ cannot.
   (`screenshot.ps1 -Backdrop`), and the maintainer's request for the same
   ground under a hand-driven capture tool.
 
-> Last updated: 2026-08-06 | Editor: GPT-5.6 | Change: pin backdrop loop-exit ownership headlessly: zero and minus-one exits destroy and drain a still-owned HWND, while normal WM_DESTROY cannot double-destroy (issue #97).
+> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: serialize process-global backdrop state and reject obsolete destruction callbacks so timer arming and ownership remain transactional.

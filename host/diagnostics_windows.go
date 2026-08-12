@@ -59,7 +59,7 @@ func (diagnostics *nativeDiagnostics) recordAsset(response assetResponse, method
 		return
 	}
 	item := assetDiagnostic{
-		name:        logsafe.DiagnosticFileName(response.request.path),
+		name:        logsafe.FieldFileName(response.request.path),
 		category:    safeDiagnosticValue(response.request.category),
 		method:      safeDiagnosticValue(method),
 		contentType: safeDiagnosticValue(response.contentType),
@@ -98,7 +98,7 @@ func (diagnostics *nativeDiagnostics) recordBridge(method string, status string)
 	method = safeDiagnosticValue(method)
 	status = safeDiagnosticValue(status)
 	diagnostics.mu.Lock()
-	diagnostics.lastBridge = logsafe.Diagnostic(method + ":" + status)
+	diagnostics.lastBridge = logsafe.Field(method + ":" + status)
 	diagnostics.mu.Unlock()
 }
 
@@ -143,14 +143,14 @@ func (provider *assetProvider) logAssetResponseDebug(response assetResponse, met
 		return
 	}
 	provider.log.Debug("mullion: asset response served, status=" + strconv.Itoa(response.status) +
-		", category=" + logsafe.Diagnostic(response.request.category) +
-		", asset=" + logsafe.DiagnosticFileName(response.request.path) +
-		", method=" + logsafe.Diagnostic(method) +
+		", category=" + logsafe.Field(response.request.category) +
+		", asset=" + logsafe.FieldFileName(response.request.path) +
+		", method=" + logsafe.Field(method) +
 		", content_type=" + safeContentTypeForLog(response.contentType))
 }
 
 func safeDiagnosticValue(value string) string {
-	return defaultDiagnosticValue(logsafe.Diagnostic(value))
+	return defaultDiagnosticValue(logsafe.Field(value))
 }
 
 func defaultDiagnosticValue(value string) string {
@@ -168,5 +168,5 @@ func safeContentTypeForLog(contentType string) string {
 	if contentType == "" {
 		return "unknown"
 	}
-	return logsafe.Diagnostic(contentType)
+	return logsafe.Field(contentType)
 }

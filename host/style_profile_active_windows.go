@@ -12,10 +12,10 @@ package host
 // bar is HTML.
 //
 // DWM maximize-button forwarding and the synthetic HTMAXBUTTON hit-test are
-// deliberately left out. They exist to make Windows show the Snap-layout flyout on
-// maximize-button hover, but they hand caption message handling back to DWM on a
-// window that has no native caption, which destabilises the frame. Snap stays
-// reachable through Win+Z and by dragging to a screen edge.
+// deliberately left out. On a client-extended window neither can restore the
+// native maximize-hover flyout, and handing caption messages back to DWM
+// destabilises the frame. Snap stays reachable through Win+Z and by dragging to
+// a screen edge.
 func activeNativeFrameProfile() nativeFrameProfile {
 	return nativeFrameProfileCaptionSysMenuNCCalc
 }

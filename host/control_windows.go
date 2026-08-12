@@ -78,10 +78,10 @@ func (host *Host) StartResize(edge string) {
 	defer host.leaveRun()
 	hit, ok := resizeHitTestForEdge(edge)
 	if !ok {
-		host.log.Warn("mullion: resize requested with unknown edge, edge=" + logsafe.Diagnostic(edge))
+		host.log.Warn("mullion: resize requested with unknown edge, edge=" + logsafe.Field(edge))
 		return
 	}
-	host.log.Debug("mullion: resize requested, edge=" + logsafe.Diagnostic(edge))
+	host.log.Debug("mullion: resize requested, edge=" + logsafe.Field(edge))
 	host.warnIf("resize post", host.postRunCommand(admission, wmNativeStartResize, uintptr(hit)))
 }
 
@@ -296,6 +296,19 @@ func resizeHitTestForEdge(edge string) (int32, bool) {
 		return htBottomRight, true
 	default:
 		return htClient, false
+	}
+}
+
+// isResizeHitTest is the receiver-side half of resizeHitTestForEdge. Private
+// messages are process-visible, so the UI-thread receiver must preserve the
+// sender's eight-edge contract before it can release capture or ask
+// DefWindowProc to start non-client interaction.
+func isResizeHitTest(hit uintptr) bool {
+	switch hit {
+	case htLeft, htRight, htTop, htBottom, htTopLeft, htTopRight, htBottomLeft, htBottomRight:
+		return true
+	default:
+		return false
 	}
 }
 

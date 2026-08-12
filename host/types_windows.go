@@ -52,6 +52,7 @@ const (
 	swpFrameChanged = 0x0020
 	gwlStyle        = -16
 	gwlExStyle      = -20
+	gwlpUserData    = -21
 	wsOverlapped    = 0x00000000
 	wsVisible       = 0x10000000
 	wsCaption       = 0x00C00000
@@ -71,6 +72,8 @@ const (
 	wmGetMinMaxInfo     = 0x0024
 	wmWindowPosChanging = 0x0046
 	wmWindowPosChanged  = 0x0047
+	wmNCCreate          = 0x0081
+	wmNCDestroy         = 0x0082
 	wmNCCalcSize        = 0x0083
 	wmNCHitTest         = 0x0084
 	wmNCPaint           = 0x0085
@@ -128,6 +131,13 @@ type minMaxInfo struct {
 	MaxPosition  point
 	MinTrackSize point
 	MaxTrackSize point
+}
+
+// ncCalcSizeParams mirrors the WM_NCCALCSIZE lParam structure when wParam is
+// TRUE. Its first proposed rect is the only geometry mullion may alter.
+type ncCalcSizeParams struct {
+	Rects     [3]rect
+	WindowPos uintptr
 }
 
 type monitorInfo struct {

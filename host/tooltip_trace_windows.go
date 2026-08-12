@@ -124,7 +124,7 @@ func formatNativeTooltipWindowFromPointContext(hwnd windowHandle, cursor point, 
 }
 
 func formatNativeTooltipWindowFromPointClassContext(className string, isParent bool, isChild bool) string {
-	return ", hover_hwnd_class=" + logsafe.Message(className) +
+	return ", hover_hwnd_class=" + logsafe.Field(className) +
 		", hover_hwnd_is_parent=" + strconv.FormatBool(isParent) +
 		", hover_hwnd_is_child=" + strconv.FormatBool(isChild)
 }

@@ -32,7 +32,7 @@ func (host *Host) logNavigationStarting(uri string, navigationID uint64, isUserI
 	host.log.Debug("mullion: navigation starting, id=" + formatUint64(navigationID) +
 		", user_initiated=" + strconv.FormatBool(isUserInitiated) +
 		", redirected=" + strconv.FormatBool(isRedirected) +
-		", uri=" + logsafe.URL(uri))
+		", uri=" + logsafe.Field(logsafe.URL(uri)))
 }
 
 // logRejectedWebMessage records a web message dropped because its source is not
@@ -43,7 +43,7 @@ func (host *Host) logNavigationStarting(uri string, navigationID uint64, isUserI
 // reduction. A value without an HTTP origin retains the established :unknown
 // diagnostic while the raw line distinguishes the forms at DEBUG.
 func (host *Host) logRejectedWebMessage(source string) {
-	host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.URL(sourceOriginSummary(source)))
-	host.log.Debug("mullion: web message rejected, raw source=" + logsafe.URL(source) +
+	host.log.Warn("mullion: web message rejected, untrusted source, origin=" + logsafe.Field(logsafe.URL(sourceOriginSummary(source))))
+	host.log.Debug("mullion: web message rejected, raw source=" + logsafe.Field(logsafe.URL(source)) +
 		", len=" + strconv.Itoa(len(source)))
 }

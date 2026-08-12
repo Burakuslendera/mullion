@@ -11,7 +11,8 @@
 - [7. Decision table](#7-decision-table)
 - [8. DWM caption theming (recolour the caption without breaking Snap)](#8-dwm-caption-theming-recolour-the-caption-without-breaking-snap)
 - [9. The system menu with a custom title bar](#9-the-system-menu-with-a-custom-title-bar)
-- [10. Sources](#10-sources)
+- [10. Testing boundary](./snap-testing-boundary.md)
+- [11. Sources](#11-sources)
 
 A field report on hosting WebView2 in a Win32 window with a custom (HTML) title bar
 while keeping Windows 11 Snap behaviour. Everything below is either quoted from
@@ -253,10 +254,11 @@ maximize button* is lost. That is a real cost, and for most applications it is t
 right trade for a seamless HTML title bar.
 
 **Two frameless side-quests you will hit anyway.** When you eat the caption in
-`WM_NCCALCSIZE` (`wParam != 0`, return a client rect that covers the frame): a
-maximized window will happily cover the taskbar unless you clamp the proposed client
-rect to the monitor's **work area**; and restored windows typically need a one-pixel
-compensation at the bottom edge, or the frame reads as clipped.
+`WM_NCCALCSIZE` (for both pointer forms: `wParam == FALSE` supplies a `RECT*`;
+`TRUE` supplies `NCCALCSIZE_PARAMS.rgrc[0]`), a maximized window will happily
+cover the taskbar unless you clamp the proposed client rect to the monitor's
+**work area**; and restored windows typically need a one-pixel compensation at
+the bottom edge, or the frame reads as clipped.
 
 ---
 
@@ -382,9 +384,13 @@ first, or the menu can fail to dismiss on the next outside click.
 
 ---
 
-## 10. Sources
+For the headless-versus-live verification boundary, see [Snap testing boundary](./snap-testing-boundary.md).
+
+---
+
+## 11. Sources
 
 The full source list — 40 links, grouped by topic and marked `[P]` primary /
 `[F]` secondary — lives in [snap-sources.md](./snap-sources.md).
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: repoint two binding references to webview2-and-assets.md after the architecture.md split, and add the document footer this file was missing (agents/notes.md, Mechanics).
+> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: distinguish headless ABI/startup-order contracts from live-only WebView child, Snap, caption, and DPI behaviour.

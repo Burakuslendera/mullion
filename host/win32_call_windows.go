@@ -4,6 +4,7 @@ package host
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -84,7 +85,7 @@ func prepareWindowStrings(className, title string) (*uint16, *uint16, error) {
 // x and y are uintptr, not int32, because one of their legal values is
 // CW_USEDEFAULT (0x80000000) - the fallback when placement could not be
 // resolved - and that constant does not fit an int32.
-func (host *Host) createWin32Window(className, title string, instance windowHandle, wndProc uintptr, x, y uintptr, width, height int32) (windowHandle, error) {
+func (host *Host) createWin32Window(className, title string, instance windowHandle, wndProc, token, x, y uintptr, width, height int32) (windowHandle, error) {
 	class, windowTitle, err := prepareWindowStrings(className, title)
 	if err != nil {
 		return 0, err
@@ -100,7 +101,7 @@ func (host *Host) createWin32Window(className, title string, instance windowHand
 		nativeInitialWindowStyle(),
 		x, y,
 		uintptr(width), uintptr(height),
-		0, 0, uintptr(instance), 0,
+		0, 0, uintptr(instance), token,
 	)
 	if result == 0 {
 		unregisterWindowClass(className, instance)
@@ -268,14 +269,199 @@ func guardedWindowProc(
 	}
 }
 
-func newWindowCallback(
-	callback func(windowHandle, uint32, uintptr, uintptr) uintptr,
-	onPanic func(recovered any, message uint32),
-) uintptr {
-	guarded := guardedWindowProc(callback, defWindowProc, onPanic)
-	return windows.NewCallback(func(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
-		return guarded(windowHandle(hwnd), message, wParam, lParam)
+// windowProcRegistry keeps only scalar callback identity in the process-wide
+// callback. A pending token becomes active during WM_NCCREATE, is validated
+// against both GWLP_USERDATA and HWND for every later dispatch, then is evicted
+// during WM_NCDESTROY. This avoids both callback-table growth and recycled-HWND
+// misdispatch.
+type windowProcRegistry struct {
+	mu      sync.RWMutex
+	next    uintptr
+	pending map[uintptr]*Host
+	active  map[uintptr]windowProcTarget
+}
+
+type windowProcTarget struct {
+	host *Host
+	hwnd windowHandle
+}
+
+func newWindowProcRegistry() *windowProcRegistry {
+	return &windowProcRegistry{
+		pending: make(map[uintptr]*Host),
+		active:  make(map[uintptr]windowProcTarget),
+	}
+}
+
+// reserve creates an identity that is absent from both states. The caller owns a
+// pending entry until WM_NCCREATE promotes it or the failed creation rolls it
+// back; never reuse an active token when uintptr wraps.
+func (registry *windowProcRegistry) reserve(host *Host) uintptr {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for {
+		registry.next++
+		if registry.next == 0 {
+			continue
+		}
+		if _, pending := registry.pending[registry.next]; pending {
+			continue
+		}
+		if _, active := registry.active[registry.next]; active {
+			continue
+		}
+		registry.pending[registry.next] = host
+		return registry.next
+	}
+}
+
+func (registry *windowProcRegistry) rollback(token uintptr, host *Host) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if registry.pending[token] == host {
+		delete(registry.pending, token)
+	}
+}
+
+func (registry *windowProcRegistry) promote(hwnd windowHandle, token uintptr) *Host {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	host := registry.pending[token]
+	if host == nil || hwnd == 0 {
+		return nil
+	}
+	delete(registry.pending, token)
+	registry.active[token] = windowProcTarget{host: host, hwnd: hwnd}
+	return host
+}
+
+func (registry *windowProcRegistry) resolve(hwnd windowHandle, token uintptr) *Host {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	target, ok := registry.active[token]
+	if !ok || target.hwnd != hwnd {
+		return nil
+	}
+	return target.host
+}
+
+func (registry *windowProcRegistry) evict(hwnd windowHandle, token uintptr) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if target, ok := registry.active[token]; ok && target.hwnd == hwnd {
+		delete(registry.active, token)
+	}
+}
+
+func (registry *windowProcRegistry) evictWindow(hwnd windowHandle) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for token, target := range registry.active {
+		if target.hwnd == hwnd {
+			delete(registry.active, token)
+		}
+	}
+}
+
+var sharedWindowProcHosts = newWindowProcRegistry()
+
+var sharedWindowProcOnce sync.Once
+var sharedWindowProc uintptr
+
+// sharedWindowProcCallback allocates the one process-lifetime trampoline only
+// after Run passed its architecture gate and createWindow passed all fallible
+// caller-input validation. It captures no Host, so later windows neither consume
+// another callback-table slot nor retain their Host graph.
+func sharedWindowProcCallback() uintptr {
+	sharedWindowProcOnce.Do(func() {
+		sharedWindowProc = windows.NewCallback(sharedWindowProcTrampoline)
 	})
+	return sharedWindowProc
+}
+
+func createWindowProcToken(lParam uintptr) (uintptr, bool) {
+	if lParam == 0 {
+		return 0, false
+	}
+	var create struct{ createParams uintptr }
+	copyFromWindowPointer(unsafe.Pointer(&create), lParam, unsafe.Sizeof(create))
+	return create.createParams, create.createParams != 0
+}
+
+func setWindowProcToken(hwnd windowHandle, token uintptr) error {
+	result, _, err := procSetWindowLongPtr.Call(uintptr(hwnd), windowLongIndex(gwlpUserData), token)
+	if result == 0 && err != windows.ERROR_SUCCESS {
+		return syscallError(err)
+	}
+	return nil
+}
+
+func windowProcToken(hwnd windowHandle) (uintptr, error) {
+	result, _, err := procGetWindowLongPtr.Call(uintptr(hwnd), windowLongIndex(gwlpUserData))
+	if result == 0 && err != windows.ERROR_SUCCESS {
+		return 0, syscallError(err)
+	}
+	return result, nil
+}
+
+func sharedWindowProcTrampoline(rawHWND uintptr, message uint32, wParam, lParam uintptr) uintptr {
+	hwnd := windowHandle(rawHWND)
+	if message == wmNCCreate {
+		token, ok := createWindowProcToken(lParam)
+		if !ok {
+			return 0
+		}
+		host := sharedWindowProcHosts.promote(hwnd, token)
+		if host == nil {
+			return 0
+		}
+		if err := setWindowProcToken(hwnd, token); err != nil {
+			sharedWindowProcHosts.evict(hwnd, token)
+			return 0
+		}
+		result := invokeWindowProc(host, hwnd, message, wParam, lParam)
+		if result == 0 {
+			_ = setWindowProcToken(hwnd, 0)
+			sharedWindowProcHosts.evict(hwnd, token)
+		}
+		return result
+	}
+
+	token, err := windowProcToken(hwnd)
+	if err != nil {
+		if message == wmNCDestroy {
+			sharedWindowProcHosts.evictWindow(hwnd)
+		}
+		return defWindowProc(hwnd, message, wParam, lParam)
+	}
+	host := sharedWindowProcHosts.resolve(hwnd, token)
+	if host == nil {
+		if message == wmNCDestroy {
+			// Userdata may have been replaced before destruction. Evict by HWND
+			// rather than leaving the original active Host reachable forever.
+			sharedWindowProcHosts.evictWindow(hwnd)
+		}
+		return defWindowProc(hwnd, message, wParam, lParam)
+	}
+	result := invokeWindowProc(host, hwnd, message, wParam, lParam)
+	if message == wmNCDestroy {
+		_ = setWindowProcToken(hwnd, 0)
+		sharedWindowProcHosts.evictWindow(hwnd)
+	}
+	return result
+}
+
+func invokeWindowProc(host *Host, hwnd windowHandle, message uint32, wParam, lParam uintptr) (result uintptr) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			func() {
+				defer func() { _ = recover() }()
+				host.reportWindowProcPanic(recovered, message)
+			}()
+			result = defWindowProc(hwnd, message, wParam, lParam)
+		}
+	}()
+	return host.windowProc(hwnd, message, wParam, lParam)
 }
 
 // reportWindowProcPanic logs a panic that guardedWindowProc caught before it

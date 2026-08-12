@@ -432,3 +432,26 @@ func TestEveryAcceptedDiagnosticURLCandidateReducesAsAURL(t *testing.T) {
 		}
 	}
 }
+
+func TestFieldKeepsUntrustedValueWithinOneStructuredField(t *testing.T) {
+	for _, value := range []string{
+		"ready, forged=1",
+		"https://mullion.localhost/p, forged=1",
+		strings.Repeat("value,", DiagnosticLimit),
+	} {
+		got := Field(value)
+		if strings.ContainsAny(got, ",=") {
+			t.Fatalf("Field(%q) = %q; a structured delimiter survived", value, got)
+		}
+		if len(got) > DiagnosticLimit {
+			t.Fatalf("Field(%q) length = %d, want <= %d", value, len(got), DiagnosticLimit)
+		}
+	}
+}
+
+func TestFieldFileNameKeepsUntrustedPathWithinOneStructuredField(t *testing.T) {
+	got := FieldFileName(`C:\Users\Ada\assets\a, forged=1.js`)
+	if got != "a_ forged_1.js" {
+		t.Fatalf("FieldFileName() = %q, want a single folded file name", got)
+	}
+}

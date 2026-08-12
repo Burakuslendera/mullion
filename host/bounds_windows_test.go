@@ -121,3 +121,43 @@ func TestDeferredWebViewBoundsSyncDoesNotWarn(t *testing.T) {
 		t.Fatalf("deferred bounds sync produced a warning:\n%s", logText)
 	}
 }
+
+// WM_WINDOWPOSCHANGING and WM_MOVING provide proposed geometry. DefWindowProc
+// turns the applied WM_WINDOWPOSCHANGED geometry into WM_SIZE and WM_MOVE, so
+// only those post-apply messages may own a controller sync. The seam proves
+// routing without an HWND or WebView2 controller.
+func TestWindowProcBoundsSyncsOnlyPostApplyMessages(t *testing.T) {
+	var sources []string
+	var delegated []uint32
+	host := &Host{
+		syncWindowBounds: func(source string) {
+			sources = append(sources, source)
+		},
+		defaultWindowProc: func(_ windowHandle, message uint32, _, _ uintptr) uintptr {
+			delegated = append(delegated, message)
+			return 0
+		},
+	}
+	for _, message := range []uint32{
+		wmWindowPosChanging,
+		wmWindowPosChanged,
+		wmSize,
+		wmMove,
+		wmMoving,
+	} {
+		host.windowProc(0, message, 0, 0)
+	}
+	got := strings.Join(sources, ",")
+	if want := "wm_size,wm_move"; got != want {
+		t.Fatalf("bounds sync sources = %q, want %q", got, want)
+	}
+	wantDelegated := []uint32{wmWindowPosChanging, wmWindowPosChanged, wmSize, wmMove, wmMoving}
+	if len(delegated) != len(wantDelegated) {
+		t.Fatalf("default-proc calls = %#v, want %#v", delegated, wantDelegated)
+	}
+	for index, want := range wantDelegated {
+		if got := delegated[index]; got != want {
+			t.Fatalf("default-proc call %d = %#x, want %#x", index, got, want)
+		}
+	}
+}
