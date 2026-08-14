@@ -30,8 +30,10 @@ path runs without its filter.
 | path has a `.` or `..` segment, **or any segment ending in a dot or a space** (`notes.txt.`, `sub./x`) — Windows' DOS-to-NT conversion strips those, so the name would not be the file | `403` |
 | path contains a backslash, a colon or a control byte (incl. `%5c`, `%00`) | `403` |
 | path is not a valid `fs.FS` name (`fs.ValidPath` — raw invalid UTF-8 among others) | `403` |
-| path is `favicon.ico` | `204`, answered before any file lookup |
+| path is `favicon.ico`, no file exists | `204`, shortcut answered after lookup |
+| path is `favicon.ico`, file exists | served normally as `200` (the shortcut does not shadow it) |
 | path is `/` | rewritten to `index.html` |
+| path names an existing directory | `404`, `missing` — a directory is not an asset |
 | file exists, name carries a type mullion knows | `200`, `Content-Type` from the **name**, never from the bytes (0031) |
 | file exists, name carries none | `200`, `application/octet-stream` — with `nosniff`, a download rather than a document |
 | file missing | `404` |
@@ -103,11 +105,13 @@ forms next to it.
 Back to the table. The
 `favicon.ico` row is a convenience, not a boundary: the browser probes for it on every
 navigation, and answering `204` keeps that probe from surfacing as a resource-load
-failure in the diagnostics of every run. Responses carry `Cache-Control:
-no-store`: the origin is identical across builds, so without it the WebView could
-replay a cached asset from an older build into a new one. They also carry
-`X-Content-Type-Options: nosniff` — it stops bytes an app serves as plain text
-from being content-sniffed into executable HTML on the bridge origin (issue #13).
+failure in the diagnostics of every run. Mullion stats the entry first, so a real
+`favicon.ico` is served as an ordinary asset; only an absent file takes the `204`
+shortcut. Responses carry `Cache-Control: no-store`: the origin is identical across
+builds, so without it the WebView could replay a cached asset from an older build into
+a new one. They also carry `X-Content-Type-Options: nosniff` — it stops bytes an app
+serves as plain text from being content-sniffed into executable HTML on the bridge
+origin (issue #13).
 
 That header only protects what mullion labelled correctly, and until issue #100
 mullion did the sniffing itself: `contentTypeForAsset` fell back to
@@ -361,4 +365,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: tie filtering and external startup authorization to one source plan, including effective-port equality and mandatory filter teardown.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: stat asset entries before reading so directories are missing assets and real favicon.ico files are served before the 204 shortcut.

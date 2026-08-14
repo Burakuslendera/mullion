@@ -73,6 +73,52 @@ looks right is not a window that looks right. What counts as proof for window
 behaviour is defined in [window.md](./window.md) and
 [docs/verification.md](../docs/verification.md).
 
+## Quality gate for behaviour changes
+
+Apply this gate in the opening checklist of **every chat**, before editing code,
+even when another agent supplied the diff. Run it again before saying "done".
+The implementation is not accepted merely because it compiles or because a
+previous agent called it complete.
+
+1. **Audit necessity before implementation.** For every added production line,
+   name the observable behaviour or invariant it protects, the existing owner
+   you searched, and why reuse or deletion cannot satisfy the requirement.
+   Reject duplicate abstractions, test-only hooks, retries, telemetry, speculative
+   hardening and scope creep. A line added only to make a test convenient is not
+   production justification. Tests and docs may be added to lock or explain an
+   actual contract; they must not be used to legitimise unnecessary production
+   code.
+2. **Review the finished implementation adversarially.** Trace error and panic
+   exits, timeout and cancellation, reentrancy, ownership and release order,
+   ABI widths/vtable slots, and input/boundary paths. Check the negative case
+   and the path where the underlying resource disappears or fails between two
+   operations. Ask whether every new branch has a distinct contract; if not,
+   remove it rather than preserving redundant code.
+3. **Use a done gate, not a confidence statement.** Obtain an independent review
+   or second set of eyes. Then run the focused tests for the changed contract,
+   `git diff --check`, and a changed-file scope check. The final report separates
+   automatic tests, real runtime observations, uncovered paths and remaining
+   uncertainty using the labels above. A focused/headless test proves only the
+   seam it exercises; it does not prove WebView2 scheduling, COM implementation,
+   HWND behaviour or rendering.
+4. **Make the reasoning durable.** Comments explain only a non-obvious
+   invariant, ownership, ordering, ABI or security reason; they do not narrate
+   obvious control flow. Put the evidence and the actual runtime boundary in the
+   canonical subsystem document, and update its single footer rather than
+   starting a decision record for a bug fix or a behaviour-preserving audit.
+
+Issue #98 is the ownership example: its focused fakes lock exactly-once COM
+`AddRef`/`Release`, timeout, late callback, panic and event-registration paths,
+while the real WebView2 callback schedule and rendering remain unverified. Do
+not add another owner or claim a headless green test proves the runtime.
+Issue #105 is the necessity example: its evidence was a directory request
+classified as `500 read_error` and 1,000 renderer-chosen requests producing
+`warns=0 errors=1000`; the local fix stats first so an existing directory is
+`404 missing`, preserves the absent-favicon `204` convenience, and serves a
+real `favicon.ico`. Its focused tests prove those response and log decisions,
+not a live WebView2 request. Audit each of those added lines and retain only
+the distinct contracts they establish.
+
 ## Honesty over agreeableness
 
 - Say when a plan is wrong, including a plan you were asked to implement. Say it
@@ -100,4 +146,4 @@ exactly and consistently.
 
 Depth is not verbosity. Explain the mechanism, then stop.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: require a per-line necessity audit, adversarial self-review, independent done gate, durable rationale and explicit #98/#105 evidence boundaries.

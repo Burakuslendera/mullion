@@ -116,16 +116,38 @@ func (provider *assetProvider) resolve(rawURI string) assetResponse {
 		return errorAssetResponse(status, request)
 	}
 	assetPath := request.path
-	if assetPath == "favicon.ico" {
-		// Answer the browser's unsolicited favicon probe rather than letting it
-		// fall through to a 404, which would show up as a frontend resource
-		// failure in the diagnostics of every single run.
-		request.category = "favicon"
-		return noContentAssetResponse("image/x-icon", request)
+	// Stat first separates directories from unreadable files; fs.ReadFile can
+	// report a directory as a read failure, but the asset contract treats it as missing.
+	info, err := fs.Stat(provider.assets, assetPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			if assetPath == "favicon.ico" {
+				// Answer the browser's unsolicited favicon probe only when no
+				// real asset exists, rather than shadowing a caller-provided one.
+				request.category = "favicon"
+				return noContentAssetResponse("image/x-icon", request)
+			}
+			request.category = "missing"
+			return errorAssetResponse(http.StatusNotFound, request)
+		}
+		request.category = "read_error"
+		return errorAssetResponse(http.StatusInternalServerError, request)
+	}
+	if info.IsDir() {
+		// A directory is not an asset and must not look like an internal
+		// filesystem failure to the renderer or the session error signal.
+		request.category = "missing"
+		return errorAssetResponse(http.StatusNotFound, request)
 	}
 	content, err := fs.ReadFile(provider.assets, assetPath)
 	if err != nil {
+		// The entry may disappear after Stat; preserve missing semantics for that
+		// race instead of turning it into an internal read error.
 		if errors.Is(err, fs.ErrNotExist) {
+			if assetPath == "favicon.ico" {
+				request.category = "favicon"
+				return noContentAssetResponse("image/x-icon", request)
+			}
 			request.category = "missing"
 			return errorAssetResponse(http.StatusNotFound, request)
 		}

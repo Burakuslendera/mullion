@@ -111,6 +111,7 @@ them, never a prerequisite to working here.
   leaves the session with a priority, a type and at least one area, applied on the
   tracker — not requested in a comment. [agents/issues.md](./agents/issues.md).
 - Never present untested code as working. See [agents/policy.md](./agents/policy.md).
+- **Before editing, and before saying "done", run the [quality gate](./agents/policy.md#quality-gate-for-behaviour-changes):** audit every added production line, perform the adversarial self-review, and record independent review, focused evidence, changed-file scope and remaining uncertainty.
 
 ## Priority ladder
 
@@ -238,4 +239,4 @@ Replace that footer when editing; never append another footer or adopt another
 editor's name. Git history preserves earlier signatures.
 
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: require one current edit footer per Markdown document, exclude the repository-root README, and rely on Git rather than in-file footer stacks for history.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: require the quality gate before edits and completion, including necessity, adversarial review, focused evidence, scope and uncertainty.

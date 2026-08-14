@@ -125,6 +125,58 @@ func TestAssetProviderResolve(t *testing.T) {
 	}
 }
 
+func TestAssetProviderResolveDirectoryIsMissingWithoutSessionError(t *testing.T) {
+	logger := newLogSink(NopLogger{})
+	provider := newAssetProvider(fstest.MapFS{
+		"sub/index.html": &fstest.MapFile{Data: []byte("<html></html>")},
+	}, logger, testAssetOrigin, newNativeDiagnostics())
+
+	response := provider.resolve(testOrigin + "/sub")
+	if response.status != http.StatusNotFound {
+		t.Fatalf("directory status = %d, want 404", response.status)
+	}
+	if response.request.category != "missing" {
+		t.Fatalf("directory category = %q, want missing", response.request.category)
+	}
+	if string(response.body) != http.StatusText(http.StatusNotFound) {
+		t.Fatalf("directory body = %q, want %q", response.body, http.StatusText(http.StatusNotFound))
+	}
+
+	// This is the same error-level decision made by webResourceRequested after
+	// resolving a response. A renderer-chosen directory request must not raise
+	// SessionErrorCount; it is an ordinary missing asset and is warn-level.
+	for range 1000 {
+		provider.logAssetResponseError(response)
+	}
+	if got := logger.ErrorCount(); got != 0 {
+		t.Fatalf("directory request error count = %d, want 0", got)
+	}
+	if got := logger.WarnCount(); got != 1000 {
+		t.Fatalf("directory request warn count = %d, want 1000", got)
+	}
+}
+
+func TestAssetProviderResolveServesRealFavicon(t *testing.T) {
+	const faviconBody = "real favicon"
+	provider := newTestAssetProvider(fstest.MapFS{
+		"favicon.ico": &fstest.MapFile{Data: []byte(faviconBody)},
+	})
+
+	response := provider.resolve(testOrigin + "/favicon.ico")
+	if response.status != http.StatusOK {
+		t.Fatalf("real favicon status = %d, want 200", response.status)
+	}
+	if response.request.category != "asset" {
+		t.Fatalf("real favicon category = %q, want asset", response.request.category)
+	}
+	if response.contentType != "image/x-icon" {
+		t.Fatalf("real favicon content type = %q, want image/x-icon", response.contentType)
+	}
+	if string(response.body) != faviconBody {
+		t.Fatalf("real favicon body = %q, want %q", response.body, faviconBody)
+	}
+}
+
 func TestResolveAssetRequestDiagnostic(t *testing.T) {
 	tests := []struct {
 		name         string
