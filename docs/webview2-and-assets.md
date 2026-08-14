@@ -39,6 +39,7 @@ The library ships no such DLL. Instead:
    and a relative `location` value is dropped rather than resolved against the process
    working directory, so a malformed or planted registry entry cannot steer the load
    to a CWD-relative path (issue #69).
+   The pin uses the same absolute-path invariant as registry `location`: bare relative paths, `.\...`, drive-relative `C:...`, and rooted `\...` values are rejected as invalid pins; the existing pin diagnostic is returned without fallback or disk probing.
 2. **Load the runtime's own COM server**, `<runtime>\EBWebView\<arch>\EmbeddedBrowserWebView.dll`,
    with `LOAD_WITH_ALTERED_SEARCH_PATH` so its siblings resolve out of the install
    folder and not out of ours (the wrong folder, and possibly a writable one).
@@ -250,4 +251,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: document #98 ownership/reporting boundaries, Embed panic cleanup, event-reference transfer, BOOL out-parameter width, and headless verification limits.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: document #98 ownership/reporting boundaries, Embed panic cleanup, event-reference transfer, BOOL out-parameter width, and headless verification limits; document #111's absolute-path invariant and invalid-pin diagnostic for runtime discovery.

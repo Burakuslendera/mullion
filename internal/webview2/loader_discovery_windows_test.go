@@ -9,6 +9,7 @@ package webview2
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -104,6 +105,70 @@ func TestFindRuntimeAMD64ProceedsThroughDiscovery(t *testing.T) {
 	}
 	if got := strings.Join(calls, ","); got != "discovery,disk,DLL version" {
 		t.Fatalf("amd64 calls = %q, want discovery,disk,DLL version", got)
+	}
+}
+func TestDiscoverCandidatesRejectsRelativePinnedFolders(t *testing.T) {
+	for i, relative := range []string{
+		`EdgeWebView\Application`,
+		`.\runtime`,
+		`C:runtime`,
+		`\runtime`,
+	} {
+		t.Run(fmt.Sprintf("%d_%s", i, relative), func(t *testing.T) {
+			t.Setenv(BrowserExecutableFolderEnv, relative)
+
+			candidates := discoverCandidates()
+			if len(candidates) == 0 {
+				t.Fatal("discoverCandidates returned no candidate for a configured pin")
+			}
+			pinned := candidates[0]
+			if pinned.source != sourceEnvOverride || !pinned.pinned {
+				t.Fatalf("first candidate = %+v, want the environment pin", pinned)
+			}
+			if len(pinned.folders) != 0 {
+				t.Fatalf("relative pin %q offered folders %v", relative, pinned.folders)
+			}
+
+			existsCalls := 0
+			_, err := selectRuntime(candidates, "x64", func(string) bool {
+				existsCalls++
+				return true
+			})
+			if err == nil {
+				t.Fatalf("relative pin %q selected a runtime", relative)
+			}
+			if !strings.Contains(err.Error(), BrowserExecutableFolderEnv) {
+				t.Fatalf("error = %q, want it to name %s", err, BrowserExecutableFolderEnv)
+			}
+			if existsCalls != 0 {
+				t.Fatalf("relative pin %q reached disk probing %d times", relative, existsCalls)
+			}
+		})
+	}
+}
+
+func TestDiscoverCandidatesPreservesAbsolutePinnedFolder(t *testing.T) {
+	const pinned = `C:\runtime`
+	t.Setenv(BrowserExecutableFolderEnv, pinned)
+
+	candidates := discoverCandidates()
+	if len(candidates) == 0 {
+		t.Fatal("discoverCandidates returned no candidate for a configured pin")
+	}
+	item := candidates[0]
+	if len(item.folders) != 1 || item.folders[0] != filepath.Clean(pinned) {
+		t.Fatalf("absolute pin candidate = %+v, want folder %q", item, filepath.Clean(pinned))
+	}
+	if !filepath.IsAbs(item.folders[0]) {
+		t.Fatalf("absolute pin candidate folder %q is not absolute", item.folders[0])
+	}
+
+	found, err := selectRuntime([]candidate{item}, "x64", fakeDisk(clientIn(pinned)))
+	if err != nil {
+		t.Fatalf("selectRuntime with absolute environment pin: %v", err)
+	}
+	if found.Folder != filepath.Clean(pinned) || !found.Fixed {
+		t.Fatalf("selected runtime = %+v, want fixed runtime under %q", found, filepath.Clean(pinned))
 	}
 }
 

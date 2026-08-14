@@ -119,6 +119,41 @@ real `favicon.ico`. Its focused tests prove those response and log decisions,
 not a live WebView2 request. Audit each of those added lines and retain only
 the distinct contracts they establish.
 
+## Repeat-prevention checklist
+
+Use this checklist after reading the issue and again before handoff. Issue #102
+shows why: one `in` check accepted inherited names such as `toString`, so a
+typoed resize attribute consumed application clicks and emitted host warnings
+even though the host correctly rejected the unknown edge. The contract was
+allow-list membership, not a redesign of resize handling; keep that boundary
+when preventing a repeat.
+
+1. **Keep the issue boundary.** Write down the issue's requested observable
+   behaviour and edit only the files and callers needed for it. Do not add
+   adjacent cleanup, speculative hardening, abstractions, retries, telemetry,
+   or unrelated tests, comments, and documentation.
+2. **Justify every added line.** Before handoff, be able to name its observable
+   contract, invariant, or test reason. Prefer reuse or deletion when no
+   distinct reason exists; an abstraction or test hook added for convenience
+   is not a justification.
+3. **Test the boundary, not the implementation.** Cover the changed behaviour's
+   positive and negative cases, inputs at its boundary, and the relevant
+   failure or transition path. State exactly what those tests do not prove;
+   do not treat a passing seam test as proof of an unexercised runtime.
+4. **Audit independently before completion.** Before declaring implementation
+   complete, reread the final diff as a second reviewer, without trusting the
+   implementing narrative. Check scope, callers, error paths, ownership and
+   boundary values, then remove unjustified lines before handoff.
+5. **Make comments durable and handoff honest.** Add a code comment only for
+   a non-obvious invariant or future-risk `why`, never to narrate obvious
+   code. Report evidence, uncovered paths, and uncertainty. Push, commit, and
+   closing the GitHub issue are not prerequisites for delivering the completed
+   work.
+
+This checklist prevents the #102 failure mode from becoming a broad rule:
+preserve the smallest change that proves the requested contract, and record
+the reason only where a future maintainer could otherwise break that contract.
+
 ## Honesty over agreeableness
 
 - Say when a plan is wrong, including a plan you were asked to implement. Say it
@@ -146,4 +181,4 @@ exactly and consistently.
 
 Depth is not verbosity. Explain the mechanism, then stop.
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: require a per-line necessity audit, adversarial self-review, independent done gate, durable rationale and explicit #98/#105 evidence boundaries.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: add a repeat-prevention checklist with #102 evidence, minimal-diff discipline, independent self-audit, behavioural test boundaries and honest handoff rules.

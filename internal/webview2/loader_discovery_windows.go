@@ -156,11 +156,17 @@ func discoverCandidates() []candidate {
 	var out []candidate
 
 	if pinned := strings.TrimSpace(os.Getenv(BrowserExecutableFolderEnv)); pinned != "" {
-		out = append(out, candidate{
-			source:  sourceEnvOverride,
-			folders: []string{filepath.Clean(pinned)},
-			pinned:  true,
-		})
+		item := candidate{
+			source: sourceEnvOverride,
+			pinned: true,
+		}
+		if filepath.IsAbs(pinned) {
+			item.folders = []string{filepath.Clean(pinned)}
+		}
+		// Keep an invalid pin in the candidate stream so selectRuntime returns
+		// the existing pin diagnostic, but never let a relative value reach
+		// fileExists or LoadLibraryEx as a CWD-relative path.
+		out = append(out, item)
 	}
 
 	defaultRoot := defaultInstallRoot()

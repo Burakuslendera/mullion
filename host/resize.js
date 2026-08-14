@@ -133,7 +133,8 @@
     const edgeFromTarget = (target) => {
       if (!(target instanceof Element)) return "";
       const edge = target.dataset.__DATASET__ || "";
-      return edge in zoneStyles ? edge : "";
+      // `in` would admit Object.prototype names like toString/constructor; own-property filtering keeps the fixed edge allow-list while host validation remains unchanged.
+      return Object.hasOwn(zoneStyles, edge) ? edge : "";
     };
     const onPointerDown = (event) => {
       if (!zonesEnabled || maximised || moveSizeActive || event.button !== 0 || event.isPrimary === false) return;
