@@ -6,6 +6,7 @@
   - [Finding the runtime, and skipping the loader DLL](#finding-the-runtime-and-skipping-the-loader-dll)
   - [The Go-owned ABI is explicit](#the-go-owned-abi-is-explicit)
   - [Event handlers are COM objects we implement](#event-handlers-are-com-objects-we-implement)
+  - [Completion and embed lifetime](#completion-and-embed-lifetime)
   - [Reporting follows return ownership](#reporting-follows-return-ownership)
 
 This document describes how the host talks to WebView2 without a third-party
@@ -174,6 +175,67 @@ process-failure and message adapters do the same. See
 [decisions/0027](./decisions/0027-cancel-is-committed-after-the-runtime-performs-it.md)
 and [0037](./decisions/0037-event-values-preserve-getter-provenance.md).
 
+### Completion and embed lifetime
+
+Issue #98 closes one invariant across the asynchronous loader and `Browser.Embed`:
+every COM reference that this package owns has exactly one release on every exit,
+including timeout, a contract-breaking late callback, a panic in embedder code,
+and a secondary cleanup failure. The tests are deliberately headless; fake COM
+servers count `AddRef`/`Release` and exercise the production handoff seams
+without creating an HWND, starting a message pump, or loading WebView2.
+
+**Completion handlers.** The runtime's result argument is borrowed for the
+duration of `Invoke`. The callback takes one reference before deciding where the
+result goes. If the waiter is still present, that reference is transferred to
+the waiter; if `abandon` has sealed the handler, or the callback fires twice, it
+is released immediately. `abandon` sets its permanent flag under the same mutex
+as the delivery decision and drains a result that reached the one-slot buffer
+just before the flag. Therefore the two orderings
+`Invoke → abandon` and `abandon → late Invoke` both release exactly once.
+
+The loader registers `abandon` after `release`, so deferred calls run in the
+required LIFO order: the handler is sealed and any buffered result is drained
+before the package drops its own handler reference. The timeout and synchronous
+HRESULT branches also call `abandon` immediately, closing the late-`Invoke`
+window before returning; the deferred call remains the all-exits guard for
+successful waits, completion-result errors and panics. This is the completion
+handler extension of the timeout ownership fixed by #37, not a second owner.
+
+**Embed failure and event registration.** `CreateEnvironment`,
+`CreateController` and `GetCoreWebView2` each return an owned interface
+reference. `Embed` keeps each local reference deferred until ownership is
+transferred into `Browser`; before event registration succeeds, a deferred
+`ShuttingDown` closes and releases the stored controller/core/environment if
+embedder code panics or registration fails. `ShuttingDown` is idempotent and
+retains the runtime-required close-before-release order. `addEvent` likewise
+defers the constructor reference release until after `add_*` returns, so both a
+registration error and a panic cannot strand it; successful registration leaves
+exactly the runtime's reference.
+
+This is distinct from reporting ownership. Under #86 and
+[decision 0038](./decisions/0038-terminal-policy-owns-error-reporting.md),
+`Embed` returns its primary failure unchanged and does not report it again.
+Non-returnable adapter-policy failures, such as the bounds-policy `Put*` calls,
+and secondary controller-close failures are reported locally. #97 owns the
+outer window/browser teardown boundary; #98 prevents the in-progress embed from
+orphaning these references before the host can take ownership. #99's
+recurrence-lock rule requires tests at production handoff seams, but the focused
+#98 tests do not directly execute `Embed` with fake COM objects; its guard wiring
+therefore remains headless-unverified.
+
+**COM out-parameters.** An options getter that cannot resolve its `this` still
+nils a string pointer or writes `FALSE` before returning failure. A Win32
+`BOOL` is four bytes (`int32`), not Go's one-byte `bool`; `writeBOOL` is the
+single width-aware writer for that ABI. The rule prevents a caller from
+freeing stale output or reading bytes left by a previous call, even though a
+foreign or vacant `this` is not a normal runtime path.
+
+The focused #98 tests prove these ownership, ordering, ABI-slot and out-
+parameter contracts with fakes. They cannot prove WebView2's real callback
+schedule, COM implementation, controller close behaviour, or rendering on a
+live window. Those remain **unverified** until the runtime-backed Windows
+verification path is exercised; a green headless suite is not that evidence.
+
 ### Reporting follows return ownership
 
 Browser operations that return an error do not also invoke `ErrorCallback`; the
@@ -188,4 +250,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: separate local ABI trip-wires from consumer mapping and COM reference-handoff tests, and preserve zero-versus-unavailable PutCancel identities.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: document #98 ownership/reporting boundaries, Embed panic cleanup, event-reference transfer, BOOL out-parameter width, and headless verification limits.

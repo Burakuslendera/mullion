@@ -29,7 +29,7 @@ package webview2
 //
 // windows.NewCallback allocates from a small, fixed, never-freed table and is
 // usable here only because the architecture gate has accepted Windows/amd64.
-// One shared vtable means exactly one Invoke callback for all event handling,
+// One shared vtable means one Invoke callback rather than one per interface,
 // and ensureCOMVtables builds it only after that gate.
 //
 // # Threading
@@ -97,8 +97,8 @@ func eventHandlerInvoke(this, sender, args uintptr) uintptr {
 	if server == nil {
 		// `this` is not one of ours. Nothing was handled and nothing can be, so
 		// there is no event outcome to protect - report the truth. This is the
-		// one case that does not return S_OK, and it is unreachable short of
-		// memory corruption or a foreign caller.
+		// one case that does not return S_OK; a released address may be vacant
+		// before a later COM allocation reuses it for another interface.
 		return eFail
 	}
 	handler, ok := server.self.(*eventHandler)

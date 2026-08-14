@@ -417,6 +417,31 @@ func TestReleaseBrowserObjectsReleasesEveryObjectWhenClosePanics(t *testing.T) {
 	}
 }
 
+// TestReleaseBrowserObjectsReleasesEveryObjectWhenReportPanics covers the
+// Embed failure window: a secondary Close error reaches embedder code, and a
+// panic there must not strand the three owned references.
+func TestReleaseBrowserObjectsReleasesEveryObjectWhenReportPanics(t *testing.T) {
+	var releasedController, releasedCore, releasedEnvironment bool
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("a panic in reportErr must propagate for the caller's recovery")
+			}
+		}()
+		releaseBrowserObjects(
+			func() error { return errors.New("close failed") },
+			func() { releasedController = true },
+			func() { releasedCore = true },
+			func() { releasedEnvironment = true },
+			func(error) { panic("report exploded") },
+		)
+	}()
+	if !releasedController || !releasedCore || !releasedEnvironment {
+		t.Fatalf("a panic in reportErr stranded a reference: controller=%t core=%t environment=%t",
+			releasedController, releasedCore, releasedEnvironment)
+	}
+}
+
 // TestReleaseBrowserObjectsReportsACloseError locks the other direction of the
 // Close-error branch: a Close that returns a real error (rather than nil or a
 // panic) must reach reportErr, and the three releases must still run. The order

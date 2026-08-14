@@ -135,41 +135,68 @@ func (browser *Browser) Embed(parent uintptr) error {
 	if err != nil {
 		return err
 	}
+	environmentOwned := true
+	defer func() {
+		if environmentOwned {
+			environment.Release()
+		}
+	}()
 
 	controllerUnknown, err := environment.CreateController(windows.Handle(parent))
 	if err != nil {
-		environment.Release()
 		return err
 	}
-
-	// CreateController hands back the ICoreWebView2Controller interface pointer;
-	// it is typed as IUnknown only because the loader does not depend on the
-	// interface definitions. The pointer identity is the same.
 	controller := (*ICoreWebView2Controller)(unsafe.Pointer(controllerUnknown))
+	controllerOwned := true
+	defer func() {
+		if controllerOwned {
+			asUnknown(controller).Release()
+		}
+	}()
 
 	core, err := controller.GetCoreWebView2()
 	if err != nil {
-		// CreateController handed us an owned reference. Close and release it
-		// before bailing, or it is orphaned: browser.controller is not assigned
-		// until below, so ShuttingDown could never reclaim it. Close failure is
-		// secondary and cannot be returned without hiding the primary failure.
+		// CreateController handed us an owned reference. Close it before
+		// returning, while the deferred release remains independent of any
+		// panic from the secondary error reporter.
 		if closeErr := controller.Close(); closeErr != nil {
 			browser.reportError(errors.Join(errors.New("close controller after GetCoreWebView2 failure"), closeErr))
 		}
-		asUnknown(controller).Release()
-		environment.Release()
 		return err
 	}
+	coreOwned := true
+	defer func() {
+		if coreOwned {
+			asUnknown(core).Release()
+		}
+	}()
+
+	embedded := false
+	defer func() {
+		if !embedded {
+			browser.ShuttingDown()
+		}
+	}()
 
 	browser.mu.Lock()
 	browser.environment = environment
 	browser.controller = controller
 	browser.core = core
 	browser.mu.Unlock()
+	// Ownership moves into Browser as one unit. Clear the local guards before
+	// applyBoundsPolicy or registration can call embedder code; ShuttingDown is
+	// then the sole release path if either operation panics or fails.
+	environmentOwned = false
+	controllerOwned = false
+	coreOwned = false
 
 	browser.applyBoundsPolicy()
 
-	return browser.registerEventsOrTearDown(browser.registerEvents)
+	if err := browser.registerEventsOrTearDown(browser.registerEvents); err != nil {
+		return err
+	}
+	embedded = true
+	return nil
 }
 
 // registerEventsOrTearDown runs register and, on failure, tears the browser down

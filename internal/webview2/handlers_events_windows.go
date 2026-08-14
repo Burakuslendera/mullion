@@ -66,9 +66,10 @@ var (
 //
 // add_* takes its own reference, so the object survives the ReleaseHandler call
 // and lives until the WebView drops it (on remove_* or when the WebView itself
-// is destroyed). Skipping ReleaseHandler is not a crash, but the handler then
-// outlives the WebView - a small, permanent leak per WebView created. Calling it
-// twice IS a crash: the runtime would be left holding a freed object.
+// is destroyed). Skipping ReleaseHandler leaks the constructor's reference and
+// leaves the handler rooted after the WebView is gone. Calling ReleaseHandler
+// twice is invalid: the second call can consume the runtime's reference and
+// leave a live callback with no COM object behind it.
 //
 // The sender and args pointers a callback receives are borrowed for the duration
 // of the call. Do not retain them; if you need the data, copy it out (the

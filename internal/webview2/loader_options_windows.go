@@ -119,6 +119,7 @@ func optionsGetString(this, out uintptr, pick func(Options) string) uintptr {
 	}
 	options := optionsFor(this)
 	if options == nil {
+		writeAddress(out, 0)
 		return eFail
 	}
 	value, err := coTaskMemString(pick(options.opts))
@@ -148,6 +149,7 @@ func optionsGetAllowSingleSignOn(this, out uintptr) uintptr {
 	}
 	options := optionsFor(this)
 	if options == nil {
+		writeBOOL(out, false)
 		return eFail
 	}
 	writeBOOL(out, options.opts.AllowSingleSignOnUsingOSPrimaryAccount)

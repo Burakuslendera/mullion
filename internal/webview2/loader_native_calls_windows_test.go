@@ -83,7 +83,7 @@ func (c *environmentNativeCall) invoke(checkRunningInstance, runtimeType, userDa
 		)
 	}
 
-	if c.mode == loaderCallTimesOut && c.handlerRegistered {
+	if (c.mode == loaderCallTimesOut || c.mode == loaderCallSucceeds) && c.handlerRegistered {
 		c.heldHandler = handler
 		c.heldHandler.AddRef() // the fake runtime retains the asynchronous callback
 	}
@@ -259,10 +259,21 @@ func TestCreateEnvironmentWithOptionsNativeCallBoundary(t *testing.T) {
 				if call.invokeResult != sOK {
 					t.Errorf("Invoke = %#x, want S_OK", call.invokeResult)
 				}
-				assertLoaderRoots(t, baseline, call.optionsThis, call.handlerThis)
+				if serverFor(call.optionsThis) != nil {
+					t.Fatal("environment options remained rooted after successful creation")
+				}
+				if serverFor(call.handlerThis) == nil {
+					t.Fatal("successful creation did not retain the runtime-owned completion handler")
+				}
 				assertFakeResultCounts(t, resultState, 1, 0)
+				call.completeLate()
+				assertLoaderRoots(t, baseline, call.optionsThis, call.handlerThis)
+				if call.invokeResult != sOK {
+					t.Errorf("late Invoke after successful environment creation = %#x, want S_OK", call.invokeResult)
+				}
+				assertFakeResultCounts(t, resultState, 2, 1)
 				environment.Release()
-				assertFakeResultCounts(t, resultState, 1, 1)
+				assertFakeResultCounts(t, resultState, 2, 2)
 			}
 			runtime.KeepAlive(result)
 			runtime.KeepAlive(call)
@@ -292,7 +303,7 @@ func (c *controllerNativeCall) invoke(this, parent, handlerThis uintptr) uintptr
 	handler, handlerRegistered := packageCompletionHandler(handlerThis, iidControllerCompletedHandler)
 	c.handlerRegistered = handlerRegistered
 
-	if c.mode == loaderCallTimesOut && c.handlerRegistered {
+	if (c.mode == loaderCallTimesOut || c.mode == loaderCallSucceeds) && c.handlerRegistered {
 		c.heldHandler = handler
 		c.heldHandler.AddRef()
 	}
@@ -433,10 +444,18 @@ func TestEnvironmentCreateControllerNativeCallBoundary(t *testing.T) {
 				if call.invokeResult != sOK {
 					t.Errorf("Invoke = %#x, want S_OK", call.invokeResult)
 				}
-				assertLoaderRoots(t, baseline, call.handlerThis)
+				if serverFor(call.handlerThis) == nil {
+					t.Fatal("successful creation did not retain the runtime-owned completion handler")
+				}
 				assertFakeResultCounts(t, resultState, 1, 0)
+				call.completeLate()
+				assertLoaderRoots(t, baseline, call.handlerThis)
+				if call.invokeResult != sOK {
+					t.Errorf("late Invoke after successful controller creation = %#x, want S_OK", call.invokeResult)
+				}
+				assertFakeResultCounts(t, resultState, 2, 1)
 				controller.Release()
-				assertFakeResultCounts(t, resultState, 1, 1)
+				assertFakeResultCounts(t, resultState, 2, 2)
 			}
 			runtime.KeepAlive(result)
 			runtime.KeepAlive(environment)

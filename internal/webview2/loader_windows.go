@@ -105,7 +105,10 @@ func createEnvironmentWithProc(opts Options, found resolved, createEnviron ComPr
 	// create call would rely on the runtime having taken its own reference; it
 	// does, but a lifetime bug there is a use-after-free inside the browser, and
 	// holding on costs one object.
+	// Register abandon after release: deferred calls run LIFO, so sealing and
+	// draining a result always happen before our handler reference is dropped.
 	defer handler.release()
+	defer handler.abandon()
 
 	var userDataFolder *uint16
 	if opts.UserDataFolder != "" {
@@ -172,8 +175,11 @@ func (e *Environment) createControllerWithTimeout(parent windows.Handle, timeout
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	// Keep the same LIFO order as environment creation: abandon must run before
+	// release so a late Invoke cannot strand its result behind our final ref.
 	handler := newControllerCompletedHandler()
 	defer handler.release()
+	defer handler.abandon()
 
 	vtbl := (*ICoreWebView2EnvironmentVtbl)(unsafe.Pointer(e.unknown.Vtbl))
 	hr, _, _ := vtbl.CreateCoreWebView2Controller.Call(

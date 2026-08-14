@@ -195,6 +195,26 @@ func TestEnvironmentOptionsDispatchesByNumericalABISlots(t *testing.T) {
 		}
 	}
 }
+func TestEnvironmentOptionsFailureNilsOutParameters(t *testing.T) {
+	vtable := unsafe.Pointer(&environmentOptionsVtable)
+	const foreignThis = uintptr(0xdeadbeef)
+
+	stringOut := uintptr(0xdeadbeef)
+	if hr := callCOMSlot(vtable, 3, foreignThis, uintptr(unsafe.Pointer(&stringOut))); hr != eFail {
+		t.Fatalf("get_AdditionalBrowserArguments(foreign this) = %#x, want E_FAIL", hr)
+	}
+	if stringOut != 0 {
+		t.Fatalf("string out = %#x, want nil on E_FAIL", stringOut)
+	}
+
+	var allowOut int32 = 0x7f
+	if hr := callCOMSlot(vtable, 9, foreignThis, uintptr(unsafe.Pointer(&allowOut))); hr != eFail {
+		t.Fatalf("get_AllowSingleSignOnUsingOSPrimaryAccount(foreign this) = %#x, want E_FAIL", hr)
+	}
+	if allowOut != 0 {
+		t.Fatalf("allow-single-sign-on out = %d, want zero on E_FAIL", allowOut)
+	}
+}
 
 func TestEnvironmentOptionsUnsetStringUsesNull(t *testing.T) {
 	options := newEnvironmentOptions(Options{})

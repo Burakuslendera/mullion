@@ -22,8 +22,10 @@ import (
 // one COM object per handler; releasing before add_* would hand the runtime a
 // freed object.
 func addEvent(handler unsafe.Pointer, register func(unsafe.Pointer) (EventRegistrationToken, error)) error {
+	// Registration can fail or panic; the constructor reference must be dropped
+	// on both exits, while add_* retains the runtime's reference.
+	defer ReleaseHandler(handler)
 	_, err := register(handler)
-	ReleaseHandler(handler)
 	return err
 }
 

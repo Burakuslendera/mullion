@@ -272,6 +272,38 @@ func TestCompletionDeliveredToTheWaiterKeepsTheReference(t *testing.T) {
 	runtime.KeepAlive(object)
 }
 
+// TestLateCompletionAfterSuccessfulWaitReleasesTheResult covers the other
+// double-fire ordering: waitFor drains the first result, then abandon seals
+// the completed handler before a forbidden late Invoke arrives.
+func TestLateCompletionAfterSuccessfulWaitReleasesTheResult(t *testing.T) {
+	handler := newTestCompletedHandler(t)
+	object, state := newFakeUnknown(t)
+
+	if hr := invoked(handler.this, sOK, uintptr(unsafe.Pointer(object))); hr != sOK {
+		t.Fatalf("first invoked = %#x, want S_OK", hr)
+	}
+	result, err := waitFor(handler.done, time.Second, "the test completion")
+	if err != nil {
+		t.Fatalf("waitFor err = %v, want nil", err)
+	}
+	result.result.Release()
+	handler.abandon()
+
+	if hr := invoked(handler.this, sOK, uintptr(unsafe.Pointer(object))); hr != sOK {
+		t.Fatalf("late invoked = %#x, want S_OK", hr)
+	}
+	if state.addRefs != 2 || state.releases != 2 {
+		t.Fatalf("addRefs/releases = %d/%d, want 2/2: both the drained result and late result need one Release",
+			state.addRefs, state.releases)
+	}
+	select {
+	case <-handler.done:
+		t.Fatal("late completion was buffered after successful wait and abandon")
+	default:
+	}
+	runtime.KeepAlive(object)
+}
+
 // TestSecondInvokeReleasesTheExtraReference pins the pre-existing double-fire
 // defence, which the abandon flag must not have broken: the forbidden second
 // completion drops its reference, the first stays buffered.

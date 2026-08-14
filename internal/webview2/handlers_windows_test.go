@@ -93,7 +93,7 @@ func TestConstructorsRegisterSharedVtableAndOwnIID(t *testing.T) {
 		// starts, so a Fatalf in the middle of a bare loop would both skip the
 		// remaining rows and strand their registered COM servers in the global
 		// map for the rest of the binary - where liveServerCount() is what
-		// TestHandlerRefcountLifecycle and TestReleaseHandlerIsDefensive
+		// TestHandlerRefcountLifecycle and TestReleaseHandlerRequiresExactlyOneCall
 		// measure. t.Fatalf unwinds through defers and stops only its own
 		// subtest, so this releases everything and still runs every row.
 		t.Run(tc.name, func(t *testing.T) {
@@ -333,6 +333,30 @@ func TestAddEventTransfersExactlyOneReferenceToTheRuntime(t *testing.T) {
 	})
 }
 
+func TestAddEventReleasesWhenRegistrationPanics(t *testing.T) {
+	baseline := liveServerCount()
+	handler := NewProcessFailedHandler(func(*ICoreWebView2, *ICoreWebView2ProcessFailedEventArgs) {})
+	this := uintptr(handler)
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("addEvent did not propagate the registration panic")
+			}
+		}()
+		_ = addEvent(handler, func(unsafe.Pointer) (EventRegistrationToken, error) {
+			panic("registration exploded")
+		})
+	}()
+
+	if serverFor(this) != nil {
+		t.Fatal("registration panic left the handler rooted")
+	}
+	if got := liveServerCount(); got != baseline {
+		t.Fatalf("live servers after registration panic = %d, want baseline %d", got, baseline)
+	}
+}
+
 // Invoke must reach the Go callback with the arguments typed, and report S_OK.
 // Use literal slot 3 rather than the Invoke field name: the latter would follow
 // a reordered declaration and let the ABI regression stay green.
@@ -472,21 +496,39 @@ func TestHandlerInvokeUnknownThis(t *testing.T) {
 	}
 }
 
-// ReleaseHandler must tolerate nil and must not blow up if it is somehow called
-// after the object is gone - the second call finds no server and does nothing.
-func TestReleaseHandlerIsDefensive(t *testing.T) {
+// ReleaseHandler is nil-safe, but its ownership contract is exactly one call.
+// A redundant call can consume the runtime's reference and invalidate the
+// callback object still held by the runtime.
+func TestReleaseHandlerRequiresExactlyOneCall(t *testing.T) {
 	ReleaseHandler(nil) // must not panic
 
 	baseline := liveServerCount()
 	handler := NewProcessFailedHandler(func(*ICoreWebView2, *ICoreWebView2ProcessFailedEventArgs) {})
-	ReleaseHandler(handler)
-	if got := liveServerCount(); got != baseline {
-		t.Fatalf("live servers = %d, want %d after releasing the only reference", got, baseline)
+	this := uintptr(handler)
+	server := serverFor(this)
+	if server == nil {
+		t.Fatal("constructor did not publish the handler root")
 	}
-	// Releasing again is a caller bug; it must not panic here, though it cannot
-	// undo the damage of a premature release in the real world.
+	runtime := (*IUnknown)(unsafe.Pointer(handler))
+	if got := runtime.AddRef(); got != 2 {
+		t.Fatalf("runtime AddRef = %d, want 2", got)
+	}
+
 	ReleaseHandler(handler)
+	if got := atomic.LoadInt32(&server.refs); got != 1 {
+		t.Fatalf("refs after package release = %d, want runtime's 1", got)
+	}
+	if serverFor(this) == nil {
+		t.Fatal("package release removed a handler still owned by the runtime")
+	}
+
+	// This is a misuse demonstration: the redundant call consumes the runtime
+	// reference and removes the GC root, so no third release is possible.
+	ReleaseHandler(handler)
+	if serverFor(this) != nil {
+		t.Fatal("redundant release left a zero-ref handler rooted")
+	}
 	if got := liveServerCount(); got != baseline {
-		t.Errorf("live servers = %d, want %d after a redundant release", got, baseline)
+		t.Errorf("live servers = %d, want baseline %d after redundant release", got, baseline)
 	}
 }
