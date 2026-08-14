@@ -269,7 +269,7 @@ func TestLongOpaqueHTTPFallbackKeepsInnerOrigin(t *testing.T) {
 }
 
 func TestLongFileFallbackKeepsFileNameTail(t *testing.T) {
-	raw := "file:///C:/Users/Alice/" + strings.Repeat("private/", URLLimit) + "secret.html"
+	raw := "file:///C:/Users/" + "Alice/" + strings.Repeat("private/", URLLimit) + "secret.html"
 	got := URL(raw)
 	if !strings.Contains(got, "secret.html") {
 		t.Fatalf("URL(%q) = %q, want the final file name", raw, got)
