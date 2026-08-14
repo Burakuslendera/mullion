@@ -77,13 +77,17 @@ fragment has started the host is complete and a later cut shortens the path, not
 the host — which is what keeps a URL inside a multi-line stack trace readable.
 
 **A value bounded before it is scanned drops any run the bound interrupted.**
-`URL`'s non-http fallback cuts to `URLLimit` and then hands the result to
-`Message`. Cutting the input was safe while the reduction deleted every host —
-`boundInput`'s own comment said so, and that justification is exactly what this
-change invalidated. Padding chosen by whoever wrote the value lands the cut on a
-label boundary, so `blob:https://cdn.<pad>.mullion.local.evil.example/x` would
-log as `blob:https://cdn.<pad>.mullion.local`. `boundForScan` takes the whole
-interrupted run with the cut instead.
+`URL`'s non-http fallback normally cuts to `URLLimit` and then hands the result
+to `Message`. Cutting the input was safe while the reduction deleted every host
+— `boundInput`'s own comment said so, and that justification is exactly what
+this change invalidated. Padding chosen by whoever wrote the value lands the cut
+on a label boundary, so `blob:https://cdn.<pad>.mullion.local.evil.example/x`
+would log as `blob:https://cdn.<pad>.mullion.local`; `boundForScan` takes the
+whole interrupted run with the cut instead. The two path-shaped exceptions keep
+their identifying part before the bound: a `blob:` or `filesystem:` wrapper
+reduces its inner HTTP URL to a complete origin and bounded opaque suffix, while
+a `file:` value keeps its final component for `Message`/`FileName` rather than
+leaking a head-truncated directory.
 
 **A part is separated from the one before it where the source had a separator,
 and only there.** Separating unconditionally would put a space inside every
@@ -242,4 +246,4 @@ the query's value - `token=s3cr3t` in the thrown string - is gone. That is the
 line issue #80 was opened about, which before this change read `httpmain.js`;
 both halves of the trade this record makes are visible in one line.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: preserve wrapped HTTP origins and file-name tails when bounding non-http URL fallbacks.

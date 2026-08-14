@@ -172,6 +172,65 @@ func TestMessageStripsControlBytes(t *testing.T) {
 	}
 }
 
+func TestRenderingControlsFoldAcrossReducers(t *testing.T) {
+	input := "boom\u200b\u202e\u2066\ufefftail"
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"message", Message(input), "boom tail"},
+		{"reason", Reason(errors.New(input)), "boom tail"},
+		{"file name", FileName("dir/" + input), "boom    tail"},
+		{"diagnostic", Diagnostic(input), "boom tail"},
+		{"field", Field(input), "boom tail"},
+		{"field file name", FieldFileName("dir/" + input), "boom    tail"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.got != c.want {
+				t.Fatalf("reducer(%q) = %q, want %q", input, c.got, c.want)
+			}
+		})
+	}
+}
+func TestStripControlMarksInvalidUTF8WithoutCollapsingReplacementRunes(t *testing.T) {
+	invalid := "host\xffname"
+	if got := Message(invalid); got != "host?name" {
+		t.Fatalf("Message(%q) = %q, want one-byte invalid marker", invalid, got)
+	}
+	if got := Message("host\uFFFDname"); got == Message(invalid) {
+		t.Fatalf("Message() made invalid UTF-8 indistinguishable from U+FFFD: %q", got)
+	}
+	long := strings.Repeat("\xff", 1000)
+	if got := Message(long); len(got) != len(long) {
+		t.Fatalf("Message() expanded invalid UTF-8 from %d to %d bytes", len(long), len(got))
+	}
+	for _, reduce := range []struct {
+		name string
+		fn   func(string) string
+	}{
+		{"filename", FileName},
+		{"diagnostic", Diagnostic},
+		{"field", Field},
+	} {
+		t.Run(reduce.name, func(t *testing.T) {
+			if got := reduce.fn(invalid); strings.ContainsRune(got, '\uFFFD') {
+				t.Fatalf("%s(%q) retained replacement rune: %q", reduce.name, invalid, got)
+			}
+		})
+	}
+}
+
+func TestURLDoesNotExposeRenderingControlsFromAPath(t *testing.T) {
+	for _, r := range []rune{'\u200b', '\u200e', '\u202e', '\u2066', '\ufeff'} {
+		in := "https://example.com/a" + string(r) + "b"
+		if got := URL(in); strings.ContainsRune(got, r) {
+			t.Fatalf("URL(%q) = %q, retained rendering control %#U", in, got, r)
+		}
+	}
+}
+
 var sanitizedTokenSink string
 var diagnosticURLStartSink int
 var diagnosticURLValueSink string

@@ -498,18 +498,54 @@ func IsControl(r rune) bool {
 	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)
 }
 
+// IsRenderingControl reports issue #115's exact invisible rendering-control set:
+// bidi overrides and isolate markers, zero-width format characters,
+// word joiner/invisible operators, and BOM. This shared predicate keeps logs
+// and asset names from carrying invisible control markers.
+func IsRenderingControl(r rune) bool {
+	switch {
+	case r >= 0x200b && r <= 0x200f:
+	case r >= 0x202a && r <= 0x202e:
+	case r >= 0x2060 && r <= 0x2064:
+	case r >= 0x2066 && r <= 0x2069:
+	case r == 0xfeff:
+	default:
+		return false
+	}
+	return true
+}
+
 // StripControl folds every C0/C1 control character - including CR and LF, ESC,
-// BEL, backspace, NUL and the C1 block - to a space, so a string cannot smuggle
-// an ANSI/OSC terminal escape, a title rewrite, an injected line or a
-// provenance-erasing backspace through to a terminal. Message calls it after
-// handling CR/LF itself; it is exported so another internal package that prints
-// untrusted strings to a console - the registry and environment values in
-// mullion doctor (issue #40) - can apply the same guard at its own boundary.
+// BEL, backspace, NUL and the C1 block - plus rendering controls to a space, so
+// a string cannot smuggle an ANSI/OSC terminal escape, a title rewrite, an
+// injected line or a visually misleading value through to a terminal. Invalid
+// UTF-8 bytes use a one-byte marker rather than expanding to U+FFFD; a legitimate
+// U+FFFD therefore remains distinguishable and bounded.
 func StripControl(message string) string {
-	return strings.Map(func(r rune) rune {
-		if IsControl(r) {
-			return ' '
+	if utf8.ValidString(message) {
+		return strings.Map(func(r rune) rune {
+			if IsControl(r) || IsRenderingControl(r) {
+				return ' '
+			}
+			return r
+		}, message)
+	}
+
+	var out strings.Builder
+	out.Grow(len(message))
+	for index := 0; index < len(message); {
+		r, size := utf8.DecodeRuneInString(message[index:])
+		if r == utf8.RuneError && size == 1 {
+			out.WriteByte('?')
+			index++
+			continue
 		}
-		return r
-	}, message)
+		if IsControl(r) || IsRenderingControl(r) {
+			out.WriteByte(' ')
+		} else {
+			out.WriteString(message[index : index+size])
+		}
+		index += size
+	}
+	return out.String()
 }

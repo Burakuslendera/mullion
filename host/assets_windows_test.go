@@ -209,6 +209,8 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 		// U+FFFD and passes it, so the fs.ValidPath gate (invalid UTF-8) catches it.
 		{name: "c1 byte, valid utf-8 (%c2%85)", uri: testOrigin + "/a%c2%85b.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "raw invalid byte (%85)", uri: testOrigin + "/a%85b.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "zero-width space (%e2%80%8b)", uri: testOrigin + "/a%e2%80%8bb.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "bidi override (%e2%80%ae)", uri: testOrigin + "/a%e2%80%aeb.css", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "trailing-space dotdot (%20)", uri: testOrigin + "/..%20/secret.txt", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "triple-dot segment", uri: testOrigin + "/.../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "colon drive/ADS (%3a)", uri: testOrigin + "/file.txt%3astream", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},

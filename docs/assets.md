@@ -28,7 +28,7 @@ path runs without its filter.
 | scheme is not `https` | `403` |
 | host or effective port differs from the planned embedded origin | `403` |
 | path has a `.` or `..` segment, **or any segment ending in a dot or a space** (`notes.txt.`, `sub./x`) — Windows' DOS-to-NT conversion strips those, so the name would not be the file | `403` |
-| path contains a backslash, a colon or a control byte (incl. `%5c`, `%00`) | `403` |
+| path contains a backslash, a colon or a control or rendering-control character (incl. `%5c`, `%00`) | `403` |
 | path is not a valid `fs.FS` name (`fs.ValidPath` — raw invalid UTF-8 among others) | `403` |
 | path is `favicon.ico`, no file exists | `204`, shortcut answered after lookup |
 | path is `favicon.ico`, file exists | served normally as `200` (the shortcut does not shadow it) |
@@ -43,14 +43,16 @@ The scheme and host checks matter because WebView2 hands the callback anything
 matching the filter, and a filter is a pattern, not a trust boundary. The traversal
 check runs on the raw path segments *before* any cleaning, so normalisation cannot
 launder a rejected path into an accepted one. The same pre-clean pass rejects a
-backslash, a colon or a control byte: `url.Parse` decodes `%5c` to a literal `\`,
-which the `/`-only segment split and `path.Clean` would both carry through as an
+backslash, a colon, a control character or a rendering control such as a
+zero-width or bidi character: `url.Parse` decodes `%5c` to a literal `\`, which
+the `/`-only segment split and `path.Clean` would both carry through as an
 ordinary byte, so on Windows it would act as a second path separator — and a `:`
-selects a drive letter or an NTFS alternate data stream. The final gate asserts
+selects a drive letter or an NTFS alternate data stream. Rendering controls can
+make an admitted name display as a different name. The final gate asserts
 `fs.ValidPath`, the canonical rule for a name an `fs.FS` will accept; its UTF-8
 requirement is load-bearing, rejecting a raw invalid byte the rune-level checks
-decode to U+FFFD and would otherwise pass. The boundary rejects all of this itself
-rather than leaning on the caller's `fs.FS` or the OS to (issue #66).
+decode to U+FFFD and would otherwise pass. The boundary rejects all of this
+itself rather than leaning on the caller's `fs.FS` or the OS (issue #66).
 
 One further class is rejected for the same reason (issue #100). Any segment
 ending in a dot or a space is refused, not only a segment made entirely of them:
@@ -365,4 +367,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: stat asset entries before reading so directories are missing assets and real favicon.ico files are served before the 204 shortcut.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: reject shared rendering controls at the asset boundary; stat asset entries before reading so directories are missing assets and real favicon.ico files are served before the 204 shortcut.

@@ -251,3 +251,38 @@ func TestBlobURLKeepsTheOriginItWraps(t *testing.T) {
 		t.Errorf("URL(%q) = %q, want %q", in, got, want)
 	}
 }
+
+func TestLongOpaqueHTTPFallbackKeepsInnerOrigin(t *testing.T) {
+	for _, prefix := range []string{"blob:", "filesystem:"} {
+		raw := prefix + "https://evil.example/" + strings.Repeat("segment/", URLLimit)
+		got := URL(raw)
+		if !strings.HasPrefix(got, prefix+"https://evil.example/") {
+			t.Fatalf("URL(%q) = %q, want the complete wrapped HTTP origin", raw, got)
+		}
+		if !strings.HasSuffix(got, truncationMarker) {
+			t.Fatalf("URL(%q) = %q, want a bounded opaque suffix marker", raw, got)
+		}
+		if len(got) > URLLimit+len(truncationMarker) {
+			t.Fatalf("URL(%q) = %d bytes, want at most %d", raw, len(got), URLLimit+len(truncationMarker))
+		}
+	}
+}
+
+func TestLongFileFallbackKeepsFileNameTail(t *testing.T) {
+	raw := "file:///C:/Users/Alice/" + strings.Repeat("private/", URLLimit) + "secret.html"
+	got := URL(raw)
+	if !strings.Contains(got, "secret.html") {
+		t.Fatalf("URL(%q) = %q, want the final file name", raw, got)
+	}
+	for _, forbidden := range []string{"Alice", "Users", "private"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("URL(%q) = %q leaked %q from the path", raw, got, forbidden)
+		}
+	}
+	if !strings.HasSuffix(got, truncationMarker) {
+		t.Fatalf("URL(%q) = %q, want a visible input-bound marker", raw, got)
+	}
+	if len(got) > URLLimit {
+		t.Fatalf("URL(%q) = %d bytes, want at most %d", raw, len(got), URLLimit)
+	}
+}

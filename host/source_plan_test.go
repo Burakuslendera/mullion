@@ -132,11 +132,19 @@ func TestExternalURLIgnoresInvalidVirtualHost(t *testing.T) {
 }
 
 func TestSourceOriginSummaryUsesCanonicalOriginOnly(t *testing.T) {
-	if got := sourceOriginSummary("HTTPS://APP_ONE.EXAMPLE:443/private?token=secret"); got != "https://app_one.example" {
-		t.Fatalf("source summary = %q", got)
-	}
-	if got := sourceOriginSummary("not a URL"); got != ":unknown" {
-		t.Fatalf("invalid source summary = %q", got)
+	for _, c := range []struct {
+		raw, want string
+	}{
+		{"HTTPS://APP_ONE.EXAMPLE:443/private?token=secret", "https://app_one.example"},
+		{"blob:https://evil.example/9f0c-uuid", "blob:https://evil.example"},
+		{"filesystem:https://evil.example/temporary/x", "filesystem:https://evil.example"},
+		{"not a URL", ":unknown"},
+		{"blob:not-a-web-origin", ":unknown"},
+		{"filesystem:", ":unknown"},
+	} {
+		if got := sourceOriginSummary(c.raw); got != c.want {
+			t.Errorf("sourceOriginSummary(%q) = %q, want %q", c.raw, got, c.want)
+		}
 	}
 }
 

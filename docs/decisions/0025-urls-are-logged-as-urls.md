@@ -48,8 +48,10 @@ reader distrusts `httpcdn...mullion.local` and acts on
 
 ## Decision
 
-`logsafe.URL` reduces a value that literally begins `http://` or `https://`, and
-hands everything else to `Message` unchanged.
+`logsafe.URL` reduces a value that literally begins `http://` or `https://`,
+and hands everything else to the plain reduction. Its fallback is bounded too:
+an interrupted candidate is dropped rather than emitted as a host prefix, a cut
+ends in `...`, and raw query/fragment presence remains a bare `?` or `#`.
 
 It emits scheme, host and path. It drops the query and fragment, keeping a bare
 `?` or `#` read off the raw value so two navigations differing only there stay
@@ -57,7 +59,10 @@ distinguishable. It bounds the *result*, never the input, and only ever cuts the
 path - a host is printed whole or the value is not reduced as a URL at all - and
 a cut value ends in `...`. A host that is not hostname-shaped (ASCII letters,
 digits and `.-_:[]`) sends the whole value to `Message` rather than being
-printed. Every URL that reaches a log line goes through it.
+printed. Every URL that reaches a log line goes through it. Rendering controls
+and invalid UTF-8 are folded at the shared logsafe boundary without expansion.
+For issue #115, the rendering-control acceptance set is deliberately exactly U+200B–U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069 and U+FEFF; it is not an exhaustive copy of Unicode's `Bidi_Control` class,
+and U+061C is not included without separate scope and evidence.
 
 ## Alternatives rejected
 
@@ -98,11 +103,14 @@ reproduction depends on query parameters cannot be diagnosed from the log alone;
 the reporter has to instrument the frontend or move the discriminator into the
 path. This is the permanent cost, and it is paid on purpose.
 
-**The non-http(s) reduction is now frozen.** `URL` delegating to `Message`
-byte-for-byte is what keeps a `file:` path collapsing to its file name, keeps the
-empty source reducing to `:unknown` through `urlOrigin` (the value issue #56's
-live probe was read against), and keeps decisions/0021's `data:` observation
-standing. Any future change to `Message` must re-check those three.
+**The non-http(s) reduction is privacy-frozen, not byte-frozen.** `URL` still
+delegates ordinary fallback values to `Message`, keeping a `file:` path
+collapsing to its file name, the empty source reducing to `:unknown` through
+`urlOrigin` (the value issue #56's live probe was read against), and
+decisions/0021's `data:` observation standing. `blob:` and `filesystem:` retain
+their complete inner HTTP origin with a bounded opaque suffix; oversized
+`file:` values keep the `FileName` tail before the bound. Any future change to
+`Message` must re-check those three original cases.
 
 **What counts as a host is now `net/url`'s answer, filtered.** The reduction
 inherits Go's parse semantics, which are not Chromium's. Every divergence found
@@ -124,11 +132,11 @@ new URL-bearing log line should be reachable the same way.
   trip-wire test above fires on exactly that.
 - A live report that cannot be diagnosed without the query, which would mean the
   bare `?` marker is too little information rather than the right amount.
-- A non-http(s) scheme that carries a real web origin and no local path proving
-  worth reducing as a URL. `blob:` and `filesystem:` are the candidates: both
-  wrap an origin, and both currently reduce to a bare `blob:` / `filesystem:`.
-  They were left on the fallback because the `file:` privacy argument is what
-  makes the blanket rule safe, and separating them needs its own evidence.
+- A non-http(s) wrapper whose complete inner origin cannot fit without a
+  misleading host projection would argue for refusing to print that wrapper at
+  all. `blob:` and `filesystem:` now retain the origin they wrap when it fits,
+  with the opaque suffix bounded, while `file:` keeps its privacy-preserving
+  file-name tail.
 - Evidence that a truncated path with a `...` marker is being misread as a whole
   one, which would argue for refusing to print a too-long path at all.
 
@@ -146,4 +154,4 @@ Not verified live. This change alters only the text of log lines, and the
 reads one of them was not run for it - `observed` for the headless behaviour,
 `unverified` for the live log. The next live run against issue #77 exercises it.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: status line extended by 0028 — the "teach Message about schemes" alternative this record rejected has landed, on terms that avoid the cost it was rejected for (issue #80); the body is unchanged, per the supersede rules.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: preserve wrapped HTTP origins and file-name tails in bounded fallbacks; record shared rendering-control folding and invalid-UTF-8 bounds for issues #89 and #115.

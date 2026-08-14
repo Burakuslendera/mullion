@@ -6,9 +6,9 @@ import (
 	"unicode/utf8"
 )
 
-// URLLimit bounds a reduced URL. It is applied to the *result*, never to the
-// input: bounding a URL before parsing it yields a shorter URL that is still
-// well formed, and a well-formed lie is worse than visible garbage. See URL.
+// URLLimit bounds the URL payload/result budget. Optional truncation,
+// query, and fragment markers may follow according to the established
+// contract, so complete output can exceed URLLimit.
 const URLLimit = 160
 
 // truncationMarker says the path was cut. A reduced value carrying no marker is
@@ -16,8 +16,7 @@ const URLLimit = 160
 const truncationMarker = "..."
 
 // URL reduces an http/https URL to the part that identifies a navigation -
-// scheme, host and path - and hands everything else to the plain reduction.
-//
+// scheme, host and path - and bounds every fallback reduction.
 // A URL is not a filesystem path, and the path sanitizer mangles one. isPathStart
 // reads a Windows drive letter as <alpha> ':' <separator>, which is what
 // "http://" and "https://" both contain - at the 'p' and at the 's' - and reads
@@ -52,21 +51,19 @@ const truncationMarker = "..."
 //     distinguishable - which is what issue #77 needs from these lines.
 //   - a value cut to fit ends in "..." so a reader can tell that it was.
 //
-// Everything else falls back to the plain reduction: a value that is not
+// Everything else falls back to the bounded reduction: a value that is not
 // http(s) to begin with, one that does not parse, an authority-less form
 // ("http:evil.example", "http:/C:/Users/alice/x"), and any host failing the
 // rules above. That fallback is load-bearing. A file: URL's path really is a
 // local filesystem path and must still collapse to its file name; the empty
-// source still has to reduce to ":unknown" through urlOrigin - the value issue
-// #56's live probe was read against - and decisions/0021's data: observation
+// source still has to reduce to "unknown" and decisions/0021's data: observation
 // rests on the reduction it was verified with. All three still hold.
 //
-// What did move, and is recorded in decisions/0028: a non-http(s) value that
-// *wraps* an http(s) one - "blob:https://x/y", a data: URI whose payload quotes
-// a URL - now shows the origin it wraps, because the first fallback below goes
-// through Message rather than past it. The three fallbacks after it do not, and
-// must not: they keep the scheme on the value they hand back, so Message would
-// send it here again for ever.
+// A non-http(s) value that wraps an http(s) one - "blob:https://x/y", a data:
+// URI whose payload quotes a URL - retains the inner URL's complete canonical
+// origin while bounding its suffix. Other fallbacks are bounded before
+// reduction as needed; file: values remain tail-first so their filename
+// survives.
 func URL(raw string) string {
 	// Gate on the literal scheme, not the parsed one. url.Parse accepts forms
 	// carrying no authority at all - "http:evil.example" (opaque) and
@@ -75,27 +72,121 @@ func URL(raw string) string {
 	// directory. Neither is a target a browser would hand back, so the old
 	// reduction is the right answer for both.
 	if !hasHTTPPrefix(raw) {
-		return Message(boundForScan(raw))
+		return reduceURLFallback(raw, true, false, false)
 	}
 
 	head, hasQuery, hasFragment := splitURLMarks(raw)
 	reduced, ok := reduceHTTPURL(head, hasQuery, hasFragment)
 	if !ok {
-		// An http(s) parse failure still drops the query and fragment. Handing
-		// raw back to Message reproduces issue #78 in its worst form: the host
-		// disappears while a token in the query survives.
-		return messagePlain(boundInput(head))
+		// A fallback still has to avoid cutting a host into a believable prefix,
+		// preserve query/fragment presence, and mark any bounded result.
+		return reduceURLFallback(head, false, hasQuery, hasFragment)
 	}
 	return reduced
 }
 
+func reduceURLFallback(raw string, scanURLs, hasQuery, hasFragment bool) string {
+	if scanURLs {
+		// Wrapped web URLs retain their inner origin. Reduce that inner URL
+		// directly before bounding the outer wrapper, so a long suffix cannot
+		// erase the origin.
+		if reduced, ok := reduceOpaqueHTTPURL(raw); ok {
+			return reduced
+		}
+	}
+
+	bounded := raw
+	if len(raw) > URLLimit {
+		if scanURLs && hasFilePrefix(raw) {
+			// File URLs are paths, not opaque web origins. Keep the final
+			// component for FileName rather than feeding it a head cut that
+			// can expose a partial directory.
+			bounded = boundFileFallback(raw)
+		} else {
+			bounded = boundForScan(raw)
+		}
+	}
+	inputTruncated := len(bounded) < len(raw)
+	if scanURLs {
+		raw = Message(bounded)
+	} else {
+		raw = messagePlain(bounded)
+	}
+
+	suffixLen := 0
+	if hasQuery {
+		suffixLen++
+	}
+	if hasFragment {
+		suffixLen++
+	}
+	truncated := inputTruncated || len(raw) > URLLimit-suffixLen
+	if truncated {
+		suffixLen += len(truncationMarker)
+		budget := URLLimit - suffixLen
+		if budget < 0 {
+			budget = 0
+		}
+		raw = strings.TrimSpace(boundForScanAt(raw, budget)) + truncationMarker
+	}
+	if hasQuery {
+		raw += "?"
+	}
+	if hasFragment {
+		raw += "#"
+	}
+	return raw
+}
+
+func reduceOpaqueHTTPURL(raw string) (string, bool) {
+	for _, prefix := range []string{"blob:", "filesystem:"} {
+		if len(raw) < len(prefix) || !strings.EqualFold(raw[:len(prefix)], prefix) {
+			continue
+		}
+		inner := raw[len(prefix):]
+		if !hasHTTPPrefix(inner) {
+			return "", false
+		}
+		head, hasQuery, hasFragment := splitURLMarks(inner)
+		reduced, ok := reduceHTTPURLWithLimit(head, hasQuery, hasFragment, URLLimit-len(prefix))
+		if !ok {
+			return "", false
+		}
+		return raw[:len(prefix)] + reduced, true
+	}
+	return "", false
+}
+
+func hasFilePrefix(raw string) bool {
+	const prefix = "file:"
+	return len(raw) >= len(prefix) && strings.EqualFold(raw[:len(prefix)], prefix)
+}
+
+func boundFileFallback(raw string) string {
+	if len(raw) <= URLLimit {
+		return raw
+	}
+	end := len(raw)
+	for end > 0 && (raw[end-1] == '/' || raw[end-1] == '\\') {
+		end--
+	}
+	if end > 0 {
+		if index := strings.LastIndexAny(raw[:end], `/\`); index >= 0 && len(raw)-index <= URLLimit {
+			return raw[index:]
+		}
+	}
+	return raw[len(raw)-URLLimit:]
+}
+
 // reduceHTTPURL validates the entire identifying part of an http(s) URL and
-// emits a bounded projection. It deliberately does not parse or escape the
-// whole path with net/url: EscapedPath builds an input-sized intermediate for a
-// path containing bytes that need escaping. Instead the path is validated in
-// one pass and projected by complete escape/rune units in a second, bounded
-// pass. The work remains linear while allocation is fixed by URLLimit.
+// emits a bounded projection with the package URL limit.
 func reduceHTTPURL(head string, hasQuery, hasFragment bool) (string, bool) {
+	return reduceHTTPURLWithLimit(head, hasQuery, hasFragment, URLLimit)
+}
+
+// reduceHTTPURLWithLimit is the same projection with room reserved for an
+// opaque wrapper such as "blob:" or "filesystem:".
+func reduceHTTPURLWithLimit(head string, hasQuery, hasFragment bool, limit int) (string, bool) {
 	schemeEnd := len("http://")
 	scheme := "http"
 	if len(head) >= len("https://") && strings.EqualFold(head[:len("https://")], "https://") {
@@ -121,7 +212,7 @@ func reduceHTTPURL(head string, hasQuery, hasFragment bool) (string, bool) {
 	if !isHostnameShaped(host) {
 		return "", false
 	}
-	if len(scheme)+len("://")+len(host) > URLLimit {
+	if len(scheme)+len("://")+len(host) > limit {
 		return "", false
 	}
 
@@ -140,14 +231,14 @@ func reduceHTTPURL(head string, hasQuery, hasFragment bool) (string, bool) {
 		return "", false
 	}
 	origin := parsed.Scheme + "://" + parsed.Host
-	if len(origin) > URLLimit {
+	if len(origin) > limit {
 		return "", false
 	}
 
 	var reduced strings.Builder
-	reduced.Grow(URLLimit + len(truncationMarker) + 2)
+	reduced.Grow(limit + len(truncationMarker) + 2)
 	reduced.WriteString(origin)
-	pathBudget := URLLimit - len(origin)
+	pathBudget := limit - len(origin)
 	truncated := appendBoundedEscapedPath(&reduced, path, pathBudget)
 	if truncated {
 		reduced.WriteString(truncationMarker)
@@ -326,14 +417,9 @@ func unhex(c byte) byte {
 	}
 }
 
-// boundInput bounds a fallback whose value goes to messagePlain: a foreign
-// data: or blob: URI is arbitrarily long and the reduction would otherwise
-// reduce, and log, all of it. Cutting the input is safe on those paths in the
-// way it is not on the URL branch, because messagePlain deletes the identifying
-// part of the value anyway - there is no host left for a reader to misread.
-//
-// That justification is exactly what stops holding when the bounded value is
-// handed to something that keeps hosts. See boundForScan.
+// boundInput is the generic bounded-input primitive for fallback scans and
+// reducers. It caps oversized input at URLLimit before the caller applies
+// its path- or URL-aware reduction.
 func boundInput(raw string) string {
 	if len(raw) <= URLLimit {
 		return raw

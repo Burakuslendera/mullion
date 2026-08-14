@@ -256,19 +256,20 @@ func hasTraversalSegment(value string) bool {
 
 // containsBackslashColonOrControl rejects bytes the traversal check above cannot
 // reason about. hasTraversalSegment splits on '/' only, and path.Clean (the
-// `path` package) treats '\' as an ordinary byte - so a percent-encoded backslash
-// (%5c), which url.Parse decodes to a literal '\', survives both as a path
-// separator on Windows. A ':' selects a drive letter or an NTFS alternate data
-// stream and has no place in an asset path; nor does a control character. This
-// folds C0, DEL and the C1 block (U+0080-U+009F) to match logsafe.stripControl,
-// and ranges over runes so a legitimate multi-byte UTF-8 name - whose UTF-8
-// continuation bytes fall in 0x80-0xbf - is not mistaken for a C1 control. A raw
-// invalid byte (a lone 0x80-0x9f) decodes to U+FFFD and passes here; the
-// fs.ValidPath gate rejects it as invalid UTF-8. The boundary rejects these
-// itself rather than trusting the caller's fs.FS.
+// `path` package) treats '\' as an ordinary byte - so a percent-encoded
+// backslash (%5c), which url.Parse decodes to a literal '\', survives both as
+// a Windows path separator. A ':' selects a drive letter or an NTFS alternate
+// data stream and has no place in an asset path; nor does a control character.
+// This uses the shared logsafe rendering-control set too: zero-width and bidi
+// characters can make an admitted name render as a different name. It ranges
+// over runes so a legitimate multi-byte UTF-8 name - whose UTF-8 continuation
+// bytes fall in 0x80-0xbf - is not mistaken for a C1 control. A raw invalid byte
+// (a lone 0x80-0x9f) decodes to U+FFFD and passes here; the fs.ValidPath gate
+// rejects it as invalid UTF-8. The boundary rejects these itself rather than
+// trusting the caller's fs.FS.
 func containsBackslashColonOrControl(value string) bool {
 	for _, r := range value {
-		if r == '\\' || r == ':' || logsafe.IsControl(r) {
+		if r == '\\' || r == ':' || logsafe.IsControl(r) || logsafe.IsRenderingControl(r) {
 			return true
 		}
 	}

@@ -103,6 +103,7 @@ func TestURLFallsBackToMessageForNonHTTP(t *testing.T) {
 		`file:///C:/Users/Alice O'Brien/AppData/secret.html`,
 		"data:text/html,<b>hi</b>",
 		"blob:https://evil.example/uuid",
+		"filesystem:https://evil.example/temporary/x",
 		"about:blank",
 		"://noscheme",
 		"",
@@ -208,6 +209,40 @@ func TestURLParseFailureStillDropsTheQuery(t *testing.T) {
 		if strings.Contains(got, "s3cr3t") || strings.Contains(got, "token") {
 			t.Errorf("URL(%q) = %q leaked the query through the fallback", in, got)
 		}
+	}
+}
+
+func TestURLFallbackKeepsMarkersAndRejectsCutHosts(t *testing.T) {
+	invalid := "https://" + strings.Repeat("a", 150) + ".mullion.local.evil.example/50%off/p?token=secret#tail"
+	got := URL(invalid)
+	if strings.Contains(got, "mullion.local") || strings.Contains(got, "evil.example") {
+		t.Fatalf("URL(%q) retained a cut host prefix: %q", invalid, got)
+	}
+	if !strings.HasSuffix(got, "...?#") {
+		t.Fatalf("URL(%q) = %q, want a visible cut and query/fragment markers", invalid, got)
+	}
+	if len(got) > URLLimit {
+		t.Fatalf("URL(%q) = %d bytes, want at most %d", invalid, len(got), URLLimit)
+	}
+
+	badHost := "https://evil.example,approved=true/p?token=secret#tail"
+	got = URL(badHost)
+	if !strings.HasSuffix(got, "?#") {
+		t.Fatalf("URL(%q) = %q, want query/fragment markers on fallback", badHost, got)
+	}
+	if strings.Contains(got, "token") || strings.Contains(got, "secret") {
+		t.Fatalf("URL(%q) leaked fallback query: %q", badHost, got)
+	}
+}
+
+func TestURLNonHTTPFallbackMarksBoundedOutput(t *testing.T) {
+	raw := "data:text/plain," + strings.Repeat("x", URLLimit)
+	got := URL(raw)
+	if len(got) > URLLimit {
+		t.Fatalf("URL(data) = %d bytes, want at most %d", len(got), URLLimit)
+	}
+	if !strings.HasSuffix(got, truncationMarker) {
+		t.Fatalf("URL(data) = %q, want a visible truncation marker", got)
 	}
 }
 

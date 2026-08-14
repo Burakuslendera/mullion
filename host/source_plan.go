@@ -187,10 +187,24 @@ func (plan sourcePlan) navigationOffOrigin(uri string, enabled bool) bool {
 
 func sourceOriginSummary(raw string) string {
 	origin, _, err := parseCanonicalHTTPOrigin(raw)
+	if err == nil {
+		return origin.text
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Opaque == "" {
+		return ":unknown"
+	}
+	// blob: and filesystem: keep their wrapped HTTP source in Opaque; reducing
+	// that inner origin preserves the rejection identity without its handle path.
+	scheme, ok := lowerASCII(parsed.Scheme)
+	if !ok || (scheme != "blob" && scheme != "filesystem") {
+		return ":unknown"
+	}
+	inner, _, err := parseCanonicalHTTPOrigin(parsed.Opaque)
 	if err != nil {
 		return ":unknown"
 	}
-	return origin.text
+	return scheme + ":" + inner.text
 }
 
 // canonicalHTTPPort distinguishes an omitted port from an explicitly empty one.

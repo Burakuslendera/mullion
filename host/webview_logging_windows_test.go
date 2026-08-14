@@ -72,6 +72,24 @@ func TestLogRejectedWebMessageKeepsTheUnknownOrigin(t *testing.T) {
 	}
 }
 
+func TestLogRejectedWebMessageKeepsWrappedOriginsAtWarn(t *testing.T) {
+	for _, c := range []struct {
+		source, want string
+	}{
+		{"blob:https://evil.example/9f0c-uuid", "origin=blob:https://evil.example"},
+		{"filesystem:https://evil.example/temporary/x", "origin=filesystem:https://evil.example"},
+	} {
+		host, logger := newTestHost(t, Config{StartHidden: true})
+		host.logRejectedWebMessage(c.source)
+		if !strings.Contains(logger.String(), c.want) {
+			t.Errorf("rejection log for %q did not retain wrapped origin %q:\n%s", c.source, c.want, logger.String())
+		}
+		if strings.Contains(logger.String(), "origin="+strings.Split(c.source, ":")[0]+":\n") {
+			t.Errorf("rejection log for %q collapsed the origin to its outer scheme:\n%s", c.source, logger.String())
+		}
+	}
+}
+
 // A host that is not hostname-shaped is never reassembled into the log line.
 // "," and "=" are legal in a Go host, and the line format is "key=value, ..." -
 // so a reassembled host carrying them would forge a field, and a reader (or a
