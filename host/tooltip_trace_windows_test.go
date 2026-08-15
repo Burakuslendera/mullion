@@ -82,3 +82,15 @@ func TestFormatNativeCaptionRoute(t *testing.T) {
 		t.Fatalf("formatNativeCaptionRoute() = %q", got)
 	}
 }
+
+// This test substitutes the package-init latch sequentially; production never
+// rereads the environment, and the test must not run in parallel.
+func TestNativeTooltipTraceReadyUsesLatchedValue(t *testing.T) {
+	previous := nativeTooltipTrace
+	nativeTooltipTrace = false
+	t.Cleanup(func() { nativeTooltipTrace = previous })
+	t.Setenv("MULLION_TOOLTIP_TRACE", "1")
+	if nativeTooltipTraceReady() {
+		t.Fatal("nativeTooltipTraceReady() reread the environment after initialization")
+	}
+}

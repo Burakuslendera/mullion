@@ -10,6 +10,10 @@ import (
 	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
+// Sample the environment once at package initialization. Production never
+// rereads this latch; tests must not parallel-mutate it.
+var nativeTooltipTrace = os.Getenv("MULLION_TOOLTIP_TRACE") == "1"
+
 var nativeTooltipTraceSeq uint64
 
 func (host *Host) traceNativeTooltipHitDecision(hwnd windowHandle, message uint32, lParam uintptr, projectHit, candidateHit uintptr, decision nativeCaptionDecision) {
@@ -74,7 +78,7 @@ func (host *Host) traceNativeTooltipMessageDecision(hwnd windowHandle, message u
 }
 
 func nativeTooltipTraceReady() bool {
-	return os.Getenv("MULLION_TOOLTIP_TRACE") == "1"
+	return nativeTooltipTrace
 }
 
 func nextNativeTooltipTraceSeq() string {

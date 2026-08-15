@@ -45,8 +45,18 @@ func (host *Host) windowProc(hwnd windowHandle, message uint32, wParam, lParam u
 		}
 	case wmNCHitTest:
 		hit := host.nativeHitTest(hwnd, lParam)
-		captionHit := host.nativeCaptionButtonHit(hwnd, lParam)
-		decision := host.nativeDWMCaptionHitTestDecision(hwnd, message, wParam, lParam, hit, captionHit)
+		policy := activeDWMCaptionPolicyForWindow(hwnd)
+		tooltipTraceReady := nativeTooltipTraceReady()
+		captionHit := nativeCaptionButtonHitIfNeeded(
+			host,
+			hwnd,
+			lParam,
+			policy,
+			tooltipTraceReady,
+			nativeCaptionPassthroughDiagnosticEnabled(),
+			nativeCaptionButtonHitForWindow,
+		)
+		decision := host.nativeDWMCaptionHitTestDecisionForPolicy(hwnd, message, wParam, lParam, policy, hit, captionHit)
 		host.traceNativeTooltipHitDecision(hwnd, message, lParam, hit, captionHit, decision)
 		return decision.result
 	case wmSetCursor, wmNCMouseMove, wmNCMouseHover, wmNCMouseLeave:

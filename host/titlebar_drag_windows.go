@@ -7,6 +7,10 @@ import (
 	"strconv"
 )
 
+// Sample the environment once at package initialization. Production never
+// rereads this latch; tests must not parallel-mutate it.
+var nativeHitTestDiagnostic = nativeHitTestDiagnosticValue(os.Getenv("MULLION_HITTEST_DIAG"))
+
 type titlebarDragDispatcher struct {
 	releaseCapture func() error
 	cursor         point
@@ -86,7 +90,10 @@ func (host *Host) logTitlebarDragHitTestDiagnostic(cursor point, windowRect rect
 }
 
 func nativeHitTestDiagnosticEnabled() bool {
-	value := os.Getenv("MULLION_HITTEST_DIAG")
+	return nativeHitTestDiagnostic
+}
+
+func nativeHitTestDiagnosticValue(value string) bool {
 	return value == "1" || value == "true" || value == "TRUE"
 }
 

@@ -24,8 +24,19 @@ type nativeCaptionDecision struct {
 }
 
 func (host *Host) nativeDWMCaptionHitTestDecision(hwnd windowHandle, message uint32, wParam, lParam uintptr, projectHit, candidateHit uintptr) nativeCaptionDecision {
+	return host.nativeDWMCaptionHitTestDecisionForPolicy(
+		hwnd,
+		message,
+		wParam,
+		lParam,
+		activeDWMCaptionPolicyForWindow(hwnd),
+		projectHit,
+		candidateHit,
+	)
+}
+
+func (host *Host) nativeDWMCaptionHitTestDecisionForPolicy(hwnd windowHandle, message uint32, wParam, lParam uintptr, policy nativeDWMCaptionPolicy, projectHit, candidateHit uintptr) nativeCaptionDecision {
 	decision := nativeCaptionDecision{result: projectHit, route: nativeCaptionRouteProject}
-	policy := activeDWMCaptionPolicyForWindow(hwnd)
 	if policy == nativeDWMCaptionPolicyDisabled {
 		return decision
 	}
@@ -83,6 +94,36 @@ const (
 	nativeDWMCaptionPolicyMaximizeOnly
 	nativeDWMCaptionPolicyAllButtons
 )
+
+// nativeCaptionButtonHitNeeded is the single reader gate for the auxiliary
+// caption geometry query. The candidate duplicates rect/zoom/DPI/monitor work
+// already paid by the project hit-test, so it is consumed only by tooltip
+// tracing or the maximize-only caption-passthrough diagnostic; ordinary
+// maximize-only and all-buttons policy routing consume the DWM result instead.
+// Future readers must extend this predicate and its composed-path tests.
+func nativeCaptionButtonHitNeeded(policy nativeDWMCaptionPolicy, tooltipTraceReady, captionPassthroughReady bool) bool {
+	return tooltipTraceReady ||
+		(captionPassthroughReady && policy == nativeDWMCaptionPolicyMaximizeOnly)
+}
+
+// nativeCaptionButtonHitIfNeeded keeps the production composition explicit so
+// a headless test can prove that unread candidates are never queried. The
+// production caller passes a named function, not a closure, so this seam adds
+// no closure allocation to WM_NCHITTEST.
+type nativeCaptionCandidateQuery func(*Host, windowHandle, uintptr) uintptr
+
+func nativeCaptionButtonHitForWindow(host *Host, hwnd windowHandle, lParam uintptr) uintptr {
+	return host.nativeCaptionButtonHit(hwnd, lParam)
+}
+
+func nativeCaptionButtonHitIfNeeded(host *Host, hwnd windowHandle, lParam uintptr, policy nativeDWMCaptionPolicy, tooltipTraceReady, captionPassthroughReady bool, query nativeCaptionCandidateQuery) uintptr {
+	if !nativeCaptionButtonHitNeeded(policy, tooltipTraceReady, captionPassthroughReady) {
+		// HTCLIENT is safe only when no reader exists; every reader path above
+		// must evaluate the real candidate before decision or trace formatting.
+		return htClient
+	}
+	return query(host, hwnd, lParam)
+}
 
 func activeDWMCaptionPolicy() nativeDWMCaptionPolicy {
 	if nativeDWMCaptionDiagnosticEnabled() {

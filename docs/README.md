@@ -16,11 +16,13 @@ other document answers one narrower question below.
 | How does the host talk to WebView2? | [webview2-and-assets.md](./webview2-and-assets.md) |
 | How are assets served without a port? | [assets.md](./assets.md) |
 | Why is the frame / hit-test / DPI code shaped like this? | [frame-and-dpi.md](./frame-and-dpi.md) |
+| Canonical native hit-test geometry and issue #113 gates | [hit-test.md](./hit-test.md) |
 | Snap, the non-client region and caption behaviour | [snap-and-nonclient-region.md](./snap-and-nonclient-region.md) |
 | Where do those snap / non-client claims come from? | [snap-sources.md](./snap-sources.md) |
 | **Why is it done this way, and what would change that?** | [decisions/](./decisions/) |
 | What was already tried, and why was it abandoned? | [lessons-and-dead-ends.md](./lessons-and-dead-ends.md) |
 | The same question, for what a log line may say | [logging-dead-ends.md](./logging-dead-ends.md) |
+| Dated automated/live verification records | [verification-records.md](./verification-records.md) |
 | How do I prove a change actually works? | [verification.md](./verification.md) |
 | What makes scripted GUI verification lie? | [gui-verification-traps.md](./gui-verification-traps.md) |
 | What does a bug report have to contain? | [bug-reports.md](./bug-reports.md) |
@@ -42,4 +44,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: add canonical hit-test and verification-continuation navigation.

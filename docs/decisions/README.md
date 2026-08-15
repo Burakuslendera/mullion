@@ -61,6 +61,7 @@ These files are that record.
 | [0038](./0038-terminal-policy-owns-error-reporting.md) | Terminal policy owns each error report | Accepted, public pre-inner boundary refined by [0040](./0040-public-preflight-errors-belong-to-callers.md) |
 | [0039](./0039-public-run-preflight-stays-headless.md) | Public Run preflight stays headless | Accepted; supersedes [0006](./0006-tests-stay-headless.md) |
 | [0040](./0040-public-preflight-errors-belong-to-callers.md) | Public preflight errors belong to callers | Accepted; refines [0038](./0038-terminal-policy-owns-error-reporting.md) |
+| [0041](./0041-wm-nchittest-reader-gates.md) | WM_NCHITTEST computes auxiliary geometry only for readers | Accepted |
 
 ## When to write one
 
@@ -102,5 +103,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: index the refined headless Run exception and caller-owned public preflight boundary, with forward status links from decisions 0006 and 0038.
+> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: index decision 0041 for issue #113 reader-gated hit-test costs.

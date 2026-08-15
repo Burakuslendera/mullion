@@ -37,8 +37,12 @@ func TestApplyTitlebarDragReportsSendFailure(t *testing.T) {
 	}
 }
 
+// These tests intentionally mutate the package-init latch one at a time; do
+// not add t.Parallel or environment rereads to make the substitution easier.
 func TestTitlebarDragHitTestDiagnosticReportsBoundedGeometry(t *testing.T) {
-	t.Setenv("MULLION_HITTEST_DIAG", "1")
+	previous := nativeHitTestDiagnostic
+	nativeHitTestDiagnostic = true
+	t.Cleanup(func() { nativeHitTestDiagnostic = previous })
 	logger := &captureLogger{}
 	const maxInt32 = int32(1<<31 - 1)
 	host := New(Config{
@@ -67,7 +71,9 @@ func TestTitlebarDragHitTestDiagnosticReportsBoundedGeometry(t *testing.T) {
 }
 
 func TestTitlebarDragHitTestDiagnosticRejectsInvalidGeometry(t *testing.T) {
-	t.Setenv("MULLION_HITTEST_DIAG", "true")
+	previous := nativeHitTestDiagnostic
+	nativeHitTestDiagnostic = true
+	t.Cleanup(func() { nativeHitTestDiagnostic = previous })
 	logger := &captureLogger{}
 	host := New(Config{Logger: logger})
 	windowRect := rect{Left: 10, Top: 10, Right: 10, Bottom: 20}
@@ -77,5 +83,32 @@ func TestTitlebarDragHitTestDiagnosticRejectsInvalidGeometry(t *testing.T) {
 	logText := logger.String()
 	if !strings.Contains(logText, "geometry_valid=false") || !strings.Contains(logText, "hit=HTCLIENT") {
 		t.Fatalf("invalid diagnostic did not match resolver rejection:\n%s", logText)
+	}
+}
+
+func TestNativeHitTestDiagnosticValue(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  bool
+	}{
+		{value: "1", want: true},
+		{value: "true", want: true},
+		{value: "TRUE", want: true},
+		{value: "", want: false},
+		{value: "0", want: false},
+	} {
+		if got := nativeHitTestDiagnosticValue(test.value); got != test.want {
+			t.Fatalf("nativeHitTestDiagnosticValue(%q) = %t, want %t", test.value, got, test.want)
+		}
+	}
+}
+
+func TestNativeHitTestDiagnosticEnabledUsesLatchedValue(t *testing.T) {
+	previous := nativeHitTestDiagnostic
+	nativeHitTestDiagnostic = false
+	t.Cleanup(func() { nativeHitTestDiagnostic = previous })
+	t.Setenv("MULLION_HITTEST_DIAG", "1")
+	if nativeHitTestDiagnosticEnabled() {
+		t.Fatal("nativeHitTestDiagnosticEnabled() reread the environment after initialization")
 	}
 }

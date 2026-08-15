@@ -5,7 +5,7 @@
 - [1. The frameless frame](#1-the-frameless-frame)
 - [2. `WM_NCCALCSIZE`](#2-wm_nccalcsize)
 - [3. `SetWindowPos` and the `SWP_FRAMECHANGED` trap](#3-setwindowpos-and-the-swp_framechanged-trap)
-- [4. `WM_NCHITTEST`](#4-wm_nchittest)
+- [4. `WM_NCHITTEST`](./hit-test.md)
 - [5. `WM_GETMINMAXINFO`](#5-wm_getminmaxinfo)
 - [6. Per-monitor DPI v2](#6-per-monitor-dpi-v2)
 - [7. `WM_DPICHANGED`](#7-wm_dpichanged)
@@ -106,56 +106,15 @@ SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
 
 ## 4. `WM_NCHITTEST`
 
-The hit-test is the entire interaction contract of a frameless window. It runs
-on the **native** side against the window rect in physical pixels; CSS may paint
-matching affordances, but it never owns this geometry.
+The native frame hit-test contract, bounded `int64` geometry, precedence,
+diagnostic latch and issue-#113 lazy caption-candidate reader gate live in the
+focused canonical reference:
+[**WM_NCHITTEST: native frame hit-testing**](./hit-test.md).
 
-**Scale exactly, then bound to the rect.** For every positive `int32` Config
-metric `m`, keep the scaled value in `int64`; there is no additional metric cap:
+Keep this overview link when moving the section again; do not duplicate the
+geometry rules here, because a stale copy can make future hit-test changes
+reintroduce the issue-#113 hot-path costs.
 
-```
-effectiveDPI = dpi, except dpi == 0 means 96
-scaled(m, dpi) = ceil(int64(m) * int64(effectiveDPI) / 96)
-               = (int64(m) * int64(effectiveDPI) + 95) / 96
-```
-
-The ceiling is intentional. Do not narrow after the multiply: a legal metric can
-exceed `int32` at high DPI without exceeding the geometry that ultimately bounds
-it.
-
-**Construct one bounded geometry.** A rect is valid only when `left < right` and
-`top < bottom`, and a cursor is eligible only inside the half-open rect
-`[left,right) x [top,bottom)`. An invalid rect or outside cursor is `HTCLIENT`.
-For width `w = right-left` and height `h = bottom-top`, all in `int64`, use:
-
-```
-title    = min(scaled(titleMetric, dpi), h)
-controls = min(scaled(controlsMetric, dpi), w)
-resizeX  = min(scaled(resizeMetric, dpi), floor(w/2))
-resizeY  = min(scaled(resizeMetric, dpi), floor(h/2))
-```
-
-Rect extents, cursor coordinates and every interval endpoint remain `int64`;
-only the final `HT*` result is `int32`. Independent horizontal and vertical
-half-extent saturation keeps opposite resize edges disjoint even for enormous
-metrics or a narrow rect.
-
-**Classify from that geometry.** When restored, test corners before edges, then
-the rightmost `controls` pixels of the bounded title strip, then the remaining
-title strip, then client. Corners therefore retain priority; caption controls
-remain `HTCLIENT`, while only the drag portion is `HTCAPTION`. When maximized,
-skip resize classification entirely, but preserve the same controls/title/client
-classification. A maximized content point must never be delegated to the native
-caption geometry.
-
-Hit-test diagnostics consume the same constructor: rejected geometry reports
-`geometry_valid=false`; valid rows report `geometry_valid=true` and effective
-`side_border`, `top_border`, `titlebar_height` and `controls_width` after rect
-bounding, exposing clipping and independent saturation without a second geometry.
-
-The injected resize overlay mirrors the independent half-extent bounds in CSS
-coordinates; its eight zones opt out of ancestor `app-region: drag`, and valid
-event coordinates outrank stale DOM targets. CSS hit-test overrides still use the rules above.
 
 ## 5. `WM_GETMINMAXINFO`
 
@@ -396,4 +355,4 @@ For Chromium zoom and native hit-testing alignment, see [WebView2 zoom and nativ
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled ([WebView2 zoom and native hit testing](./webview2-zoom-and-native-hit-testing.md)) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: make the two WM_NCCALCSIZE pointer forms, restored compensation, degradation policy, and headless-versus-live frame/bounds boundary explicit.
+> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: move WM_NCHITTEST rules to the canonical hit-test reference and retain the issue #113 overview link.

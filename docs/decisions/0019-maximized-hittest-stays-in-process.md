@@ -10,15 +10,18 @@ auto-hide detection calls `SHAppBarMessage`. That call is synchronous cross-proc
 IPC to Explorer.
 
 The first two paths fire once per maximize. The third does not: `WM_NCHITTEST`
-fires continuously while the pointer is over the non-client band, and the window
-procedure calls both `nativeHitTest` and `nativeCaptionButtonHit` on each one. On a
-maximized window every hit-test therefore made **two** `SHAppBarMessage` round
-trips (`ABM_GETSTATE`), and up to **ten** when an auto-hide bar was present
-(`ABM_GETSTATE` + four `ABM_GETAUTOHIDEBAREX`, twice) — on the UI thread, on the
-hottest input path in the library. If Explorer is busy or hung, hit-testing — and
-with it caption interaction and drag — stalls. Before 0015 this path was pure
-in-process arithmetic (`MonitorFromWindow` + `GetMonitorInfoW`). Filed as issue
-#36, a regression introduced by 0015's own fix.
+fires continuously while the pointer is over the non-client band. **The shell
+round-trip wording below is historical context from before 0019:** the then
+window procedure called both maximized geometry paths through
+`maximizeMonitorInfo`. On a maximized window every hit-test therefore made
+**two** `SHAppBarMessage` round trips (`ABM_GETSTATE`), and up to **ten** when
+an auto-hide bar was present (`ABM_GETSTATE` + four `ABM_GETAUTOHIDEBAREX`,
+twice) — on the UI thread, on the hottest input path in the library.
+**The pre-#113 wording about the auxiliary candidate is historical too:** after
+0019 it repeated in-process rect/zoom/DPI/monitor work on every sample, but it
+did not add shell IPC. Issue #113 removed that unread query. Before 0015 this
+path was pure in-process arithmetic (`MonitorFromWindow` + `GetMonitorInfoW`).
+Filed as issue #36, a regression introduced by 0015's own fix.
 
 ## Decision
 
@@ -116,4 +119,4 @@ transitions.
   that produce the sliver are byte-identical to the 0015 code verified live on
   both monitors at `f7c29ac`.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: distinguish pre-0019 shell counts from pre-#113 auxiliary-query wording.

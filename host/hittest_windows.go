@@ -134,10 +134,22 @@ func (host *Host) nativeHitTest(hwnd windowHandle, lParam uintptr) uintptr {
 		windowRect = windowRectForMaximizedHitTest(hwnd, windowRect)
 	}
 
-	host.log.Debug(fmt.Sprintf("mullion: hittest zoomed=%v cursor=(%d,%d) rect=(%d,%d,%d,%d) dpi=%d",
-		zoomed, cursor.X, cursor.Y, windowRect.Left, windowRect.Top, windowRect.Right, windowRect.Bottom, dpi))
+	hit := nativeHitTestForRect(host.config.hitTestMetrics(), windowRect, cursor, dpi, zoomed)
+	if diagnostic := formatNativeHitTestDiagnostic(nativeHitTestDiagnosticEnabled(), zoomed, cursor, windowRect, dpi, hit); diagnostic != "" {
+		// Logger.Debug receives a preformatted string, and even NopLogger pays
+		// eager formatting; keep fmt.Sprintf inside this latched diagnostics gate.
+		host.log.Debug(diagnostic)
+	}
 
-	return uintptr(nativeHitTestForRect(host.config.hitTestMetrics(), windowRect, cursor, dpi, zoomed))
+	return uintptr(hit)
+}
+
+func formatNativeHitTestDiagnostic(enabled, zoomed bool, cursor point, windowRect rect, dpi uint32, hit int32) string {
+	if !enabled {
+		return ""
+	}
+	return fmt.Sprintf("mullion: hittest zoomed=%v cursor=(%d,%d) rect=(%d,%d,%d,%d) dpi=%d hit=%s",
+		zoomed, cursor.X, cursor.Y, windowRect.Left, windowRect.Top, windowRect.Right, windowRect.Bottom, dpi, nativeHitTestName(hit))
 }
 
 func (host *Host) nativeCaptionButtonHit(hwnd windowHandle, lParam uintptr) uintptr {

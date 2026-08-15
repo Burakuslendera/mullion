@@ -2,7 +2,10 @@
 
 package host
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // testMetrics is the default frame geometry. The hit-test maths is pure, so the
 // tests drive it directly with the metrics a default Config produces.
@@ -649,5 +652,34 @@ func TestResizeFallbackPointRejectsInvalidRects(t *testing.T) {
 				t.Fatalf("resizeFallbackPoint(invalid rect) = %#v, true; want false", cursor)
 			}
 		})
+	}
+}
+
+func TestNativeHitTestDiagnosticMessageGate(t *testing.T) {
+	cursor := point{X: 11, Y: -7}
+	windowRect := rect{Left: 1, Top: 2, Right: 301, Bottom: 202}
+	if got := formatNativeHitTestDiagnostic(false, false, cursor, windowRect, 144, htCaption); got != "" {
+		t.Fatalf("disabled native hit-test diagnostic = %q, want empty", got)
+	}
+	got := formatNativeHitTestDiagnostic(true, true, cursor, windowRect, 144, htCaption)
+	for _, want := range []string{"zoomed=true", "cursor=(11,-7)", "rect=(1,2,301,202)", "dpi=144", "hit=HTCAPTION"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("enabled native hit-test diagnostic missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestNativeHitTestDiagnosticDisabledPathDoesNotAllocate(t *testing.T) {
+	var sink string
+	cursor := point{X: 11, Y: -7}
+	windowRect := rect{Left: 1, Top: 2, Right: 301, Bottom: 202}
+	allocs := testing.AllocsPerRun(1000, func() {
+		sink = formatNativeHitTestDiagnostic(false, false, cursor, windowRect, 144, htCaption)
+	})
+	if sink != "" {
+		t.Fatalf("disabled native hit-test diagnostic sink = %q, want empty", sink)
+	}
+	if allocs != 0 {
+		t.Fatalf("disabled native hit-test diagnostic allocations = %v, want 0", allocs)
 	}
 }

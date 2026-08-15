@@ -23,10 +23,18 @@ bypasses that inset and must reimplement it. It did not.
 
 ## Decision
 
-On maximize, mullion insets the work area by exactly **1px** on each edge of the
-window's monitor that holds an auto-hide appbar, and feeds that inset work area to
-all three maximized paths — `WM_GETMINMAXINFO` (`applyMonitorWorkArea`),
-`WM_NCCALCSIZE` (`applyNativeNCCalcClientRect`) and the maximized hit-test.
+At the time of this decision, the inset work area fed all three maximized paths:
+`WM_GETMINMAXINFO` (`applyMonitorWorkArea`), `WM_NCCALCSIZE`
+(`applyNativeNCCalcClientRect`) and the maximized hit-test. **That three-path
+wording is historical after [0019](./0019-maximized-hittest-stays-in-process.md):**
+the two sizing paths still receive the inset work area, while the hit-test
+clamps the already-inset window rect to the un-inset work area without the
+shell probe. This preserves the reveal sliver and keeps `WM_NCHITTEST`
+in-process.
+On maximize, the current implementation insets the work area by exactly **1px**
+on each monitor edge holding an auto-hide appbar. That inset feeds the two
+sizing paths (`WM_GETMINMAXINFO` and `WM_NCCALCSIZE`); the hit-test clamps the
+already-inset window rect to the un-inset work area in-process.
 
 - Detection is `SHAppBarMessage` (shell32): `ABM_GETSTATE` is a cheap global gate —
   if no auto-hide bar exists anywhere, nothing is queried and nothing is inset —
@@ -37,17 +45,18 @@ all three maximized paths — `WM_GETMINMAXINFO` (`applyMonitorWorkArea`),
   by a headless test on the 1px geometry. It is the identity when no edge has an
   auto-hide bar, so a visible taskbar or none maximizes byte-for-byte as before —
   the change is inert unless an auto-hide bar is actually present.
-- All three paths draw their geometry from one inset work area, so the sliver stays
-  consistent across them; because `clampRectToArea` is min/max, feeding it the
-  already-inset window rect does not inset a second time.
+- The two sizing paths draw their geometry from one inset work area. The
+  hit-test clamps the already-inset window rect to the un-inset work area;
+  because `clampRectToArea` is min/max, it preserves the same sliver without
+  querying the shell on every pointer sample.
 
 ## Alternatives rejected
 
-**Inset only in `WM_GETMINMAXINFO`.** The maximized window would be 1px short, and
-`WM_NCCALCSIZE`/hit-test would still clamp to the full work area. It happens to
-work because the clamp is idempotent, but it leaves two of the three paths reasoning
-about a different rectangle than the window actually occupies — a trap for the next
-change. Insetting the shared work area keeps all three honest.
+**Inset only in `WM_GETMINMAXINFO`.** The maximized window would be 1px short,
+and `WM_NCCALCSIZE` would still reason about a different rectangle. **This
+alternative and its three-path wording are historical before 0019:** the
+current hit-test intentionally clamps in-process, while the two sizing paths
+retain fresh `maximizeMonitorInfo` data.
 
 **Inset unconditionally by 1px whenever maximized.** Simpler — no shell query — but
 it steals a pixel from every maximize on the common case (visible taskbar or none),
@@ -64,10 +73,12 @@ configuration. It is a bug, not a boundary.
 - A new dependency on **shell32 `SHAppBarMessage`**. It is a stable, decades-old
   shell API and the query is read-only, but it is the first appbar call in the tree
   and is recorded here as a dependency taken on.
-- An invariant on the maximized geometry: **the maximized work area is the monitor
-  work area inset 1px per auto-hide edge.** Any future change to the three maximized
-  paths must route through `maximizeMonitorInfo`, or the sliver is lost again with
-  no test to catch it on a machine without an auto-hide taskbar.
+- An invariant on the maximized geometry: **the two sizing paths use the
+  monitor work area inset 1px per auto-hide edge; the hit-test clamps the
+  already-inset window rect to the un-inset area without shell IPC.** Any future
+  change to these paths must preserve that split, or the sliver or hit-test
+  latency invariant is lost with no test to catch it on a machine without an
+  auto-hide taskbar.
 - The detection and the actual reveal are Win32/live-only and cannot be exercised
   headlessly (0006). The pure inset is tested; the shell query and the reveal
   behaviour are a live-check obligation on any change to `appbar_windows.go`.
@@ -88,13 +99,14 @@ configuration. It is a bug, not a boundary.
   area). `host/appbar_windows_test.go` locks the 1px math headlessly: the no-edge
   identity, each edge independently, all four at once, a secondary-monitor origin,
   and the inversion guard. It fails when the inset is reduced to the identity.
-- The three call sites now read `maximizeMonitorInfo`: `applyMonitorWorkArea`
-  (monitor_windows.go), `applyNativeNCCalcClientRect` (nccalc_windows.go),
-  `windowRectForMaximizedHitTest` (hittest_windows.go).
+- The two sizing call sites read `maximizeMonitorInfo`: `applyMonitorWorkArea`
+  (monitor_windows.go) and `applyNativeNCCalcClientRect` (nccalc_windows.go).
+  `windowRectForMaximizedHitTest` (hittest_windows.go) is deliberately
+  in-process per [0019](./0019-maximized-hittest-stays-in-process.md).
 - **Not yet verified live.** The reveal behaviour must be confirmed on a real
   machine with an auto-hide taskbar — maximized, the taskbar still pops up on hover
   on the auto-hide edge — on both a primary and a secondary monitor, per
   docs/verification.md. Filed as issue #30 rather than a blind change for exactly
   this reason.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: correct pre-0019 three-path wording, state the current two-sizing-path split, and preserve the shell-free hit-test.
