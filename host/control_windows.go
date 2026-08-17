@@ -13,6 +13,9 @@ import (
 	"github.com/Burakuslendera/mullion/internal/logsafe"
 )
 
+// Show makes the active Run's window and WebView2 controller visible, creating
+// the deferred controller when StartHidden is set. It returns an error when no
+// Run is active or the window cannot become visible.
 func (host *Host) Show() error {
 	admission := host.enterRun()
 	defer host.leaveRun()
@@ -38,6 +41,8 @@ func (host *Host) Show() error {
 	return nil
 }
 
+// Hide hides the active Run's window and WebView2 controller. When no Run is
+// active, it has no window effect.
 func (host *Host) Hide() {
 	admission := host.enterRun()
 	defer host.leaveRun()
@@ -45,6 +50,8 @@ func (host *Host) Hide() {
 	host.warnIf("hide post", host.postRunCommand(admission, wmNativeHide, 0))
 }
 
+// Quit requests destruction of the active Run's window so Run can return. When
+// no Run is active, it has no window effect.
 func (host *Host) Quit() {
 	admission := host.enterRun()
 	defer host.leaveRun()
@@ -52,6 +59,8 @@ func (host *Host) Quit() {
 	host.warnIf("quit post", host.postRunCommand(admission, wmNativeQuit, 0))
 }
 
+// Minimise minimises the active Run's window. When no Run is active, it has no
+// window effect.
 func (host *Host) Minimise() {
 	admission := host.enterRun()
 	defer host.leaveRun()
@@ -59,6 +68,8 @@ func (host *Host) Minimise() {
 	host.warnIf("minimize post", host.postRunCommand(admission, wmNativeMinimize, 0))
 }
 
+// ToggleMaximise toggles the active Run's window between maximised and restored.
+// When no Run is active, it has no window effect.
 func (host *Host) ToggleMaximise() {
 	admission := host.enterRun()
 	defer host.leaveRun()
@@ -66,6 +77,8 @@ func (host *Host) ToggleMaximise() {
 	host.warnIf("maximize toggle post", host.postRunCommand(admission, wmNativeMaxToggle, 0))
 }
 
+// StartDrag begins the system caption-drag operation for the active Run's window.
+// When no Run is active, it has no window effect.
 func (host *Host) StartDrag() {
 	admission := host.enterRun()
 	defer host.leaveRun()
@@ -73,6 +86,9 @@ func (host *Host) StartDrag() {
 	host.warnIf("titlebar drag post", host.postRunCommand(admission, wmNativeStartDrag, 0))
 }
 
+// StartResize begins a system resize for left, right, top, bottom, top-left,
+// top-right, bottom-left, or bottom-right. An unknown edge is rejected. When no
+// Run is active, it has no window effect.
 func (host *Host) StartResize(edge string) {
 	admission := host.enterRun()
 	defer host.leaveRun()
@@ -85,6 +101,9 @@ func (host *Host) StartResize(edge string) {
 	host.warnIf("resize post", host.postRunCommand(admission, wmNativeStartResize, uintptr(hit)))
 }
 
+// IsMaximised reports whether the active Run's window is maximised. It returns
+// false when no Run is active and otherwise pins HWND ownership across a direct
+// cross-thread-safe native query.
 func (host *Host) IsMaximised() bool {
 	admission := host.enterRun()
 	defer host.leaveRun()

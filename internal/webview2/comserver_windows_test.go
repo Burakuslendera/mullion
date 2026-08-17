@@ -2,10 +2,10 @@
 
 package webview2
 
-// liveServerCount reports how many Go-implemented COM objects the runtime still
-// holds. It exists for the tests that prove a handler is released rather than
-// leaked once creation completes, and it lives here because that is its only
-// caller - it reads package-private state, so no production file needs it.
+// liveServerCount reports every registered and GC-rooted Go COM server, whether
+// its references are held by this package, a fake caller, or the runtime. Tests
+// use it to detect retained registrations; the count does not identify the
+// current reference holder.
 func liveServerCount() int {
 	serversMu.Lock()
 	defer serversMu.Unlock()

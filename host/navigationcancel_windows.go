@@ -21,17 +21,15 @@ func (identity navigationIdentity) exact() bool {
 	return identity.known && identity.value != 0
 }
 
-// The ledger of navigations the PinNavigationToOrigin gate cancelled, and what
-// their completions mean (decisions/0023, 0027). Split from the error-surface
-// machine next door because it is a different question: that file decides what
-// a completion says about the document on screen, this one decides whether a
-// completion belongs to a navigation the host deliberately abandoned - and
-// answers it before the machine is ever consulted.
+// The ledger of navigation cancel requests accepted by PutCancel, and what their
+// completions mean (decisions/0023, 0027 and 0037). Split from the error-surface
+// machine next door because it answers a different question: whether a
+// completion matches an accepted request, before ordinary document policy runs.
 //
-// A cancel is only ever entered here after the runtime confirmed it, so the
-// ledger is a record of what happened rather than of what was asked for. That
-// is the whole point of issue #73: the gate used to commit to a cancel it had
-// not yet attempted.
+// An entry is made only after PutCancel succeeds. That proves the runtime
+// accepted the request, not that navigation was abandoned; a later successful
+// completion means it committed anyway and returns to ordinary policy. Only an
+// expected failed/cancelled completion is consumed as cleanup.
 //
 // Everything runs on the UI thread, from the navigation callbacks, so the
 // fields need no lock.
@@ -53,7 +51,7 @@ func (identity navigationIdentity) exact() bool {
 // strictly sequential and is the single-slot premise holding, not failing.
 const cancelledNavSlots = 4
 
-// rememberCancelledNavigation enters a confirmed cancel whose id getter
+// rememberCancelledNavigation enters an accepted cancel request whose id getter
 // succeeded. Runtime callbacks use rememberCancelledNavigationObserved so a
 // getter failure is never silently promoted to known zero.
 func (host *Host) rememberCancelledNavigation(navigationID uint64) {
@@ -62,7 +60,7 @@ func (host *Host) rememberCancelledNavigation(navigationID uint64) {
 
 func (host *Host) rememberCancelledNavigationObserved(identity navigationIdentity) {
 	if !identity.exact() {
-		// Anonymous credits suppress only the documented cancelled completion;
+		// Anonymous credits suppress only expected failed/cancelled cleanup;
 		// they never confer restoration authority. Preserve the known-zero /
 		// unavailable tag so overlapping callbacks cannot cross-spend credits.
 		if host.cancelledNavAnonymous >= cancelledNavSlots {
@@ -97,7 +95,9 @@ func (host *Host) rememberCancelledNavigationObserved(identity navigationIdentit
 }
 
 // noteGateCancelledOutcome intercepts a completion whose id getter succeeded.
-// Runtime callbacks use the tagged variant to preserve getter provenance.
+// Runtime callbacks use the tagged variant to preserve getter provenance. Only
+// expected failed/cancelled cleanup is consumed; success spends the ledger entry
+// but returns false so ordinary completion policy still runs.
 func (host *Host) noteGateCancelledOutcome(success bool, status webview2.WebErrorStatus, navigationID uint64) bool {
 	return host.noteGateCancelledOutcomeObserved(success, status, knownNavigationIdentity(navigationID))
 }

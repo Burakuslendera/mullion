@@ -9,12 +9,13 @@ import (
 )
 
 // sourcePlan is the immutable, pre-native description of the frontend source.
-// New builds it once, then every trust and routing decision consumes one of its
-// projections: origin is the sole admission identity; startURL is the
-// caller-authorized initial navigation capability; retryTarget is derived from
-// the origin; filterPattern is the embedded request boundary; summary is its
-// redacted diagnostic form. No consumer may re-read Config.URL or
-// Config.VirtualHost and reconstruct a competing identity.
+// New builds it once, then every normal source-plan trust and routing decision
+// consumes one of its projections: origin is its sole admission identity;
+// startURL is the caller-authorized initial navigation capability; retryTarget
+// is derived from the origin; filterPattern is the embedded request boundary;
+// summary is its redacted diagnostic form. The fallback surface uses a separate,
+// generation-bound capability in errorSurfaceMessageAllowed. No consumer may
+// re-read Config.URL or Config.VirtualHost and reconstruct a competing identity.
 type sourcePlan struct {
 	embedded      bool
 	startURL      string

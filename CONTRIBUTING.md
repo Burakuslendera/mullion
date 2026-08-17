@@ -14,8 +14,12 @@ points back here for the mechanics.
   standard-library symbol or language feature newer than it, whatever you have
   installed. It is 1.24 because that is where `os.OpenRoot` arrives.
   [decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md).
-- The WebView2 Runtime — needed only to run the demo, never to run the tests.
-- No C compiler. If a change requires CGo, it is the wrong change.
+- The WebView2 Runtime is optional for the default suite, but required to run the
+  demo and the two opt-in machine tests selected by
+  `MULLION_REQUIRE_WEBVIEW2=1`. Both Windows CI lanes set that requirement.
+- The library builds and ships CGo-free, so its normal build needs no C compiler.
+  Local Windows `-race` testing is separate: Go's race detector needs a
+  mingw-w64 `gcc`.
 
 ## The verification ladder
 
@@ -27,7 +31,7 @@ gofmt -l .                                      # must print nothing
 go build ./...
 go vet ./...
 go test -count=1 ./...
-go test -count=1 -race ./...                    # message pump is thread-affine
+go test -count=1 -race ./...                    # concurrent timer/callback/state seams
 node scripts/test-bridge.mjs                    # exact embedded bridge in a Node VM
 go run ./cmd/mullion doctor                     # direct runtime/export execution
 go build -tags mullion_dwm_caption_diag ./...; go test -count=1 -tags mullion_dwm_caption_diag ./...
@@ -181,4 +185,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: make the leak-scan ladder comment name its bounded tracked-text and reachable-history scope rather than promising a general privacy proof.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: reconcile optional WebView2 and CGo-free build prerequisites with the opt-in runtime and local race-toolchain gates.

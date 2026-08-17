@@ -200,11 +200,13 @@ func (host *Host) beginWindowDestroy(hwnd windowHandle) {
 	host.hwnd = 0
 }
 
-// windowDestroyTeardown is the WM_DESTROY teardown, extracted so its contract is
-// headless-testable. Both timers die with the window and the committed browser
-// is shut down while the HWND is still in its destruction callback. The browser
-// reference is cleared only after a successful shutdown; if shutdown panics,
-// beginRun sees it and refuses to reuse an incompletely torn-down Host.
+// windowDestroyTeardown performs the teardown invoked by WM_DESTROY. Its
+// extracted headless seam covers timer state, absence of a later watchdog
+// timeout, Browser helper shutdown state, and stored Host transitions; it does
+// not exercise real WM_DESTROY dispatch, live HWND/controller ordering, or
+// already-fired callback races. The browser reference is cleared only after a
+// successful shutdown; if shutdown panics, beginRun refuses to reuse the
+// incompletely torn-down Host.
 func (host *Host) windowDestroyTeardown() {
 	host.stopRenderWatchdog()
 	host.stopStartupShowGate()

@@ -118,7 +118,9 @@ func (w *ICoreWebView2) Navigate(uri string) error {
 // script on every future navigation. It only affects navigations that start
 // after it is registered, so it has to be called before the first Navigate.
 //
-// handler receives the script id and may be nil - see the note on ExecuteScript.
+// handler receives the script id. The SDK does not document nil as accepted;
+// Browser.Init nevertheless passes nil when it does not need the id, so that
+// reliance remains unverified and runtime-dependent.
 func (w *ICoreWebView2) AddScriptToExecuteOnDocumentCreated(script string, handler unsafe.Pointer) error {
 	source, err := wstr(script)
 	if err != nil {
@@ -139,10 +141,8 @@ func (w *ICoreWebView2) AddScriptToExecuteOnDocumentCreated(script string, handl
 // UNVERIFIED: passing nil for handler. WebView2.idl annotates the parameter
 // plainly as `[in] ICoreWebView2ExecuteScriptCompletedHandler* handler`, with
 // no [optional] and no [unique], and Microsoft's reference never states that
-// NULL is accepted. It is widely done and appears to work, but it is not a
-// documented contract, so this binding does not rely on it: pass a handler when
-// you need the result, and treat a nil handler as "best effort, unsupported by
-// the docs".
+// NULL is accepted. Browser.Eval passes nil when it does not need the result,
+// so this binding relies on undocumented runtime behavior for that path.
 func (w *ICoreWebView2) ExecuteScript(script string, handler unsafe.Pointer) error {
 	source, err := wstr(script)
 	if err != nil {

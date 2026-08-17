@@ -112,8 +112,9 @@ type Config struct {
 
 	// Title is the window title. Default "Mullion".
 	Title string
-	// ClassName is the Win32 window class name. It must be unique per process.
-	// Default "MullionWindow".
+	// ClassName is the Win32 window class name. It must be unique among classes
+	// concurrently registered in the process; a later Run may reuse it after
+	// teardown unregisters the earlier class. Default "MullionWindow".
 	ClassName string
 	// VirtualHost is the synthetic host that serves Assets. It is the single
 	// source for both the request filter and the origin allow-list.
@@ -209,9 +210,11 @@ type Config struct {
 	// Default opaque white.
 	BackgroundColour Colour
 
-	// ShowTimeout bounds how long the host waits for the frontend to call
-	// window.<ns>.shellReady() before showing the window anyway. A negative
-	// value shows the window immediately. Default 7s.
+	// ShowTimeout bounds how long a non-StartHidden host waits for the frontend
+	// to call window.<ns>.shellReady() before showing the window anyway. A
+	// negative value bypasses that gate and shows immediately only when
+	// StartHidden is false; a StartHidden host remains hidden until Show.
+	// Default 7s.
 	ShowTimeout time.Duration
 	// RenderTimeout bounds how long the host waits for the frontend to call
 	// window.<ns>.ready() before logging a render-watchdog error with the
@@ -255,11 +258,16 @@ type Config struct {
 	// reach Bridge - the host answers those itself - so Bridge may be nil.
 	Bridge func(string) string
 
-	// OnReady is called once the window exists and the message loop is about to
-	// start.
+	// OnReady is called once for each Run session that reaches the message loop,
+	// after the window exists and immediately before the loop starts. It runs
+	// synchronously on the Run/UI thread and must return without waiting for work
+	// that requires that thread.
 	OnReady func()
-	// OnClose is called when the user closes the window. Returning true cancels
-	// the close.
+	// OnClose is called synchronously on the Run/UI thread for WM_CLOSE, including
+	// Alt+F4, the system menu, and native close requests. Returning true consumes
+	// WM_CLOSE. Host.Quit and frontend WindowClose destroy the window directly and
+	// do not invoke OnClose. The callback must return without waiting for work
+	// that requires the UI thread.
 	OnClose func() bool
 }
 

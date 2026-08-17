@@ -20,8 +20,8 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
-    # GitHub's windows-latest runner is amd64. This is the only job that makes a
-    # WebView2 runtime-support claim; the Windows cross-builds below do not.
+    # GitHub's windows-latest runner is amd64. This matrix and the dedicated
+    # x64 lane require runtime/export checks; neither hosts nor renders WebView2.
     # Both ends of the supported range, not just the floor. Until decision 0033
     # this job pinned "1.22" alone, so the "and newer" half of the promise in
     # README.md was never verified by anything. "stable" is the current release,
@@ -33,8 +33,9 @@ jobs:
     # The windows-latest runner ships the Evergreen WebView2 runtime (measured
     # via the doctor probe: v149.0.4022.98), so the two machine tests in
     # internal/webview2 must run, not skip. This turns their "no runtime" skip
-    # into a failure, so a green windows job proves the export mullion calls was
-    # actually checked rather than quietly stepped over. See docs/decisions/0010.
+    # into a failure, so a green Windows lane proves that runtime discovery and
+    # the required export were checked, not that a control hosted or rendered.
+    # See docs/decisions/0010.
     env:
       MULLION_REQUIRE_WEBVIEW2: "1"
     steps:
@@ -52,9 +53,9 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
 
-      # The wider hygiene net (leak_test.go covers only the narrow, portable
-      # subset). Scans tracked files and commit messages for anything that must
-      # never be published.
+      # The wider hygiene net (leak_test.go covers only a narrow, portable
+      # known-needle subset). Scans configured forbidden publication shapes in
+      # tracked text and reachable commit messages.
       - name: leak-scan
         run: pwsh scripts/leak-scan.ps1
 
@@ -104,9 +105,9 @@ jobs:
       - run: go build -tags mullion_caption_passthrough_diag ./...
       - run: go test -count=1 -tags mullion_caption_passthrough_diag ./...
 
-  # Keep the supported process ABI visible as its own singleton lane. The two
-  # Windows matrix jobs also run on amd64, but their names describe Go versions;
-  # this job makes target drift or accidental matrix-only coverage explicit.
+  # Keep the supported process ABI visible as its own singleton lane. Like the
+  # Windows matrix, it requires runtime/export checks without proving WebView2
+  # hosting or rendering; its name makes target drift explicit.
   windows-x64:
     name: windows x64
     runs-on: windows-latest
@@ -126,8 +127,8 @@ jobs:
 
   portable:
     # Non-Windows stubs and unsupported Windows architectures stay
-    # compile-portable. These builds are not runtime-support claims; WebView2
-    # hosting is proved by the Windows matrix and explicit x64 job above.
+    # compile-portable. These builds are not runtime-support claims; the Windows
+    # lanes check runtime discovery and the required export, not hosting/rendering.
     runs-on: ubuntu-latest
     # Same two-ended range as the windows job, for the same reason (0033).
     strategy:

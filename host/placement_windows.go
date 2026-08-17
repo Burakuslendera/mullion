@@ -29,8 +29,8 @@ type initialPlacement struct {
 
 // initialWindowPlacement resolves the primary monitor and returns the centered,
 // DPI-scaled creation rect. ok is false when the monitor cannot be resolved at
-// all; the caller then falls back to the pre-#59 CW_USEDEFAULT behaviour, which
-// degrades the position, never the window.
+// all; the caller then falls back to the pre-#59 CW_USEDEFAULT behaviour, losing
+// deterministic placement and DPI-scaled initial size without failing the launch.
 //
 // The primary monitor - not the one under the cursor - is the deliberate
 // default: it is deterministic across launches, and it is where Windows itself

@@ -2,6 +2,15 @@
 
 **Status:** Accepted
 
+## Contents
+
+- [Context](#context)
+- [Decision](#decision)
+- [Alternatives rejected](#alternatives-rejected)
+- [Consequences](#consequences)
+- [What would change our mind](#what-would-change-our-mind)
+- [Evidence](#evidence)
+
 ## Context
 
 Six clicks on an in-origin link in `examples/basic`, after the issue #72 fix
@@ -276,4 +285,4 @@ describes; the abort reproduces when the click lands while the previous
 navigation is still in flight. That run is the negative control: it warned zero
 times too, so the rule does not merely silence the suppressed path.
 
-> Last updated: 2026-07-26 | Editor: Claude (Opus 5) | Change: new record - a failed completion is reported once by the branch that classified it, at the level that classification deserves (issue #79); the warning moves into armErrorSurface and 0020's unattributed absorb keeps its warning. Revised the same day after an eight-agent audit: every report now follows its state transition rather than preceding it (a re-entrant-Logger regression the first version introduced), the unattributed absorb says so in its text, the follow-up line drops the duplicated phrase, and the counter claim was cut back to what the runs actually show. Audited again the same day: that ordering rule was applied in the code but locked by no test, and errorsurface_reentrancy_windows_test.go now drives both of its sites. Audited once more on 2026-07-26: the Evidence attributed four tests to one file, and TestNavigationCompletedCallbackReportsNoFailureItself lives in navigation_report_source_test.go - the same mis-attribution 0027's Evidence was corrected for, unchecked here at the time.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: add navigation-only contents for the decision's existing sections.

@@ -101,10 +101,9 @@ func createEnvironmentWithProc(opts Options, found resolved, createEnviron ComPr
 	defer options.release()
 
 	handler := newEnvironmentCompletedHandler()
-	// Our reference is held until Invoke has run. Releasing it right after the
-	// create call would rely on the runtime having taken its own reference; it
-	// does, but a lifetime bug there is a use-after-free inside the browser, and
-	// holding on costs one object.
+	// The package keeps its handler reference until successful completion or
+	// abandonment. After abandonment, a late Invoke relies on the runtime-held
+	// reference and releases any result immediately.
 	// Register abandon after release: deferred calls run LIFO, so sealing and
 	// draining a result always happen before our handler reference is dropped.
 	defer handler.release()

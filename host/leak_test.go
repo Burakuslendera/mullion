@@ -30,17 +30,14 @@ func moduleRoot(t *testing.T) string {
 	}
 }
 
-// TestNoUpstreamBrandLeak is a guard, not a formality.
-//
-// This package was extracted from a private application, and the extraction is
-// only worth anything if none of that application came with it. The forbidden
-// needles are assembled at run time so this file cannot match itself.
+// TestNoUpstreamBrandLeak scans selected repository text extensions for the
+// configured known forbidden references and brands. It is a portable
+// known-needle guard, not proof of source provenance or a complete publication
+// scan; the needles are assembled at run time so this file cannot match itself.
 func TestNoUpstreamBrandLeak(t *testing.T) {
-	// The last of these is not about the upstream application. This package used
-	// to depend on a third-party WebView2 binding, and carrying that dependency
-	// meant carrying its attribution and its limits. The COM layer is now written
-	// here, so the name should appear nowhere - not in an import, not in a
-	// notice, not in a comment. A hit means the dependency crept back.
+	// The last configured needle names a third-party WebView2 binding this
+	// package used to depend on. This guard rejects that known name in the text
+	// extensions below; it does not prove attribution or dependency provenance.
 	needles := []string{
 		"token" + "pilor",
 		"co" + "dex",
@@ -81,8 +78,8 @@ func TestNoUpstreamBrandLeak(t *testing.T) {
 	}
 }
 
-// TestNoNonASCIIInSource keeps the project in one language. It also catches
-// half-translated comments left over from the extraction.
+// TestNoNonASCIIInSource checks only Go source files for non-ASCII text. It
+// catches non-English or half-translated Go comments using that narrow proxy.
 func TestNoNonASCIIInSource(t *testing.T) {
 	err := filepath.WalkDir(moduleRoot(t), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {

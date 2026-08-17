@@ -253,7 +253,10 @@ var (
 	runtimeSummaryVersion    = Version
 )
 
-// New prepares a host. It does not create a window; Run does that.
+// New prepares a host. It does not create a window; Run does that. On supported
+// Windows, a configuration whose source validates causes New to request process-
+// wide PER_MONITOR_AWARE_V2 DPI awareness immediately. Construct the Host before
+// creating any caller-owned HWND so Windows does not latch an earlier DPI mode.
 //
 // Source validation comes before native setup. An invalid embedded virtual host
 // or caller-served URL is retained for Run's portable preflight, and no process

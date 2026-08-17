@@ -4,14 +4,13 @@ package webview2
 
 // Tests for the Go-implemented event handler COM objects.
 //
-// These run headless: no WebView2 runtime, no browser process, no window. That
-// is possible because a COM object is just a struct whose first word points at
-// a table of function pointers - so the tests can play the runtime's part and
-// call straight through the vtable, exactly as Chromium would, and observe what
-// comes back.
+// These run headless: no WebView2 runtime, browser process, or window. Tests play
+// the caller through local vtables and prove this package's representation and
+// dispatch only; they do not prove Chromium scheduling, COM implementation, or a
+// live ABI handoff.
 //
-// The three things worth proving here all fail catastrophically rather than
-// gracefully in production: a wrong Invoke offset calls the wrong function
+// The three local contracts fail catastrophically rather than gracefully when
+// exercised in production: a wrong Invoke offset calls the wrong function
 // pointer, a wrong reference count is either a leak or a use-after-free, and an
 // escaping panic kills the process from inside a Chromium stack frame.
 

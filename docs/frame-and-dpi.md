@@ -118,40 +118,31 @@ reintroduce the issue-#113 hot-path costs.
 
 ## 5. `WM_GETMINMAXINFO`
 
-A maximized frameless window must not cover the taskbar, so the natural fix is to
-fill `MINMAXINFO` from the monitor's **work area** (`MaxPosition` relative to the
-monitor origin, `MaxSize` = work-area size). That is correct as far as it goes,
-but two things make an override actively dangerous:
+A maximized frameless window must not cover the taskbar. mullion owns the native
+window procedure, so every `WM_GETMINMAXINFO` delivery attempts
+`applyMonitorWorkArea`. On success it writes `MaxPosition` relative to the
+monitor origin, writes `MaxSize` from the effective work-area extent, and returns
+`0` to claim the message.
 
-- **Do not swallow the message in a subclass.** Handling `WM_GETMINMAXINFO` and
-  returning `0` from a subclass proc means the handler underneath you (a
-  framework's, a toolkit's) never runs, and its min-size logic silently
-  disappears. Pass the message down the chain.
-- **`MonitorFromWindow` can lie during maximize.** Mid-maximize it may still
-  report the *previous* monitor while the frame calculation elsewhere in the same
-  operation uses `MonitorFromRect` and gets the new one. On a multi-monitor setup
-  the window rect and the client rect then get computed against two different
-  monitors, and you get a window sized for monitor A on monitor B.
+The failure path deliberately delegates instead. An invalid `MINMAXINFO` pointer
+or a failed monitor lookup leaves the structure untouched and falls through to
+`DefWindowProc`. Do not replace the monitor-relative `MaxPosition` with screen
+coordinates: that would offset the maximized window by the monitor's origin on a
+secondary display.
 
-In practice the `MINMAXINFO` the system fills in is already right — it already
-uses the correct monitor's work area, and the maximized client rect already lands
-exactly on it. **An unnecessary override is a net loss.** Override only if you
-have measured an actual taskbar overlap, and if you do, take the monitor from the
-same source the rest of your frame code uses.
+The effective work area comes from `maximizeMonitorInfo`. A visible taskbar is
+already excluded by the monitor's ordinary work area. An auto-hide taskbar
+reserves no work area, so mullion detects the auto-hide appbar on each monitor
+edge and insets that edge by 1px. This leaves the reveal sliver that prevents the
+shell from treating the window as fullscreen. With no auto-hide edge, the inset
+is the identity.
 
-**The auto-hide taskbar exception.** An auto-hide taskbar reserves *no* work area,
-so `rcWork == rcMonitor` and the clamp above sizes the maximized window to the whole
-monitor. The shell then treats it as a fullscreen app and stops revealing the
-taskbar on hover — it becomes unreachable by mouse. The fix is the same one
-`DefWindowProc` and Chromium apply: leave a 1px sliver on the auto-hide edge. mullion
-detects an auto-hide appbar per monitor edge (`SHAppBarMessage`) and insets the
-maximized work area by 1px there, feeding that inset area to the two paths that size
-the window (`WM_GETMINMAXINFO`, `WM_NCCALCSIZE`). It is inert when no auto-hide bar
-is present. See docs/decisions/0015. The maximized hit-test deliberately does *not*
-run the `SHAppBarMessage` probe — `WM_NCHITTEST` is the hottest input path and the
-probe is synchronous shell IPC; it clamps the already-inset window rect to the
-un-inset work area instead, which preserves the sliver because the clamp is min/max.
-See docs/decisions/0019.
+The same effective work area feeds the two paths that size the maximized window:
+`WM_GETMINMAXINFO` and `WM_NCCALCSIZE`. The maximized hit-test deliberately does
+not query the shell; it clamps the already-inset window rect to the un-inset work
+area in-process, preserving the sliver without synchronous shell IPC on
+`WM_NCHITTEST`. See decisions [0015](./decisions/0015-maximize-insets-for-autohide-taskbar.md)
+and [0019](./decisions/0019-maximized-hittest-stays-in-process.md).
 
 ## 6. Per-monitor DPI v2
 
@@ -355,4 +346,4 @@ For Chromium zoom and native hit-testing alignment, see [WebView2 zoom and nativ
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled ([WebView2 zoom and native hit testing](./webview2-zoom-and-native-hit-testing.md)) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: move WM_NCHITTEST rules to the canonical hit-test reference and retain the issue #113 overview link.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: align WM_GETMINMAXINFO ownership, fallback and effective work-area rules with production.

@@ -92,9 +92,9 @@ type IUnknownVtbl struct {
 	Release        ComProc
 }
 
-// IUnknown is a COM interface pointer: one machine word pointing at a vtable.
-// It is the base for every WebView2 interface. Pointers of this type address
-// memory owned by the WebView2 runtime, not the Go heap.
+// IUnknown is the common one-word COM interface representation. It is the base
+// for both runtime-owned WebView2 interfaces and Go-owned COM objects implemented
+// by this package; reference ownership is independent of where the object lives.
 type IUnknown struct {
 	Vtbl *IUnknownVtbl
 }
@@ -108,9 +108,9 @@ func (u *IUnknown) AddRef() uint32 {
 	return uint32(r)
 }
 
-// Release drops a reference and returns the remaining count. Releasing more
-// than you own frees the object under the runtime's feet, so pair every
-// AddRef, QueryInterface and out-parameter with exactly one Release.
+// Release drops an owned interface reference and returns the remaining count.
+// Pair each owned reference from AddRef, QueryInterface, or an interface-returning
+// call with one Release; arbitrary out-parameters are not COM references.
 func (u *IUnknown) Release() uint32 {
 	if u == nil {
 		return 0

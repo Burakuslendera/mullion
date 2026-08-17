@@ -4,27 +4,23 @@ package host
 
 import "testing"
 
-// The WM_GETMINMAXINFO clamp is unconditional - a client-extended (frameless)
-// window would otherwise maximize over the taskbar. This only pins the guard on a
-// bad MINMAXINFO pointer; the geometry itself is covered by the WM_NCCALCSIZE
-// tests.
+// This test covers only invalid-pointer rejection for WM_GETMINMAXINFO. Positive
+// MINMAXINFO position and size geometry is outside its scope; the NCCALCSIZE tests
+// exercise a separate client-rect path.
 func TestApplyMonitorWorkAreaRejectsInvalidPointer(t *testing.T) {
 	if New(Config{}).applyMonitorWorkArea(0, 0) {
 		t.Fatal("applyMonitorWorkArea must not clamp with an invalid MINMAXINFO pointer, got true")
 	}
 }
 
-// Mixed-DPI transition contract: on WM_DPICHANGED the size applied is the extent
-// of the rect Windows suggested, verbatim. No second DPI factor is layered on top
-// - under Per-Monitor-V2 the suggested rect is already scaled, so an extra multiply
-// double-scales and compounds on every monitor hop. These tests pin that contract
-// for the paths that would expose it: dragging across monitors, straddling two
-// monitors, maximize plus Win+Shift+Arrow, and a programmatic move.
+// These representative WM_DPICHANGED rectangles pin only dpiChangedTargetSize's
+// pure identity and invalid-boundary contract. They do not exercise message
+// dispatch, SetWindowPos, or real drag, straddle, Win+Shift+Arrow, and
+// programmatic transitions.
 
 func TestDPIChangedTargetSizeIsSuggestedVerbatim(t *testing.T) {
-	// Across a 96->120 transition Windows suggests 720x496 -> 900x620, and that is
-	// exactly what gets applied: the function must return the suggested extent
-	// unchanged. Adding a `* dpi / 96` on top breaks this test.
+	// A representative 96->120 suggestion is 900x620. The helper must return that
+	// extent unchanged; applying it through SetWindowPos is outside this pure test.
 	cases := []struct {
 		name         string
 		suggested    rect

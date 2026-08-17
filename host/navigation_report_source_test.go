@@ -8,25 +8,18 @@ import (
 	"testing"
 )
 
-// The one part of the issue #79 contract that no behavioural test can reach.
+// This static guard pins the issue #79 callback-source property separately from
+// behavioural coverage. The production callbacks are built by
+// newWebViewBrowser and current headless tests invoke them directly; those tests
+// cover their observable state-machine effects.
 //
-// The failure report was moved out of NavigationCompletedCallback and into the
-// branches of the error-surface machine (decisions/0026). Every branch of the
-// machine is driven headlessly by errorsurface_logging_windows_test.go - but the
-// callback itself is a closure built inside createWebView, which needs a live
-// *webview2.Browser and a WebView2 runtime, so no test in this suite can invoke
-// it. Put the old line back there and the whole suite stays green while the
-// issue is reopened: six suppressed aborts, six warnings, each contradicted by
-// the debug line under it.
-//
-// The gap is closed the way this repository closes the other invariants its type
-// system cannot see (TestNoNetworkListener, the leak scan): by reading the
-// source. It is a blunt instrument and it is deliberately narrow - it says only
-// that the callback reports no outcome of its own, which is the whole claim.
+// The source check remains deliberately narrow: NavigationCompletedCallback
+// must neither report nor classify the outcome before the error-surface machine
+// does. It does not stand in for callback execution, WebView2 scheduling, or a
+// live runtime.
 //
 // It carries no build tag on purpose: the files it reads are in the tree on
-// every platform, so the guard runs in the Linux CI job too, where none of the
-// windows-tagged tests do.
+// every platform, so the guard also runs in Linux CI.
 func TestNavigationCompletedCallbackReportsNoFailureItself(t *testing.T) {
 	body := callbackSource(t, "browser.NavigationCompletedCallback = func(", "browser.ProcessFailedCallback = func(")
 
@@ -57,12 +50,11 @@ func TestNavigationCompletedCallbackReportsNoFailureItself(t *testing.T) {
 	}
 }
 
-// The other half of the same gap: the two navigation callbacks are wired inside
-// createWebView, so the wiring itself is beyond every behavioural test in this
-// suite. An audit measured what that costs - the whole pre-issue-73 shape can be
-// restored in these six lines, or the cancelled callback deleted outright, with
-// the entire suite green - so the wiring gets the same treatment as the bodies
-// (issue #73, decisions/0027).
+// Behavioural tests directly invoke the callbacks returned by
+// newWebViewBrowser. This source guard separately pins their division of work:
+// the starting callback asks for a decision without committing a cancel, the
+// cancelled callback commits the observation, and completion acts on the
+// ledger's verdict alone (issue #73, decisions/0027).
 func TestTheNavigationCallbacksAreWiredToTheirOwnHalves(t *testing.T) {
 	starting := callbackSource(t, "browser.NavigationStartingCallback = func(", "browser.NavigationCancelledCallback = func(")
 	if !strings.Contains(starting, "host.noteAndGateNavigationKnown(") {

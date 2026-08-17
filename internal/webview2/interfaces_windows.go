@@ -37,9 +37,9 @@
 //     Go lays embedded structs out inline and in order, so the embedding chain
 //     reproduces exactly the flattened vtable MIDL emits.
 //
-// interfaces_windows_test.go pins every slot offset and every IID with
-// unsafe.Offsetof, and runs without a WebView2 runtime. Re-run it after any
-// edit here; a passing build proves nothing about a vtable.
+// interfaces_windows_test.go uses unsafe.Offsetof and size assertions to pin
+// vtable layouts, while canonical GUID parsing and comparison pin declared IIDs.
+// These checks run without a WebView2 runtime and prove no live runtime behavior.
 //
 // # Windows/amd64 argument-passing rules that matter here
 //

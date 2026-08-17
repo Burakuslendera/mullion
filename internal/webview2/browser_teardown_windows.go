@@ -2,17 +2,16 @@
 
 package webview2
 
-// Teardown: closing the controller and dropping the three COM references a live
-// Browser owns, in the order the runtime requires and with each drop
-// independent of the others so a panic cannot strand one (issue #63). Split
-// from browser_windows.go, whose Embed is the half that acquires what this half
-// releases.
+// Teardown closes the controller before dropping the three COM references a live
+// Browser owns. Each drop is independent so a panic cannot strand another
+// reference (issue #63). Split from browser_windows.go, whose Embed is the half
+// that acquires what this half releases.
 
 // ShuttingDown closes the controller and drops the browser's references.
 //
-// It is called from the window procedure while the HWND is still alive: closing
-// the controller after its parent window is gone leaves the runtime's own
-// child windows orphaned, and the teardown reports failures nobody can act on.
+// Normal teardown is called from WM_DESTROY while the parent HWND is still alive.
+// Embed also calls it after references transfer into Browser when later setup
+// fails or panics, before a successfully embedded Browser reaches the host.
 func (browser *Browser) ShuttingDown() {
 	browser.mu.Lock()
 	if browser.shuttingDown {
@@ -48,22 +47,24 @@ func (browser *Browser) ShuttingDown() {
 	releaseBrowserObjects(closeController, releaseController, releaseCore, releaseEnvironment, browser.reportError)
 }
 
-// releaseBrowserObjects closes the controller and drops the three COM
-// references a live Browser owns, each under its own deferred call.
+// releaseBrowserObjects closes the controller before dropping the three COM
+// references a live Browser owns, each under its own deferred call. The runtime
+// requirement is Close-before-Release; the relative controller, core and
+// environment release order is this package's implementation seam.
 //
 // The separate defers are load-bearing, not style. ShuttingDown runs inside the
 // panic-recovering window procedure, and its shuttingDown guard makes a retry a
 // no-op, so a panic partway through the release sequence would strand whatever
-// had not yet been dropped - one ICoreWebView2 or the environment - for good
-// (issue #63). A panic inside a deferred call still runs the remaining deferred
-// calls, so each drop is independent; a single wrapping closure would skip the
-// rest of itself once one call panicked. Deferred calls run
-// last-registered-first, so registering the Close last keeps the
-// Close-before-Release order the runtime requires. Nil callbacks are skipped so
-// a partially embedded Browser tears down cleanly.
+// had not yet been dropped (issue #63). A panic inside one deferred call still
+// runs the remaining defers; a single wrapping closure would skip the rest of
+// itself. Registering Close last makes it run first.
 //
-// It takes callbacks rather than the COM pointers so the ordering and the
-// panic-independence are testable without a live runtime (docs/decisions/0006).
+// Nil callbacks cover defensive and test-only partial states. A Browser that
+// receives transferred Embed ownership normally owns controller, core and
+// environment together.
+//
+// Callbacks keep the order and panic-independence testable without a live runtime
+// (docs/decisions/0006); those tests do not establish runtime release semantics.
 func releaseBrowserObjects(closeController func() error, releaseController, releaseCore, releaseEnvironment func(), reportErr func(error)) {
 	if releaseEnvironment != nil {
 		defer releaseEnvironment()

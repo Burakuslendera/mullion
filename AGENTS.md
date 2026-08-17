@@ -16,20 +16,27 @@ pull-request mechanics. The rules below are additional, not alternative.
 | Question | File |
 | --- | --- |
 | How does the host work, end to end? | [docs/architecture.md](./docs/architecture.md) |
+| How do startup show gates and the render watchdog work? | [docs/startup-gates-and-watchdog.md](./docs/startup-gates-and-watchdog.md) |
 | How does the host talk to WebView2? | [docs/webview2-and-assets.md](./docs/webview2-and-assets.md) |
+| How do WebView2 zoom and native hit-testing stay aligned? | [docs/webview2-zoom-and-native-hit-testing.md](./docs/webview2-zoom-and-native-hit-testing.md) |
 | How are assets served without a port? | [docs/assets.md](./docs/assets.md) |
 | Why is the frame / hit-test / DPI code shaped like this? | [docs/frame-and-dpi.md](./docs/frame-and-dpi.md) |
+| What is the canonical native hit-test geometry? | [docs/hit-test.md](./docs/hit-test.md) |
 | Snap, the non-client region, caption behaviour | [docs/snap-and-nonclient-region.md](./docs/snap-and-nonclient-region.md) |
 | Where do those snap / non-client claims come from? | [docs/snap-sources.md](./docs/snap-sources.md) |
+| What is the headless-versus-live Snap testing boundary? | [docs/snap-testing-boundary.md](./docs/snap-testing-boundary.md) |
 | **Why is it done this way, and what would change that?** | [docs/decisions/](./docs/decisions/) |
 | What was already tried, and why was it abandoned? | [docs/lessons-and-dead-ends.md](./docs/lessons-and-dead-ends.md) |
+| Which logging approaches were tried and abandoned? | [docs/logging-dead-ends.md](./docs/logging-dead-ends.md) |
 | How do I prove a change actually works? | [docs/verification.md](./docs/verification.md) |
+| Where are dated automated and live verification records? | [docs/verification-records.md](./docs/verification-records.md) |
 | What makes scripted GUI verification lie? | [docs/gui-verification-traps.md](./docs/gui-verification-traps.md) |
 | What does a bug report have to contain? | [docs/bug-reports.md](./docs/bug-reports.md) |
 | Build, test, style, pull-request expectations | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Frame and visual acceptance rules | [agents/window.md](./agents/window.md) |
 | Note and documentation lifecycle; external code intake | [agents/notes.md](./agents/notes.md) |
 | Uncertainty labelling, honesty, communication | [agents/policy.md](./agents/policy.md) |
+| File-size discipline and tiered rule-change authority | [agents/rule-maintenance.md](./agents/rule-maintenance.md) |
 | How work is labelled and triaged on the tracker | [agents/issues.md](./agents/issues.md) |
 
 Read [docs/lessons-and-dead-ends.md](./docs/lessons-and-dead-ends.md) **before**
@@ -162,68 +169,10 @@ what was **not covered**, and why; and what remains **uncertain**, with a label 
 The last item is not optional politeness. A later agent who cannot see what you
 skipped will either re-derive it at cost, or trust it wrongly.
 
-## File size discipline
+## Rule maintenance
 
-The limit is not tidiness. A rule file is loaded into context at the start of
-every session, so its length is a tax charged on work that has not happened yet.
-A reference document is read once, by someone who came looking for it. The two
-are not the same object and do not get the same limit.
-
-| Files | Limit |
-| --- | --- |
-| Rule files — this file, `agents/*.md`, `CONTRIBUTING.md` | **250 lines, hard.** Past ~230, stop adding sections and split. |
-| Reference documents — `docs/*.md` | **400 lines, hard.** Past 250, the file must open with a table of contents. |
-| `README.md` | Exempt. It is the landing page and stays one file. |
-
-Splitting rules:
-
-- Split at a logical boundary, move the content **verbatim**, use an ASCII
-  filename, add the new file to the table above, and re-count the lines.
-- **Nothing is lost in a split** — a split is a move, never an edit. If you find
-  yourself rewriting a sentence while splitting, you are doing two changes at
-  once; stop and do them separately.
-- The old file links to the new one at the point where the content was removed.
-  A reader who lands mid-topic must be able to find the rest.
-
-Check it, do not estimate it. A file that quietly grows past its limit is the
-same failure as a rule that quietly goes stale: nobody notices until an agent has
-already acted on it.
-
-## Tiered rule-change authority
-
-Rule files decay. A stale rule is not neutral; it is active harm, because agents
-obey it. Updating the rules is therefore legitimate — but the authority is tiered,
-and the tier depends on whether the *meaning* of a rule changes. The evidence for
-what a rule used to say is the commit history; that is what makes an in-place
-rewrite safe.
-
-**Tier 1 — the agent decides (mechanical hygiene).** Fixing a broken link or a
-typo, updating a path after a file move, marking a statement that is no longer
-current as `historical`, and opening a continuation file when a rule file reaches
-the line limit. None of these change what a rule means.
-
-**Tier 2 — allowed, with evidence.** Adding a new repeat-prevention rule after a
-real failure, and rewriting a stale rule in place. Conditions: cite the evidence
-(the commit, the failing test, the log, the live observation) that justifies it;
-scan the other rule files for duplication and contradiction; and if the meaning
-changed, say *which rule changed and why* in both the commit message and the
-affected document.
-
-**Tier 3 — explicit human approval only.** Deleting a rule, changing anything in
-the protected core, and creating a new rule file that is not a continuation of an
-existing one. Without approval the idea is written up as a **rule candidate** in
-the pull request description and named in the final report — it does not go into
-the rule files.
-
-**Protected core** (changes only with explicit human approval):
-
-- the *Non-negotiables* and *Priority ladder* sections of this file;
-- the acceptance rules in [agents/window.md](./agents/window.md);
-- the uncertainty and honesty rules in [agents/policy.md](./agents/policy.md);
-- the headless-test invariant in [CONTRIBUTING.md](./CONTRIBUTING.md);
-- the licence and external-code intake rules in [agents/notes.md](./agents/notes.md).
-
-If you are unsure whether a proposal is Tier 2 or Tier 3, it is Tier 3.
+File-size discipline, splitting rules and tiered rule-change authority continue
+in [agents/rule-maintenance.md](./agents/rule-maintenance.md).
 
 ## Honesty and signatures
 
@@ -239,4 +188,4 @@ Replace that footer when editing; never append another footer or adopt another
 editor's name. Git history preserves earlier signatures.
 
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: require the quality gate before edits and completion, including necessity, adversarial review, focused evidence, scope and uncertainty.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: route extracted subsystem references and move rule-maintenance details to their authorized continuation.

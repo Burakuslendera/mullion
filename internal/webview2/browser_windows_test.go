@@ -357,13 +357,13 @@ func TestHandleWebResourceRequestedReportsGetRequestFailure(t *testing.T) {
 	runtime.KeepAlive(args)
 }
 
-// The teardown release sequence (issue #63). releaseBrowserObjects is the
-// seam ShuttingDown runs its Close-and-release through, so the ordering and the
-// panic-independence can be pinned without a live COM runtime.
+// The teardown release sequence (issue #63). releaseBrowserObjects is the seam
+// ShuttingDown uses, so implementation order and panic-independence can be pinned
+// without a live COM runtime.
 
-// TestReleaseBrowserObjectsRunsCloseThenReleasesInOrder locks the order the
-// runtime requires: Close before the controller is released, then core, then
-// environment. The window path relies on this exact sequence.
+// TestReleaseBrowserObjectsRunsCloseThenReleasesInOrder pins package order.
+// The runtime requirement is that Close precede every Release; the relative
+// controller, core and environment order is deterministic seam behavior.
 func TestReleaseBrowserObjectsRunsCloseThenReleasesInOrder(t *testing.T) {
 	var order []string
 	releaseBrowserObjects(
@@ -467,14 +467,14 @@ func TestReleaseBrowserObjectsReportsACloseError(t *testing.T) {
 	}
 }
 
-// TestReleaseBrowserObjectsToleratesNilCallbacks covers a partially embedded
-// Browser: the controller may exist while core/environment do not, or none may.
-// Absent objects pass nil callbacks, which must be skipped, not invoked.
+// TestReleaseBrowserObjectsToleratesNilCallbacks covers defensive helper states.
+// Transferred Browser ownership contains controller, core and environment
+// together; controller-only is a test-only state.
 func TestReleaseBrowserObjectsToleratesNilCallbacks(t *testing.T) {
-	// All nil: a Browser that never embedded. Must not panic.
+	// All nil: defensive no-owned-object state. Must not panic.
 	releaseBrowserObjects(nil, nil, nil, nil, nil)
 
-	// Controller only: Close and its release run, the others are skipped.
+	// Controller only: test-only state; Close and release run.
 	var closed, releasedController bool
 	releaseBrowserObjects(
 		func() error { closed = true; return nil },

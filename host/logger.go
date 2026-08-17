@@ -52,7 +52,8 @@ func (l slogLogger) Info(msg string)  { l.logger.Info(msg) }
 func (l slogLogger) Warn(msg string)  { l.logger.Warn(msg) }
 func (l slogLogger) Error(msg string) { l.logger.Error(msg) }
 
-// SlogLogger adapts a *slog.Logger to the Logger interface.
+// SlogLogger adapts a *slog.Logger to the Logger interface. A nil logger yields
+// NopLogger.
 func SlogLogger(logger *slog.Logger) Logger {
 	if logger == nil {
 		return NopLogger{}

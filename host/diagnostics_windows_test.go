@@ -69,8 +69,8 @@ func TestNativeDiagnosticsIgnoresFaviconAsLastAsset(t *testing.T) {
 	}
 }
 
-// TestFrontendDiagnosticAssetSanitizesPath locks the promise made to Logger
-// implementations: a message handed to them never carries a user's file path.
+// TestFrontendDiagnosticAssetSanitizesPath locks this helper's asset-field
+// reduction only; other Logger messages and fields use their own reducers.
 func TestFrontendDiagnosticAssetSanitizesPath(t *testing.T) {
 	got := frontendDiagnosticAsset(`C:\Users\Example User\AppData\Acme\src\secret.js`)
 	if got != "secret.js" {

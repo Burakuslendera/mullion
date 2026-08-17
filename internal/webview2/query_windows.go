@@ -11,12 +11,11 @@ import (
 
 // Feature detection in this package is QueryInterface, never a version compare.
 //
-// That is not a style preference. This package talks to the runtime's client DLL
-// directly instead of going through the SDK loader, and the loader is where the
-// minimum-version gate lives - bypass it and the gate is bypassed too. So a
-// version number proves nothing here; asking the object whether it implements an
-// interface proves everything. An old runtime answers E_NOINTERFACE, which is a
-// clean "no", not a crash.
+// This package talks directly to the runtime's client DLL, bypassing the SDK
+// loader and its minimum-version gate. QueryInterface is authoritative only for
+// whether the object exposes an interface; local ABI, semantic interface choice,
+// argument order, ownership, call success, scheduling and rendering require
+// separate evidence. An old runtime can answer E_NOINTERFACE as a clean "no".
 
 var procSHCreateMemStream = windows.NewLazySystemDLL("shlwapi.dll").NewProc("SHCreateMemStream")
 

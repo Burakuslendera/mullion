@@ -20,19 +20,26 @@ Run in this order. Each one exists because it catches something the previous
 one cannot.
 
 ```
-gofmt -l .                                       # must print nothing
-go build ./...                                   # windows build
-go vet ./...                                     # syscall/unsafe/printf misuse
-go test -count=1 ./...                           # unit + table tests, never cached
-go test -count=1 -race ./...                     # message pump vs. callback races
-node scripts/test-bridge.mjs                     # real bridge bytes in a Node VM
-go run ./cmd/mullion doctor                      # execute runtime/export discovery
+gofmt -l .                                      # must print nothing
+go build ./...
+go vet ./...
+go test -count=1 ./...
+go test -count=1 -race ./...                    # concurrent timer/callback/state seams
+node scripts/test-bridge.mjs                    # exact embedded bridge in a Node VM
+go run ./cmd/mullion doctor                     # direct runtime/export execution
 go build -tags mullion_dwm_caption_diag ./...; go test -count=1 -tags mullion_dwm_caption_diag ./...
 go build -tags mullion_caption_passthrough_diag ./...; go test -count=1 -tags mullion_caption_passthrough_diag ./...
-$env:GOOS = 'linux'; go build ./...; Remove-Item Env:GOOS # non-Windows stub gate (PowerShell)
-pwsh scripts/leak-scan.ps1                       # configured publication shapes in the reported Git scope
-Push-Location examples/basic; go run .; Pop-Location # it actually starts
+$env:GOOS = 'linux';   $env:GOARCH = 'amd64'; go build ./... # stub portability
+$env:GOOS = 'windows'; $env:GOARCH = 'amd64'; go build ./... # supported WebView2 target
+$env:GOOS = 'windows'; $env:GOARCH = '386'; go test -count=1 ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture' # WOW64 execution
+$env:GOOS = 'windows'; $env:GOARCH = 'arm64'; go build ./... # compile portability only
+Remove-Item Env:GOOS, Env:GOARCH
+pwsh scripts/leak-scan.ps1                      # configured shapes in tracked text and complete reachable history
 ```
+
+The default suite needs no WebView2 Runtime; its two opt-in machine tests require
+one with `MULLION_REQUIRE_WEBVIEW2=1`, as both Windows CI lanes do. The CGo-free
+library build needs no C compiler, but local Windows `-race` needs mingw-w64 `gcc`.
 
 | Gate | What it catches |
 | --- | --- |
@@ -41,14 +48,14 @@ Push-Location examples/basic; go run .; Pop-Location # it actually starts
 | `go vet ./...` | Misuse of `unsafe.Pointer` around Win32 calls, wrong printf verbs in log lines, suspicious struct tags. Vet is the closest thing to a static check on syscall boundaries. |
 | `go test -count=1 ./...` | Uncached pure-logic invariants, including issue #112's exact `int64` ceiling scaling over signed inputs/maximum DPI and zero-DPI fallback; preservation of positive `MaxInt32` Config metrics; invalid, outside-endpoint and full-signed-span half-open rects; clipped wrap bands and caption-button thirds; independent midpoint resize saturation/non-overlap; all corner/edge, controls, caption, client and maximized results; active-profile and in-process/no-shell maximized behavior; and bounded/invalid diagnostics from the production geometry constructor. It also covers non-client rect adjustment, style-bit composition, asset name-to-MIME mapping, diagnostic log parsing, and **every COM vtable offset and IID in `internal/webview2`** (see below). CI executes architecture-tagged production gates as a real Windows/386 process under WOW64; Windows/ARM64 remains compile-only. |
 | `TestNoNetworkListener` | A fail-closed syntactic guard for the README's no-port promise. It parses every Go file regardless of build tag; resolves prohibited APIs, all supported Winsock loaders, named/unnamed conversions, local/cross-file package type aliases and parenthesized string conversions; and scans Go strings plus shipped raw text for bounded standalone/scheme/scheme-relative authority endpoints with IPv6 path/userinfo controls. The real named guard runs temporary modules. Exact fixtures and the case-folded intercepted host have rule-specific exceptions ([decisions/0030](./decisions/0030-guard-exempts-the-virtual-host-name.md)). Comments, run-time assembly, reflection, raw numeric syscalls and dependencies remain outside this source proof. |
-| `TestNoUpstreamBrandLeak`, `TestNoNonASCIIInSource` | The repository stays in one language, and carries nothing from the private code base it was extracted from. |
-| `TestRunTokensAreProcessGlobalAcrossHosts` | Process-global non-zero Run identities keep a stale private command from one Host from being admitted by another Host after the OS recycles the same HWND. |
+| `TestNoUpstreamBrandLeak`, `TestNoNonASCIIInSource` | The first rejects its known forbidden reference needles in the configured text file extensions; the second rejects non-ASCII code points in Go source only. |
+| `TestRunTokensAreProcessGlobalAcrossHosts` | Process-global non-zero Run identities keep a stale private command from one Host from being admitted by another Host when the deterministic seam supplies the same HWND value. |
 | `TestLoggerMayReenterHostMethodWhileTeardownWaits` | A Logger callback may re-enter `Quit` while teardown waits for the outer `Hide`; both admitted commands post and both calls complete instead of deadlocking on Run admission. |
-| `go test -count=1 -race ./...` | Uncached data-race coverage between the UI thread and goroutines that touch shared state (asset serving, watchdogs, bound callbacks). |
+| `go test -count=1 -race ./...` | Uncached data-race coverage for concurrent timer, callback and shared-state seams. It does not run a real message pump or prove UI-thread scheduling. |
 | `go build -tags <diag>` | Diagnostic builds rot silently. Each diagnostic tag therefore gets its own build and uncached test in CI. |
-| `$env:GOOS = 'linux'; go build ./...; Remove-Item Env:GOOS` | PowerShell-runnable proof that non-Windows stubs still satisfy the public API; this is compile portability, not window execution support. |
+| The `GOOS` / `GOARCH` commands | Linux/amd64 proves stub compile portability; Windows/amd64 builds the supported target; Windows/386 executes the production unsupported-architecture gates under WOW64; Windows/ARM64 is compile-only. The final `Remove-Item` restores native builds. None of the cross-target gates proves WebView2 hosting. |
 | `pwsh scripts/leak-scan.ps1` | A fail-closed configured-shape scan of every strictly decoded Git-tracked text file and real-object commit message reachable from a validated, non-shallow `HEAD`. It rejects redirected source/index, replacement refs and grafts; reports file/commit/binary/allowance/error counts; and is wired after exactly one pinned current-source checkout. Untracked/binary/unreachable/obfuscated inputs and unnamed secret classes stay outside the verdict. See [guard-verification.md](./guard-verification.md). |
-| `node scripts/test-bridge.mjs`; `go run ./cmd/mullion doctor`; the example | Dependency-free VM coverage of the exact bridge bytes; direct, uncached execution of runtime discovery/export resolution; then a visible loaded window. These execution gates catch false greens that compilation or cached/removed tests cannot. |
+| `node scripts/test-bridge.mjs`; `go run ./cmd/mullion doctor` | Dependency-free VM coverage of the exact bridge bytes, then direct uncached execution of runtime discovery/export resolution. Neither proves WebView2 hosting, rendering, or a visible loaded window. |
 
 ### The COM ABI is pinned by tests, because the compiler cannot see it
 
@@ -140,8 +147,8 @@ entry ticket to acceptance, not acceptance itself.
 
 ## 3. Manual acceptance checklist
 
-Run `examples/basic` (or the host application) and walk the list. Every item is
-a pass/fail with an observable result — "looks fine" is not a result.
+Launch `examples/basic` with `Push-Location examples/basic; go run .; Pop-Location`
+(or run the host application), then walk the list. Launch alone is not proof; only the human observations below count.
 
 - [ ] **Temporary issue #112 large-metric fixture, before and in addition to the normal checklist.** Use an odd physical restored window rect `[l,r) x [t,b)`;
       record `w`, `h`, `mx=l+floor(w/2)` and `my=t+floor(h/2)`. Run three temporary Config passes, keeping the other metrics ordinary:
@@ -154,6 +161,8 @@ a pass/fail with an observable result — "looks fine" is not a result.
 - [ ] **Normal title bar.** Drag follows immediately; double-click toggles maximize and restore.
 - [ ] **Normal drag down from maximized.** The window restores under the cursor and continues following in the same gesture, without jumping to a corner or dropping the drag.
 - [ ] **Normal resize: 4 edges and 4 corners.** In all eight zones, separately verify the correct cursor and an actual drag resize in that direction; cursor and sizing use different paths.
+- [ ] **Issue #124 live move-loop gate.** Before `WM_EXITSIZEMOVE`, a second frontend drag or resize gesture must remain disabled. After exit and a fresh authoritative frame-state snapshot, both gestures must recover.
+      `frame_state_windows_test.go` and `scripts/test-bridge.mjs` cover deterministic seams, not live WebView2/Win32 scheduling.
 - [ ] **Minimize** from the custom caption control, and restore from the
       taskbar.
 - [ ] **Close** from the custom caption control; the process exits and no
@@ -243,20 +252,22 @@ a pass/fail with an observable result — "looks fine" is not a result.
 - [ ] **Sequential-Run stale-control and early-readiness adversary.** Reuse one
       `Host` for two sessions and record both Run tokens. Queue every private
       window command from session N (`Show`, `Hide`, `Quit`, `Minimise`,
-      maximise toggle, drag, resize, bounds sync and `SetTitle`), end N, and
-      arrange for Windows to reuse the same numeric HWND in N+1. None may apply
-      or add a warning/log line in N+1; fresh commands must still apply. During
-      an embed pump, signal `shellReady()` before the show gate starts: no show
-      may be posted before start, and exactly one tagged show must be posted
-      after start. Reject that show's first embed/application attempt and confirm
-      the fallback re-arms and retries rather than leaving the non-hidden session
-      invisible.
+      maximise toggle, drag, resize, bounds sync and `SetTitle`), then end N.
+      Try to observe Windows reusing the same numeric HWND in N+1, but treat
+      allocation as best-effort rather than a reproducible pass/fail step. If it
+      happens, no stale command may apply or add a warning/log line in N+1;
+      fresh commands must still apply. During an embed pump, signal
+      `shellReady()` before the show gate starts: no show may be posted before
+      start, and exactly one tagged show must be posted after start. Reject that
+      show's first embed/application attempt and confirm the fallback re-arms
+      and retries rather than leaving the non-hidden session invisible.
 - [ ] **Teardown ordering under admitted calls and firing callbacks.** Block an
       already-entered `MarkFrontendShellReady()` between its bounds and show
       effects while teardown attempts to finish. Teardown must wait; both effects
       retain N's token. Separately fire N's startup/render timers, deferred bounds
-      callback and worker-warning path after N+1 starts with the recycled HWND:
-      N+1 must receive no post, timeout/fallback line or warning. Block
+      callback and worker-warning path after N+1 starts, using the same numeric
+      HWND if the allocator supplies it. N+1 must receive no post,
+      timeout/fallback line or warning. Block
       `IsMaximised()` inside its query and confirm `WM_DESTROY` cannot clear/reuse
       the HWND until the query returns.
       `TestRunTokensAreProcessGlobalAcrossHosts`,
@@ -269,9 +280,9 @@ a pass/fail with an observable result — "looks fine" is not a result.
       `TestReadinessAdmittedBeforeTeardownCompletesInsideOriginatingRun` and
       `TestIsMaximisedPinsHWNDOwnershipUntilQueryReturns` exercise these through
       headless production dispatch/callback seams without creating a window.
-      Remaining uncertainty is live Windows scheduling and actual numeric HWND
-      recycling; repeat this checklist live because a headless seam cannot force
-      the kernel's allocation timing.
+      The headless seams deterministically force identical handles and pin token
+      rejection. Actual numeric HWND recycling remains a best-effort live
+      observation; failure to obtain reuse from the allocator is not a failure.
 - [ ] **`StartHidden` → first `Show`.** With `Config.StartHidden` set, no
       window may appear until `Show()` is called; the first `Show` embeds the
       WebView and the frontend paints. Quitting without ever showing must
@@ -299,8 +310,9 @@ a pass/fail with an observable result — "looks fine" is not a result.
       runtime drove itself (one click started 45 navigations, most aborted) and
       was not comparable, which no longer happens - 31 clicked navigations
       measured 10-18 ms in the same session, all committing. The old gap ran
-      2.026 - 2.041 s, named by a NetLog capture as a `HOST_RESOLVER_MANAGER_JOB`
-      for the virtual host (webview2-and-assets.md). The default is now under the
+      2.026 - 2.041 s, named by a NetLog capture as a
+      `HOST_RESOLVER_MANAGER_JOB` for the virtual host
+      ([assets.md, "The two-second gap before the first subresource"](./assets.md#the-two-second-gap-before-the-first-subresource-issues-85-77)). The default is now under the
       TLD RFC 6761 reserves for loopback (decisions/0030), so the gap must read in
       the tens of milliseconds and in-origin navigations must commit. Run it twice
       from the same launcher and read the second: this package points WebView2 at
@@ -385,4 +397,4 @@ The dated records now live in the linked continuation
 focused evidence and explicit live/headless boundary. Keep this document's
 acceptance rules and checklist here; append command results and observations to
 the continuation rather than growing this file past its 400-line limit.
-> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: move dated verification records to a continuation and link issue #113 evidence.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: synchronize platform and race gates, separate live proof, and narrow race, leak, asset-timing, issue #124 and HWND-reuse claims.

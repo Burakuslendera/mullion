@@ -4,7 +4,9 @@ package host
 
 import "github.com/Burakuslendera/mullion/internal/webview2"
 
-// newAssetStream wraps an asset body in a COM stream.
+// newAssetStream wraps an asset body in a COM stream. SHCreateMemStream accepts
+// a UINT byte count, so bodies larger than 4,294,967,295 bytes are rejected
+// before that call rather than truncated to the low 32 bits.
 //
 // An empty body is represented by a nil stream rather than an empty one: a 204
 // or a 304 has no content, and attaching a zero-length stream to one is a

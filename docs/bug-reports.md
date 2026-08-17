@@ -11,7 +11,7 @@ that cannot be reproduced.
 
 ```
 go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor   # no checkout needed
-go run -buildvcs=true ./cmd/mullion doctor                           # from a checkout
+go run -buildvcs=true ./cmd/mullion doctor                           # from a checkout; require a stamp
 go install ./cmd/mullion                                             # keep it: $(go env GOPATH)/bin
 ```
 
@@ -31,10 +31,13 @@ reporter reading their own settings panel writes "1536x864" for a 1920x1080
 monitor at 125% — and the reader spends an afternoon chasing a scaling bug that
 was never there. The command declares per-monitor awareness before it measures.
 
-Mind the `-buildvcs=true` from a checkout: `go run` does not stamp the revision
-into the binary, so without it the version line reads a bare `devel` and
-identifies nothing. `go install` and `go build` do stamp it. The report says so
-when it happens rather than letting the line pass as an answer.
+Go defaults to `-buildvcs=auto`, so a checkout build stamps VCS data when the
+repository context permits it. `-buildvcs=true` does not uniquely enable
+stamping: when VCS information is available, it diagnoses a missing tool or
+ambiguous repository layout by failing rather than silently omitting the stamp.
+A bare `devel` means the binary contains no usable VCS stamp; it does not mean
+that `go run` intrinsically omits stamps. The report calls out a
+missing stamp rather than letting the line pass as an answer.
 
 **The build identifies itself.** `Run` logs `mullion: version=…` at startup, read
 out of the binary's own build info: a tag (`v0.1.0`), a pseudo-version carrying
@@ -77,4 +80,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: describe Go's automatic VCS stamping and clarify that buildvcs=true enforces rather than uniquely enables it.

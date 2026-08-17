@@ -6,9 +6,10 @@
 - [Bootstrap contract (order matters)](#bootstrap-contract-order-matters)
 - [Threading model](#threading-model)
 - [Message routing](#message-routing)
+- [Native-routing test boundary](#native-routing-test-boundary)
 - [Talking to WebView2, and serving assets](#talking-to-webview2-and-serving-assets)
 - [Bridge protocol](#bridge-protocol)
-- [Native-routing test boundary](#native-routing-test-boundary)
+- [Startup gates and watchdog](#startup-gates-and-watchdog)
 - [Known limitations](#known-limitations)
 
 ## Overview
@@ -119,7 +120,7 @@ first result even when the source is also invalid.
    the browser after shutdown. Pending `WM_QUIT` ownership is tracked separately
    from that cleared handle, so a quit consumed and re-posted by the embed pump is
    still drained without ever destroying a recycled HWND. `Run` blocks for the
-   life of the window and must be called from the process main-thread goroutine.
+   life of the window.
    The same `Host` supports sequential `Run` calls; each session resets and
    poisons its destruction, startup-gate, timing, diagnostic and navigation
    state while retaining stable Logger/diagnostic objects for older
@@ -134,9 +135,12 @@ first result even when the source is also invalid.
 
 ## Threading model
 
-Public methods on `Host` are callable from any goroutine and none of them touch the
-`HWND` directly. Each is expressed as a Win32 message delivered to the UI thread,
-where the window procedure applies it:
+Public methods on `Host` are callable from any goroutine. Mutating window
+commands use session-tagged Win32 send/post messages so the window procedure
+applies them on the UI thread. `IsMaximised` deliberately pins `HWND` ownership
+across a direct, cross-thread-safe `IsZoomed` query. Diagnostic and readiness
+methods synchronize their bookkeeping, and readiness posts window-affine
+follow-up instead of performing it on the caller. The command routes are:
 
 | Method | Message | Delivery |
 | --- | --- | --- |
@@ -160,10 +164,9 @@ native, WebView, caller or Logger code: re-entrant Logger/bridge calls therefore
 cannot self-deadlock. Teardown closes library-callback admission and waits for
 already-entered public methods to finish their timing, log, bounds and show
 effects before poisoning the token and allowing the next Run. A new `Run`
-arriving during that drain is rejected rather than queued behind it. `IsMaximised`
-additionally pins HWND ownership across its direct `IsZoomed` query, and
-`SetTitle` routes through the tagged UI command rather than dereferencing a
-looked-up HWND on the caller.
+arriving during that drain is rejected rather than queued behind it. `SetTitle`
+routes through the tagged UI command rather than dereferencing a looked-up
+`HWND` on the caller.
 
 Two threads enter a COM apartment, not one. The UI thread's is the process's
 (`initializeCOM`, step 3 above). The second belongs to the system-browser launch:
@@ -348,4 +351,4 @@ the rejection gates under Windows/386 WOW64, and keeps ARM64 compile-only.
 Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: correct post-apply bounds ownership; document the callback/private-resize failure boundary and its headless-versus-live verification limit.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: correct contents order and startup routing, remove unsupported process-main-thread ownership, and document command exceptions.

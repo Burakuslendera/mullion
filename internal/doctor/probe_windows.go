@@ -56,7 +56,7 @@ type monitorInfoEx struct {
 	Device  [32]uint16
 }
 
-// Probe gathers the report on this machine.
+// Probe gathers checked startup prerequisites and best-effort environment data.
 func Probe(version string) Report {
 	if err := webview2.ValidateArchitecture(); err != nil {
 		section, _ := describeWebView2Result(webview2.DescribeRuntime, pinnedRuntimePath, expandPath)
@@ -71,11 +71,10 @@ func Probe(version string) Report {
 		}
 	}
 
-	// Declared before anything is measured. Windows hands a virtualised
-	// resolution to a process that has not asked for per-monitor awareness, so
-	// an unaware probe reports "1536x864" for a 1920x1080 monitor at 125% - the
-	// one number a DPI bug report must not contain, and the reason this is a
-	// tool rather than a checklist.
+	// Request per-monitor-v2 awareness before collecting display data. The
+	// process-wide request can fail (for example if awareness was set earlier),
+	// so monitor/DPI output is best effort; when accepted, Windows returns
+	// physical rather than DPI-virtualised rectangles.
 	_, _, _ = procSetProcessDpiAwarenessContext.Call(dpiAwarenessPerMonitorV2)
 
 	report := Report{
@@ -91,14 +90,11 @@ func Probe(version string) Report {
 	return report
 }
 
-// homeSpellings collects every name the profile directory answers to, for
-// redaction only - the directory itself is never printed.
-//
-// Both spellings are needed. A profile directory whose name contains a space
-// also has an 8.3 short name - the first six characters of the user name, then
-// a tilde - and a path that reaches the report in that form sails straight past
-// a redaction that only knows the long one. That is not hypothetical: it is
-// what the first live run of this command printed.
+// homeSpellings collects up to two names the profile directory answers to for
+// redaction only; the directory itself is never printed. The long and short
+// forms may be identical, and Windows may provide no distinct 8.3 spelling.
+// When it does, both are needed: a short profile path can otherwise carry the
+// first characters of the user name past a long-form-only redaction.
 func homeSpellings() []string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
@@ -264,6 +260,10 @@ func graphicsAdapters() []string {
 	return found
 }
 
+// displays returns the monitors that enumeration and MONITORINFO could read.
+// Inventory is best effort: unreadable entries are skipped, enumeration errors
+// are not reported, and a failed DPI query leaves that entry at the 96-DPI
+// default.
 func displays() []Monitor {
 	var found []Monitor
 
@@ -281,6 +281,7 @@ func displays() []Monitor {
 			return 1
 		}
 
+		// DPI is best effort independently for each readable monitor.
 		dpiX, dpiY := uint32(defaultDPI), uint32(defaultDPI)
 		_, _, _ = procGetDpiForMonitor.Call(
 			monitor,

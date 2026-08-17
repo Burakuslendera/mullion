@@ -35,14 +35,15 @@ func (provider *assetProvider) createWebResourceResponse(environment *webview2.I
 	return webviewResponse, stream, nil
 }
 
-// releaseResponse drops this package's references once the response has been
-// handed to the runtime.
+// releaseResponse drops the creator references after the PutResponse attempt.
 //
-// PutContent takes a reference on the stream and PutResponse takes one on the
-// response, so after both have run the runtime owns everything it needs and our
-// references are redundant. Holding them until shutdown - which is the easy
-// thing to do, and what an earlier version of this code did - makes memory grow
-// monotonically with the number of asset requests.
+// A successful PutContent makes the response retain the stream. A successful
+// PutResponse then makes the runtime retain the response, so dropping both
+// creator references leaves the runtime's response-to-stream chain alive. If
+// PutResponse fails, the runtime owns no response reference: releasing the
+// creator response drops its PutContent stream reference, and releasing the
+// creator stream completes cleanup. Retaining creator references until shutdown
+// would make memory grow with the number of asset requests.
 func (provider *assetProvider) releaseResponse(response *webview2.ICoreWebView2WebResourceResponse, stream *webview2.IStream) {
 	if response != nil {
 		response.Release()

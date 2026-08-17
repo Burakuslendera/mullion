@@ -21,10 +21,10 @@ const modulePath = "github.com/Burakuslendera/mullion"
 //   - a local replace directive says so, because a bug report from a patched
 //     copy is a different bug report;
 //   - a build of mullion itself reads as "devel" plus the revision, and says
-//     when the working tree was dirty. Note that "go run" does not stamp the
-//     revision at all - only "go build", "go install", or an explicit
-//     "go run -buildvcs=true" do - so a build with nothing to report reads as a
-//     bare "devel" rather than pretending to know.
+//     when the working tree was dirty. Go's default `-buildvcs=auto` stamps VCS
+//     metadata when its repository and tool conditions are met; `-buildvcs=true`
+//     requires stamping and diagnoses why it cannot be done. A bare "devel"
+//     means that no usable VCS stamp was included.
 //
 // Run logs this line at startup, so a report that includes the log already
 // answers "which version" without anyone having to ask.
@@ -48,11 +48,12 @@ func versionFrom(info *debug.BuildInfo) string {
 	// Case 1: mullion is the main module. Two very different builds land here and
 	// the VCS stamp is what tells them apart.
 	//
-	// A build from a working tree carries one. Since Go 1.24 it *also* carries a
-	// synthesized version in Main.Version - "v0.0.0-<time>-<revision>", with
-	// "+dirty" appended - which reads exactly like a released pseudo-version and
-	// is not one. Passing it on would tell a reporter they are running a release.
-	// The revision, and whether the tree was dirty, remain the answer.
+	// A standard build from a working tree carries one when Go's VCS auto-stamp
+	// conditions are met. Since Go 1.24 it may *also* carry a synthesized version
+	// in Main.Version - "v0.0.0-<time>-<revision>", with "+dirty" appended -
+	// which reads exactly like a released pseudo-version and is not one. Passing
+	// it on would tell a reporter they are running a release. The stamped
+	// revision, and whether the tree was dirty, remain the answer.
 	//
 	// A module fetched from the proxy carries no stamp. That is "go run
 	// github.com/.../cmd/mullion@v0.1.0": the version is real, it is the answer,
@@ -97,10 +98,10 @@ func releasedVersion(version string) string {
 	}
 }
 
-// hasVCSStamp reports whether this binary was built from a working tree. It is
-// the one signal that separates a local build from a module fetched by version,
-// and it does not depend on the shape of Main.Version - which the toolchain has
-// already changed once.
+// hasVCSStamp reports whether this binary carries a usable working-tree
+// revision stamp. That stamp separates a stamped local build from a module
+// fetched by version without depending on Main.Version's shape, which the
+// toolchain has already changed once.
 func hasVCSStamp(info *debug.BuildInfo) bool {
 	for _, setting := range info.Settings {
 		if setting.Key == "vcs.revision" && setting.Value != "" {

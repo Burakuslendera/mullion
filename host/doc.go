@@ -1,5 +1,5 @@
-// Package host is mullion's window host: it hosts a WebView2 control inside a
-// Win32 window that the application owns end to end.
+// Package host owns a native Win32 window and the WebView2 control embedded in
+// it. The application supplies Config and the frontend content.
 //
 // The window is frameless: the title bar, the caption buttons, the resize
 // borders, the system menu and the snap behaviour are all driven from the
@@ -36,7 +36,10 @@
 //
 // Run blocks, locks the calling goroutine to its OS thread and owns the message
 // loop until the window closes. Every other Host method is safe to call from any
-// goroutine: they post to the UI thread rather than touching the HWND directly.
+// goroutine. Window mutations use active-Run-tagged synchronous sends or
+// asynchronous posts to the UI thread; IsMaximised pins HWND ownership across
+// its direct cross-thread-safe query; and readiness and diagnostic methods
+// synchronize with Run teardown.
 //
 // See docs/architecture.md for the bootstrap contract, docs/frame-and-dpi.md for
 // the frame and DPI rules, and docs/snap-and-nonclient-region.md for what

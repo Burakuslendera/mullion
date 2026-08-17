@@ -122,9 +122,9 @@ type ICoreWebView2WebResourceResponse struct {
 	Vtbl *ICoreWebView2WebResourceResponseVtbl
 }
 
-// PutContent attaches the body. The runtime takes its own reference on the
-// stream, but the caller must keep its reference alive until the response has
-// been consumed, then Release both.
+// PutContent attaches the body. On success the response takes its own reference
+// on the stream, so the caller may Release its reference. This host defers that
+// release through callback exit so a panic cannot strand the caller's reference.
 func (r *ICoreWebView2WebResourceResponse) PutContent(content *IStream) error {
 	hr, _, _ := r.Vtbl.PutContent.Call(
 		uintptr(unsafe.Pointer(r)),

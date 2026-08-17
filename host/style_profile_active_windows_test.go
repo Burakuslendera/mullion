@@ -4,10 +4,10 @@ package host
 
 import "testing"
 
-// The default profile is CaptionSysMenuNCCalc, i.e. CaptionNCCalc plus WS_SYSMENU.
-// Dropping the style bit would silently disable right-click on the caption, a
-// regression nothing else in the suite would catch.
-func TestActiveNativeFrameProfileUsesTabStripProduction(t *testing.T) {
+// The default profile identity is CaptionSysMenuNCCalc. This test pins that
+// selection only; TestActiveNativeFrameProfileStyleBits owns the style-bit
+// assertions.
+func TestActiveNativeFrameProfileIdentity(t *testing.T) {
 	if got := activeNativeFrameProfile(); got != nativeFrameProfileCaptionSysMenuNCCalc {
 		t.Fatalf("activeNativeFrameProfile() = %q, want %q", got, nativeFrameProfileCaptionSysMenuNCCalc)
 	}

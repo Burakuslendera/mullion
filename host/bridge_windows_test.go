@@ -12,11 +12,10 @@ import (
 	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
-// TestBridgeHandlesWindowControlsWithoutAConfiguredBridge is the whole point of
-// the reserved-method router. An application that only wants a window - no
-// application methods at all - leaves Config.Bridge nil, and the title bar must
-// still work. Before the router existed, every consumer had to re-implement the
-// window protocol or get a dead title bar.
+// TestBridgeHandlesWindowControlsWithoutAConfiguredBridge checks that the
+// reserved router returns successful replies for the enumerated host methods
+// when Config.Bridge is nil. It creates neither a WebView nor a native window,
+// so it does not prove that a real title bar renders or that its gestures work.
 func TestBridgeHandlesWindowControlsWithoutAConfiguredBridge(t *testing.T) {
 	host, _ := newTestHost(t, Config{StartHidden: true})
 

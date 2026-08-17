@@ -27,25 +27,39 @@ the frontend's `ready()` call, made only after it has actually rendered. Timer
 identity is a lock-protected generation chosen before `time.AfterFunc`; even a
 zero-duration callback cannot race its own identity assignment or impersonate a
 later session. If `Config.RenderTimeout` elapses first, the host logs an error
-carrying everything it knows:
+carrying the observations it has retained:
 
 ```
-phase=<last frontend phase>   asset=<last asset served>
+phase=<last frontend phase>   asset=<last embedded asset response>
 asset_category=…   asset_status=…
 document=<n>  stylesheet=<n>  script=<n>
 last_bridge=<method:status>
 ```
 
-The counts are what make the payload diagnostic rather than decorative.
-`document=1, stylesheet=0, script=0` is an asset-serving failure — the stream lifetime
-bug in [assets.md](./assets.md) produces exactly this shape. `document=0` is a navigation or filter failure.
-Healthy counts with `phase` stuck early is a frontend fault. `last_bridge=unknown` means
-no bridge call ever arrived — the injected shim never ran. One line separates four root
-causes that all present as the same white rectangle. Both timeouts are configurable; a negative value disables the mechanism.
+`document`, `stylesheet` and `script` are embedded-asset response buckets. They
+are populated only by mullion's `WebResourceRequested` path; when `Config.URL`
+selects a caller-served origin, that filter is not installed and the counters
+provide no evidence about the caller's server. `last_bridge` is likewise narrow:
+it is the last application method handed to `Config.Bridge`, with its latest
+`received` or `completed` status. Reserved host methods such as window controls
+and readiness do not update it.
 
-**Read the counts knowing what they count.** They are bucketed from the
-`Content-Type` mullion answered with, not from the file name and not from
-WebView2's resource context: `text/html` increments `document`, `text/css`
+Treat the payload as observed shapes, not as proof of a cause. In embedded mode,
+`document=1, stylesheet=0, script=0` points toward the asset path and was the
+shape observed for the stream-lifetime bug in [assets.md](./assets.md);
+`document=0` points toward navigation or the asset filter before a document
+response was recorded. Bucketed responses with `phase` stuck early point toward
+frontend execution or rendering. `last_bridge=unknown` says only that no
+application `Config.Bridge` call was recorded; it does not show that the
+injected shim never ran. Confirm a cause with navigation status, frontend phase
+updates, and the `asset response served` / `asset response error` logs. For
+`Config.URL`, use navigation status, phase and application-bridge observations
+together with the caller server's request and response logs. Both timeout values
+are configurable.
+
+**Read the embedded-mode counts knowing what they count.** They are bucketed
+from the `Content-Type` mullion answered with, not from the file name and not
+from WebView2's resource context: `text/html` increments `document`, `text/css`
 `stylesheet`, anything containing `javascript` `script`, and **everything else is
 counted nowhere**. The content type in turn comes from the name (decisions/0031),
 so the chain is name → type → bucket, and a name mullion cannot classify breaks
@@ -54,17 +68,16 @@ it at the first link.
 Two consequences a reader chasing a blank window needs, and neither is obvious
 from the line itself:
 
-- **Healthy counts do not mean the assets arrived.** Images, fonts, `.json`,
-  `.wasm` and anything served `application/octet-stream` fall in the unbucketed
-  class. A frontend whose real payload is a WebAssembly module reports
-  `script=0` while working perfectly, and reports `script=0` when the module
-  404s too.
-- **A successfully served asset in that class produces no log line at all.**
-  `logAssetResponseDebug` skips it deliberately — one page load can pull dozens
-  of images and fonts, and logging each buries the three lines that say whether
-  the document, its stylesheets and its scripts arrived. The suppression applies
-  only to responses under `400`. A *failed* request is always logged, at `WARN`
-  for `4xx` and `ERROR` for `5xx`, whatever its type, so a missing font is
-  visible even though a present one is not.
+- **Healthy bucket counts do not prove that every required asset arrived.**
+  Images, fonts, `.json`, `.wasm` and anything served
+  `application/octet-stream` fall in the unbucketed class. A frontend whose real
+  payload is a WebAssembly module reports `script=0` while working perfectly,
+  and reports `script=0` when the module 404s too.
+- **A below-`400` response in that class produces no `asset response served`
+  log line.** `logAssetResponseDebug` skips it deliberately — one page load can
+  pull dozens of images and fonts, and logging each buries the three lines that
+  show mullion's document, stylesheet and script responses. A *failed* request
+  is always logged, at `WARN` for `4xx` and `ERROR` for `5xx`, whatever its type,
+  so a missing font is visible even though a present one is not.
 
-> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: move the startup-gate and render-watchdog reference out of the end-to-end architecture document.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: define watchdog evidence boundaries and replace causal diagnoses with observed-shape guidance.

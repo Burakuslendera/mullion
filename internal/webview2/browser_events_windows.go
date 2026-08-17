@@ -112,8 +112,8 @@ func (browser *Browser) handleNavigationStarting(args *ICoreWebView2NavigationSt
 	if !browser.NavigationStartingCallback(observation) {
 		return
 	}
-	// Cancel first, tell the host second. The args and every value derived from
-	// it remain borrowed only for this synchronous invocation.
+	// Cancel first, tell the host second. The args interface is borrowed only for
+	// this invocation; observation contains copied values and getter provenance.
 	if err := args.PutCancel(true); err != nil {
 		browser.reportWarning(errors.Join(
 			errors.New("NavigationStarting.PutCancel "+navigationIDField(id, idErr)),

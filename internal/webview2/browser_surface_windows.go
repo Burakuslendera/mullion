@@ -47,6 +47,8 @@ func (browser *Browser) Navigate(url string) error {
 }
 
 // Init registers a script to run in every document before any page script.
+// It passes a nil completion handler; the SDK does not document nil as accepted,
+// so this path relies on unverified runtime behavior.
 func (browser *Browser) Init(script string) error {
 	core := browser.CoreWebView2()
 	if core == nil {
@@ -56,6 +58,8 @@ func (browser *Browser) Init(script string) error {
 }
 
 // Eval runs a script in the current document.
+// It passes a nil completion handler; the SDK does not document nil as accepted,
+// so this path relies on unverified runtime behavior.
 func (browser *Browser) Eval(script string) error {
 	core := browser.CoreWebView2()
 	if core == nil {

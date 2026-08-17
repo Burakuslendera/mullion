@@ -26,9 +26,10 @@ type autoHideEdges struct {
 // maximizes exactly as before - the change is inert unless an auto-hide bar is
 // actually present.
 //
-// It is pure so the 1px geometry can be locked headlessly. It never inverts or
-// collapses the rect: a 1px inset on a real monitor cannot, but if area is already
-// degenerate the input is returned unchanged and the caller's clamp rejects it.
+// It is pure so the 1px geometry can be locked headlessly. It never manufactures
+// an inverted rect: if area is already degenerate, the input is returned unchanged.
+// The NCCALCSIZE caller rejects an invalid clamp; WM_GETMINMAXINFO sizes the outer
+// rect directly from the returned work area.
 func insetForAutoHideEdges(area rect, edges autoHideEdges) rect {
 	next := area
 	if edges.left {
@@ -50,15 +51,15 @@ func insetForAutoHideEdges(area rect, edges autoHideEdges) rect {
 }
 
 // maximizeMonitorInfo is monitorInfoForWindow with the work area inset on every edge
-// of the window's monitor that holds an auto-hide appbar. The two maximize-geometry
-// paths - WM_GETMINMAXINFO (applyMonitorWorkArea) and WM_NCCALCSIZE
-// (applyNativeNCCalcClientRect) - derive their geometry from this work area, so
-// insetting it once here keeps the reveal sliver on both consistently.
+// of the window's monitor that holds an auto-hide appbar. WM_GETMINMAXINFO
+// (applyMonitorWorkArea) sizes the outer rect from this work area. WM_NCCALCSIZE
+// (applyNativeNCCalcClientRect) independently clamps its proposed client rect to the
+// same work area.
 //
 // The maximized hit-test does NOT read it, deliberately: autoHideEdgesForMonitor is
 // synchronous shell IPC, and WM_NCHITTEST is the hottest input path (issue #36,
-// decision 0019). The hit-test clamps the actual window rect - which these two paths
-// already inset when the window was sized - to the un-inset work area, and because
+// decision 0019). The hit-test clamps the actual window rect - already inset when
+// WM_GETMINMAXINFO sized the window - to the un-inset work area, and because
 // clampRectToArea is min/max that clamp cannot undo the inset.
 //
 // Monitor is left untouched: applyMonitorWorkArea needs it to make MaxPosition

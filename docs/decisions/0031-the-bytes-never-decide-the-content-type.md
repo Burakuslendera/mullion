@@ -3,6 +3,15 @@
 **Status:** Accepted; the reparse-point consequence below is answered by
 [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)
 
+## Contents
+
+- [Context](#context)
+- [Decision](#decision)
+- [Alternatives rejected](#alternatives-rejected)
+- [Consequences](#consequences)
+- [What would change our mind](#what-would-change-our-mind)
+- [Evidence](#evidence)
+
 The body is unchanged, and two places in it are overtaken. Where *Consequences*
 says reparse points are not covered and that the floor of 1.22 keeps
 `os.OpenRoot` out of reach, read 0033: the floor moved to 1.24 and
@@ -341,4 +350,4 @@ Go 1.24 against a supported floor of 1.22. Issue #103 stays open for it.
   observed here. Every claim in this record about execution rests on the label,
   not on a run that tried to execute something.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: add navigation-only contents for the decision's existing sections.

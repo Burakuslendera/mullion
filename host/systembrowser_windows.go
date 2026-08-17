@@ -23,13 +23,12 @@ const swShowNormal = 1
 //
 // Eight, and the reason is a shape rather than a measurement, the same way
 // cancelledNavSlots' is. Every launch is content-driven - a window.open, a link
-// click - so the number of them is chosen by the page, not by the host, and an
-// unbounded one is a goroutine and an OS thread per event with a hostile
-// document for a pump (the structure decisions/0027 refused for the ledger). The
-// bound has to sit above what a person can produce, because dropping a click is
-// a real cost: a cold browser start is seconds, and a few impatient clicks
-// inside that window are ordinary. Eight is room for those with the launches
-// still bounded.
+// click - so the number is chosen by the page, not the host, and an unbounded
+// design is a goroutine and an OS thread per event with a hostile document for a
+// pump (the structure decisions/0027 refused for the ledger). A cold launch
+// measured 230 ms in decision 0029, but an external scheme handler can remain
+// blocked beyond host control. Eight leaves room for ordinary repeated clicks
+// while keeping those launches bounded.
 const externalOpenLimit = 8
 
 // routeNewWindow sends a new-window request - a window.open or a target=_blank
@@ -53,27 +52,25 @@ func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 
 // shouldCancelNavigation is the PinNavigationToOrigin gate applied to a
 // NavigationStarting event, and it is a decision and nothing else: no state
-// written, nothing routed, nothing logged. Everything that follows a cancel is
-// noteNavigationCancelled's, and runs only once the runtime has confirmed the
-// cancel (issue #73, decisions/0027). What it decides is the same containment as
-// NewWindowRequested (issue #6, decisions/0023). With the gate off (the default)
-// sourcePlan.navigationOffOrigin is false for every uri, so this returns false
-// and cancels nothing.
+// written, nothing routed, nothing logged. Everything following the request runs
+// only after PutCancel accepts it (issue #73, decisions/0027 and 0037); that
+// acceptance is not proof the navigation was abandoned. The containment matches
+// NewWindowRequested (issue #6, decisions/0023). With the gate off (the default),
+// sourcePlan.navigationOffOrigin is false for every uri.
 func (host *Host) shouldCancelNavigation(uri string) bool {
 	return host.source.navigationOffOrigin(uri, host.config.PinNavigationToOrigin)
 }
 
-// noteNavigationCancelled commits to a cancel the runtime has confirmed: it
-// enters the navigation in the cancelled ledger, so its completion is read as
-// cleanup rather than as a load failure, and hands an http/https target to the
-// system browser - any other scheme is dropped, the same containment and routing
-// as NewWindowRequested.
+// noteNavigationCancelled records a cancel request accepted by PutCancel. It
+// enters the navigation in the cancelled ledger so an expected failed/cancelled
+// completion is cleanup, and hands an http/https target to the system browser;
+// every other scheme is dropped under the NewWindowRequested containment.
 //
-// Nothing here may run for a navigation that was not actually abandoned, which
-// is why it is a separate callback rather than the tail of the decision above
-// (issue #73, decisions/0027). Committing early meant a failed put_Cancel loaded
-// the foreign document *and* opened it in the browser *and* swallowed its
-// completion.
+// PutCancel success accepts the request but does not prove abandonment. A later
+// successful completion means the navigation committed anyway and returns to
+// ordinary policy. Keeping this callback separate still prevents a failed
+// PutCancel from routing the target or swallowing the foreign document's
+// completion (issue #73, decisions/0027 and 0037).
 //
 // An unreadable URI arrives as the empty string, which is no origin's, so the
 // gate has just cancelled a navigation it could not read. That is the
@@ -196,11 +193,10 @@ func (host *Host) releaseExternalOpenSlot() {
 // concurrent-safe Logger only while that Run still owns them.
 func (host *Host) shellExecuteOpen(uri string, admission runAdmission) {
 	// A COM apartment is thread-affine and a fresh goroutine is in none, while the
-	// Go runtime may move it between OS threads at any suspension point.
-	// ShellExecuteW can activate a COM handler, so the thread is pinned and an STA
-	// entered the way Run does for the UI thread. The goroutine returns right
-	// after, and the runtime retires the locked thread with it, so no apartment
-	// outlives its launch.
+	// Go runtime may move it between OS threads at a suspension point. Pin the
+	// thread before entering the STA. When entry succeeds, the CoUninitialize
+	// defer is registered after the UnlockOSThread defer, so LIFO teardown
+	// balances the apartment before unpinning; only then may Go reuse the thread.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	// S_FALSE - this thread was already in a compatible apartment - arrives as

@@ -11,13 +11,13 @@ import (
 )
 
 // nativeDiagnostics is the evidence the render watchdog reports when the
-// frontend never signals readiness.
-//
-// "The window is up but the page is blank" has several distinct causes that look
-// identical from the outside: the document never arrived, it arrived but its
-// stylesheets 404'd, the scripts loaded but threw, or the page is fine and only
-// the readiness call is missing. The counters below separate those cases without
-// asking the user to reproduce anything.
+// frontend never signals readiness. In embedded mode, recordAsset buckets
+// responses by their emitted Content-Type into document, stylesheet and script;
+// images, fonts and every other type remain unbucketed. Config.URL bypasses this
+// provider, so it contributes no asset counts. Those observed shapes can point
+// toward a cause but do not establish one on their own. Frontend-controlled
+// retained values are reduced into detached strings bounded to 2,000 bytes by
+// logsafe before they enter this state.
 type nativeDiagnostics struct {
 	mu sync.Mutex
 
@@ -66,8 +66,9 @@ func (diagnostics *nativeDiagnostics) recordAsset(response assetResponse, method
 		status:      response.status,
 	}
 	diagnostics.mu.Lock()
-	// The favicon probe is unsolicited and always answered with 204; recording it
-	// as "the last asset" would mask the request that actually mattered.
+	// Only the absent-favicon convenience response has category "favicon" and
+	// status 204. Hiding that unsolicited probe preserves the prior meaningful
+	// asset; a caller-provided favicon is served and recorded normally.
 	if response.request.category != "favicon" {
 		diagnostics.lastAsset = item
 	}

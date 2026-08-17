@@ -119,7 +119,7 @@ func (browser *Browser) reportWarning(err error) {
 	}
 }
 
-// Embed creates the WebView2 environment and controller as children of parent.
+// Embed creates a WebView2 environment, then a controller parented to parent.
 //
 // It blocks: environment and controller creation are asynchronous COM
 // operations whose completion handlers are delivered on the message loop, and

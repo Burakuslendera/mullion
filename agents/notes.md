@@ -69,9 +69,9 @@ a trap: it reads as authoritative and there is no way to discover that it is not
   once, on purpose. Rule files (`AGENTS.md`, `agents/*.md`, `CONTRIBUTING.md`):
   **250 lines, hard** — past ~230, stop adding sections and split. Reference
   documents (`docs/*.md`): **400 lines, hard**, with a table of contents required
-  past 250. `README.md` is exempt. The splitting
-  rules live in [AGENTS.md](../AGENTS.md) and are not restated here: two copies of
-  a rule is how one of them goes stale.
+  past 250. `README.md` is exempt. The splitting rules live in
+  [rule-maintenance.md](./rule-maintenance.md#file-size-discipline) and are not
+  restated here: two copies of a rule is how one of them goes stale.
 - Filenames are ASCII and topic-based. No dates in filenames — a date belongs in a
   heading or a footer, where it can be corrected.
 - When a file moves, update every relative link that pointed at it, then search the
@@ -130,10 +130,11 @@ both a legal obligation and an execution risk, and both are cheapest to handle
 ## Rule changes
 
 Rule files are documents too, and they decay the same way. Changing them is
-governed by the tiered authority in [AGENTS.md](../AGENTS.md): mechanical hygiene
-is yours to do, an evidence-backed rewrite is allowed if you cite the evidence, and
-deleting a rule or touching the protected core needs a human. If you are not sure
-which tier applies, it is the highest one.
+governed by the
+[tiered rule-change authority](./rule-maintenance.md#tiered-rule-change-authority):
+mechanical hygiene is yours to do, an evidence-backed rewrite is allowed if you
+cite the evidence, and deleting a rule or touching the protected core needs a
+human. If you are not sure which tier applies, it is the highest one.
 
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: define the footer as single current-state metadata, exclude the repository-root README, and prevent append-only signature stacks because Git already preserves edit history.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: retarget moved file-size and tiered rule-authority links to their continuation.

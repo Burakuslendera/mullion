@@ -102,7 +102,7 @@ func dpiChangedTargetSize(suggested rect) (width, height int32, ok bool) {
 // when the window crosses to a monitor with a different DPI unless the host does.
 // The value is a function of the *absolute* current DPI, never of the previous
 // scale, so shuttling across a monitor pair cannot compound - unlike the window
-// rect, which trusts the OS-suggested delta. A zero DPI falls back to the default
+// rect, which applies the OS-suggested rect. A zero DPI falls back to the default
 // rather than collapsing the scale to zero and blanking the content.
 func rasterizationScaleForDPI(dpi uint32) float64 {
 	if dpi == 0 {
@@ -111,9 +111,11 @@ func rasterizationScaleForDPI(dpi uint32) float64 {
 	return float64(dpi) / float64(defaultWindowDPI)
 }
 
-// logDPIChangedTransition records a DPI transition so a visible scaling regression
-// can be diagnosed from a log alone. Metrics only - DPI values and rect extents,
-// never paths or tokens - so the log stays safe to hand over.
+// logDPIChangedTransition records the current window DPI at handler time, the DPI
+// carried by WM_DPICHANGED, the zoom state, and previous and suggested rect
+// extents. GetDpiForWindow has already advanced at this point, so the `old_dpi`
+// field is not a historical pre-transition value. Metrics only - never paths or
+// tokens - so the log stays safe to hand over.
 func (host *Host) logDPIChangedTransition(hwnd windowHandle, wParam uintptr, suggested rect, width, height int32) {
 	newDPI := uint32(wParam & 0xffff)
 	oldDPI := dpiForWindow(hwnd)

@@ -29,8 +29,8 @@ window.addEventListener("resize", () => {
 });
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // Releases the startup show gate. Until this lands the host keeps the window
-  // hidden, so the user never sees an empty white frame.
+  // Releases the startup show gate before its fallback timeout. Without this
+  // signal, a non-StartHidden startup eventually shows the window anyway.
   mullion.shellReady();
 
   // Which drag path is live? With a WebView2 runtime new enough for non-client

@@ -214,8 +214,8 @@ func armBackdropWatch(target uintptr, watched *uintptr, arm func() error) error 
 	return nil
 }
 
-// targetStillUp reports whether the lifted window still exists on screen,
-// unminimised. Moving and resizing it changes none of these; closing it,
+// targetStillUp reports whether the watched matching window still exists on
+// screen, unminimised. Moving and resizing it changes none of these; closing it,
 // ending its process, hiding it or sending it to the taskbar ends the watch.
 func targetStillUp(target uintptr) bool {
 	if alive, _, _ := procIsWindow.Call(target); alive == 0 {
@@ -236,14 +236,13 @@ func targetStillUp(target uintptr) bool {
 // window with it). It is deliberately NOT topmost: any window the user raises
 // sits above it, so the backdrop can never hold the desktop hostage.
 //
-// If a visible window of targetClass exists, Show slots itself directly
-// underneath it and lifts it to the top of the z-order - without activating
-// anything, so no foreground-steal restriction applies (the SetForegroundWindow
-// trap in docs/lessons-and-dead-ends.md section 4). The window to capture is
-// then already in front; everything else is behind the backdrop. The lifted
-// window is watched from then on: close it, end its process, or minimise it,
-// and the backdrop closes itself within a timer tick. An empty targetClass,
-// or no such window, just covers the desktop until dismissed by hand.
+// If the first matching top-level window is visible, Show attempts two
+// non-activating z-order moves: target to the top, then backdrop directly below
+// it. Windows may decline or supersede those moves, so the user may still need
+// Alt+Tab to bring the target forward. A visible match is watched regardless of
+// whether the sandwich took effect: close it, end its process, or minimise it,
+// and the backdrop closes itself within a timer tick. An empty targetClass or no
+// visible match just covers the desktop until dismissed by hand.
 func Show(colour Colour, targetClass string) error {
 	showMu.Lock()
 	defer showMu.Unlock()
@@ -355,13 +354,12 @@ func Show(colour Colour, targetClass string) error {
 	}
 }
 
-// raiseTargetAbove finds the first visible top-level window of targetClass and
-// arranges the sandwich a capture wants: target on top, backdrop directly
-// under it, everything else behind the backdrop. Both moves are pure z-order
-// changes with SWP_NOACTIVATE - focus stays where it is, which is what makes
-// them reliable. It returns the lifted window, or 0. Failing to find or raise
-// the target is not an error: the backdrop is still doing its job, and the
-// user can Alt+Tab the window forward, exactly as the usage text says.
+// raiseTargetAbove finds the first top-level window of targetClass and requires
+// it to be visible. It then attempts the capture sandwich with two
+// SWP_NOACTIVATE z-order moves; their results are advisory and are not proof
+// that Windows kept the requested order. The function returns the visible match
+// to be watched, or 0 when none exists. Failure to find a match is not an error,
+// and after a declined or superseded move the user can Alt+Tab it forward.
 func raiseTargetAbove(backdrop uintptr, targetClass string) uintptr {
 	if targetClass == "" {
 		return 0

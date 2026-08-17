@@ -13,12 +13,11 @@ const noErrorSurfacePlan errorSurfacePlan = 0
 // navigate, tear down - and this one owns what a NavigationCompleted means once
 // it arrives. What a NavigationStarting means is the other half, in
 // errorsurface_claim_windows.go. The seam the PinNavigationToOrigin gate meets
-// this machine through (decisions/0023) lives here, because its whole reason for
-// existing is the interaction: a cancelled navigation's completion never reaches
-// the machine below. The ledger that decides which completions those are is
-// navigationcancel_windows.go.
+// this machine through lives here: navigationcancel_windows.go first consumes
+// expected failed/cancelled cleanup for an accepted cancel request, while a
+// commit-anyway success returns to ordinary completion policy.
 //
-// The rules themselves are decisions 0017, 0020, 0021, 0024 and 0026.
+// The rules are decisions 0017, 0020, 0021, 0023, 0024, 0026, 0027 and 0037.
 // Everything here runs on the UI thread, from the navigation callbacks, so none
 // of the errorSurface* fields need a lock.
 //
@@ -72,9 +71,10 @@ func navigationFailureFields(status webview2.WebErrorStatus, navigationID uint64
 	return "status=" + formatInt32(int32(status)) + ", id=" + formatUint64(navigationID)
 }
 
-// The completion of a navigation the PinNavigationToOrigin gate cancelled never
-// reaches the machine below: noteGateCancelledOutcome, in
-// navigationcancel_windows.go, consumes it first (decisions/0023, 0027).
+// A completion matching a PinNavigationToOrigin cancel request is checked first
+// by noteGateCancelledOutcome in navigationcancel_windows.go. Only expected
+// failed/cancelled cleanup is consumed; a commit-anyway success returns to the
+// machine below (decisions/0023, 0027 and 0037).
 //
 // The NavigationStarting half - the surface's claim on a start, the navigation
 // target the abort exemption reads back, and the gate seam that lets a claimed
@@ -403,13 +403,12 @@ func (host *Host) noteForeignOutcome(
 	return host.armErrorSurface(status, navigationID)
 }
 
-// benignAbort reports whether an attributed failure completion is an abort that
-// must not arm the fallback surface (issue #72, decisions/0024).
+// benignAbort reports whether an attributed failure completion is the observed
+// embedded-mode abort classification that must not arm the fallback surface
+// (issue #72, decisions/0024 and 0037).
 //
 // ConnectionAborted is a connection that ended mid-flight, and whether that can
-// mean "could not load" depends on whether this navigation had a connection at
-// all. Two conditions have to hold together, and both are about where the bytes
-// for *this* navigation came from:
+// mean "could not load" depends on the navigation's source mode and target:
 //
 //   - mullion serves the frontend itself, from the embedded fs.FS through
 //     WebResourceRequested (Config.URL empty). With Config.URL set the caller
@@ -417,25 +416,22 @@ func (host *Host) noteForeignOutcome(
 //     status (issue #68), which is the case the surface exists for.
 //   - the navigation was headed for the trusted origin. Config.URL being empty
 //     does not keep the top frame there: PinNavigationToOrigin is opt-in and off
-//     by default (decisions/0023), so a frontend link or a script assignment can
-//     take the top frame to any origin, and that navigation is a real socket
-//     load whose abort is a real failure. noteNavigationTarget is what remembers
-//     the answer; a completion carries no URI of its own.
+//     by default (decisions/0023), so a frontend link or script assignment can
+//     take the top frame to any origin, where an abort remains a real failure.
+//     noteNavigationTarget records the target because a completion has no URI.
 //
-// Both true, the status can only mean the runtime abandoned a navigation it had
-// started - which a renderer-initiated same-origin document navigation was
-// observed doing while its asset was served 200 (issue #72). Arming there
-// replaces a live frontend with the fallback page over a navigation that was
-// never going to fail.
+// With both conditions true, mullion accepts ConnectionAborted as benign based
+// on issue #72's observation: a same-origin document navigation reported this
+// status after its asset response was served 200, then the runtime started it
+// again. This is a classification, not proof of complete byte delivery:
+// WebResourceRequested responses are not correlated to navigation IDs, and a
+// served response does not show that the runtime consumed every resource body.
 //
-// The id must still match the navigation that started, so a completion for an
-// older navigation - the one case where the recorded target is not this
-// completion's - falls through and arms, which is the safe direction.
-//
-// It deliberately does not extend to noteOrderedOutcome: without an id there is
-// nothing to say this completion belongs to the navigation whose asset was
-// served, and suppressing the surface on that guess would fail open in the one
-// case the surface is for. Absent identity, 0020's machine stands.
+// The exact non-zero id must still match the recorded start. An older or
+// provenance-less completion cannot borrow that target and falls through to arm,
+// the safe direction. The exemption deliberately does not extend to
+// noteOrderedOutcome: without identity there is no resource-to-navigation
+// correlation, so decision 0020's machine stands.
 func (host *Host) benignAbort(status webview2.WebErrorStatus, identity navigationIdentity) bool {
 	if status != webview2.WebErrorStatusConnectionAborted || !host.source.embedded {
 		return false

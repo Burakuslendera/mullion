@@ -36,16 +36,14 @@ type Options struct {
 	// default, which is what the SDK's own options object reports.
 	Language string
 
-	// TargetCompatibleBrowserVersion names the browser build the caller was
-	// written against. Empty means "the runtime we found", which is what this
-	// package wants: the bindings are hand-written and every optional interface
-	// is reached through QueryInterface, so the runtime that is installed is by
-	// definition the one we are compatible with.
+	// TargetCompatibleBrowserVersion supplies the non-null version property the
+	// direct runtime export requires. Empty means to report the discovered
+	// runtime's version rather than inventing one.
 	//
-	// It must not end up null. The runtime validates this property and rejects a
-	// null with E_INVALIDARG - WebView2Loader.dll always supplies a value, so the
-	// official path never discovers this, but we are not going through it.
-	// See resolveTargetVersion.
+	// The value decides no capability: bypassing WebView2Loader.dll also bypasses
+	// its compatibility floor, so every optional interface remains gated by
+	// QueryInterface. A null property is rejected with E_INVALIDARG; see
+	// resolveTargetVersion.
 	TargetCompatibleBrowserVersion string
 
 	// AllowSingleSignOnUsingOSPrimaryAccount enables Azure AD SSO. Off by

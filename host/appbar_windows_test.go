@@ -41,19 +41,20 @@ func TestInsetForAutoHideEdges(t *testing.T) {
 	}
 
 	// Inversion guard: a 1px inset that would collapse a degenerate area returns the
-	// input unchanged so the caller's clamp - not a negative extent - rejects it.
+	// input unchanged instead of manufacturing a negative extent. Caller handling
+	// is path-specific and outside this pure helper test.
 	thin := rect{Left: 0, Top: 0, Right: 1, Bottom: 1}
 	if got := insetForAutoHideEdges(thin, autoHideEdges{right: true, bottom: true}); got != thin {
 		t.Errorf("degenerate area must not invert: got %#v, want %#v", got, thin)
 	}
 }
 
-// TestMaximizeMonitorInfoInsetsAutoHideEdges locks the wiring of maximizeMonitorInfo
-// (docs/decisions/0015): the shell probe is asked about the window's monitor rect,
-// its answer insets the work area, and the monitor rect itself is left untouched.
-// TestInsetForAutoHideEdges pins the 1px arithmetic; this pins that the arithmetic
-// is actually reached from the maximize-geometry paths, which was previously only a
-// live observation. The seams stand in for the two Win32 queries per decision 0006.
+// TestMaximizeMonitorInfoInsetsAutoHideEdges locks the shared resolver's
+// composition (docs/decisions/0015): the monitor query supplies the monitor and
+// work rects, the shell probe supplies the edges, and the resolver insets only the
+// work area. TestInsetForAutoHideEdges pins the arithmetic. This direct resolver
+// test does not exercise either caller path; TestMaximizeGeometryUsesAutoHideInset
+// separately covers the NCCALCSIZE wiring.
 func TestMaximizeMonitorInfoInsetsAutoHideEdges(t *testing.T) {
 	// An auto-hide taskbar reserves no work area, so rcWork == rcMonitor - the exact
 	// configuration 0015 exists for.

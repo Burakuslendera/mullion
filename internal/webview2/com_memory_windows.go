@@ -29,8 +29,8 @@ var (
 	// check is right to be suspicious: such a uintptr is not tracked by the GC.
 	// Copying through RtlMoveMemory keeps every Go-side value a real Go pointer
 	// and every Windows-side value a plain integer address, so the two never
-	// masquerade as each other. memory_windows.go in the root package uses the
-	// same technique for WM_NCCALCSIZE payloads.
+	// masquerade as each other. host/memory_windows.go uses the same technique
+	// for WM_NCCALCSIZE payloads.
 	procRtlMoveMemory  = kernel32.NewProc("RtlMoveMemory")
 	procCoTaskMemAlloc = ole32.NewProc("CoTaskMemAlloc")
 )

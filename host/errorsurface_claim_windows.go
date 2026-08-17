@@ -9,9 +9,9 @@ package host
 // gate's reach - while the completion side reads both answers back to attribute
 // the completion that follows.
 //
-// The rules are decisions 0021, 0023 and 0024, unchanged by the split. As next
-// door, everything here runs on the UI thread from the navigation callbacks, so
-// none of the fields it touches need a lock.
+// The rules are decisions 0021, 0023, 0024, 0027 and 0037. As next door,
+// everything here runs on the UI thread from the navigation callbacks, so none
+// of the fields it touches need a lock.
 
 // noteAndGateNavigation runs the error-surface identity claim and then the
 // PinNavigationToOrigin gate for one NavigationStarting, and reports whether to
@@ -21,12 +21,12 @@ package host
 // Split from the callback so the claim-beats-gate rule and the gate are both
 // headless-testable (issue #6, decisions/0023).
 //
-// Deciding is all it does. What follows a cancel - remembering the id, routing
-// the target - happens in noteNavigationCancelled, which the runtime calls only
-// once the cancel has actually taken (decisions/0027). That is also why this no
-// longer takes isUserInitiated: the only thing that ever used it was the routing
-// log line, and the routing now receives its own copy from the cancelled
-// callback.
+// Deciding is all it does. What follows a cancel - remembering the id and
+// routing the target - happens in noteNavigationCancelled only after PutCancel
+// accepts the request (decisions/0027 and 0037). Acceptance is not proof that
+// navigation was abandoned: a later successful completion returns to ordinary
+// policy. This helper no longer takes isUserInitiated because only routing needs
+// that value, and the accepted-cancel callback receives its own copy.
 func (host *Host) noteAndGateNavigation(uri string, navigationID uint64) bool {
 	return host.noteAndGateNavigationKnown(uri, true, true, navigationID)
 }
@@ -113,10 +113,11 @@ func (host *Host) noteSurfaceNavigationStartingObserved(
 		return true
 	}
 	// Once a fallback has been claimed, the next top-level start is a document
-	// boundary: suspend its messages immediately. The matching benign-abort or
-	// confirmed-cancel completion may restore that still-visible document only
-	// when a unique non-zero identity attributes both sides. Keep an unclaimed
-	// generation pending so a racing foreign start cannot steal its later claim.
+	// boundary: suspend its messages immediately. A matching benign abort or
+	// expected failed/cancelled completion for an accepted cancel request may
+	// restore that still-visible document only when a unique non-zero identity
+	// attributes both sides. Keep an unclaimed generation pending so a racing
+	// foreign start cannot steal its later claim.
 	host.suspendErrorSurfaceForDeparture(identity)
 	return false
 }

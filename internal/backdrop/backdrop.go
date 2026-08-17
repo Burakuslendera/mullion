@@ -9,9 +9,9 @@
 // from a checkout; this command is the piece of it that composes with any
 // capture tool the user already likes.
 //
-// The colour parse is the command's entire input surface and is tested
-// headlessly; the window half is a thin Win32 layer in backdrop_windows.go and
-// opens nothing but the one popup window - no file, no socket, no log.
+// The -colour value has its own strict, headlessly tested validation surface;
+// the window half is a thin Win32 layer in backdrop_windows.go and opens
+// nothing but the one popup window - no file, no socket, no log.
 package backdrop
 
 import (
@@ -30,10 +30,9 @@ type Colour struct {
 // scripts/screenshot.ps1 uses for its own backdrop.
 const DefaultHex = "#2b2d34"
 
-// ParseColour accepts exactly #rrggbb or rrggbb, case-insensitive, and
-// nothing else. The colour is the command's only input, so this parse is its
-// whole input-validation surface, and it is strict on purpose: anything that
-// is not six hex digits is rejected rather than guessed at.
+// ParseColour accepts exactly #rrggbb or rrggbb, case-insensitive, and nothing
+// else. This is the complete validation surface for the command's -colour
+// option: anything that is not six hex digits is rejected rather than guessed.
 func ParseColour(value string) (Colour, error) {
 	digits := strings.TrimPrefix(value, "#")
 	if len(digits) != 6 {

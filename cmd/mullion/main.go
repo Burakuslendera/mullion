@@ -1,5 +1,5 @@
-// Command mullion reports what a window needs from the machine it is about to
-// run on, and whether this machine can give it.
+// Command mullion reports the checked prerequisites and environment of the
+// machine on which a window is about to run.
 //
 //	go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor
 //
@@ -66,15 +66,15 @@ func main() {
 	case "backdrop":
 		flags := flag.NewFlagSet("backdrop", flag.ExitOnError)
 		colourHex := flags.String("colour", backdrop.DefaultHex, "backdrop colour, #rrggbb")
-		class := flags.String("class", "MullionWindow", "window class to lift above the backdrop; empty to just cover the desktop")
+		class := flags.String("class", "MullionWindow", "visible window class to look for and watch; empty to just cover the desktop")
 		_ = flags.Parse(os.Args[2:]) // ExitOnError: a bad flag already exited 2
 		colour, err := backdrop.ParseColour(*colourHex)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "mullion backdrop: %v\n", err)
 			os.Exit(2)
 		}
-		fmt.Println("mullion: backdrop up - it closes with the window it lifts (close or" +
-			" minimise that window); Esc on it, Alt+F4, or Ctrl+C here also close it.")
+		fmt.Println("mullion: backdrop up - if a visible target is found, closing or" +
+			" minimising it closes the backdrop; Esc on it, Alt+F4, or Ctrl+C here also close it.")
 		if err := backdrop.Show(colour, *class); err != nil {
 			fmt.Fprintf(os.Stderr, "mullion backdrop: %v\n", err)
 			os.Exit(1)
@@ -108,29 +108,34 @@ Usage:
                     exports the entry point mullion calls. Starts no browser and
                     opens no window.
   mullion backdrop  Cover every monitor with a flat colour while you screenshot
-                    a window, so nothing of the desktop lands in the margin. A
-                    visible mullion window is lifted in front of it as it opens
-                    (-class overrides which window class that looks for; empty
-                    skips it), and from then on the backdrop follows that
-                    window: move and resize it freely, and the moment it is
-                    closed, its process ends, or it is minimised, the backdrop
-                    closes itself. It is not topmost - anything you raise stays
-                    above it. Capture with any tool; Esc on the backdrop (or
-                    Alt+F4, or Ctrl+C in this terminal) also dismisses it.
-                    Windows only. -colour #rrggbb overrides the dark grey.
+                    a window, so nothing of the desktop lands in the margin. It
+                    looks for the first window of the requested class (-class
+                    overrides it; empty skips the search) and proceeds only if
+                    that match is visible. It then attempts to put the backdrop
+                    directly beneath the match and watches it. Closing it,
+                    ending its process, or minimising it then closes the
+                    backdrop. If there is no visible first match, or the z-order
+                    moves do not take, bring the window forward manually with
+                    Alt+Tab. The backdrop is not topmost -
+                    anything you raise stays above it. Capture with any tool;
+                    Esc on the backdrop (or Alt+F4, or Ctrl+C in this terminal)
+                    also dismisses it. Windows only. -colour #rrggbb overrides
+                    the dark grey.
   mullion version   Print the version of mullion linked into this binary.
   mullion help      Print this message.
 
-doctor exits 0 when mullion can start on this machine, and 1 when it cannot.
+doctor exits 0 when its architecture, runtime-discovery, and required-export
+checks pass. It does not start a Host or prove that WebView2 can host or render.
 
 Run it without installing anything:
   go run github.com/Burakuslendera/mullion/cmd/mullion@latest doctor
 
-Install it, which puts the binary in $(go env GOPATH)/bin - a directory that has
-to be on your PATH for the bare name to work:
+Install it. Go uses GOBIN when set, otherwise $(go env GOPATH)/bin; the selected
+directory has to be on your PATH for the bare name to work:
   go install github.com/Burakuslendera/mullion/cmd/mullion@latest
 
-From a checkout, "go install ./cmd/mullion" stamps the commit into the binary
-and "go run" does not, which is why the version line there says so.
+From a checkout, Go's default -buildvcs=auto stamps VCS metadata when repository
+and tool conditions allow. A bare "devel" means no usable stamp was included;
+use "go run -buildvcs=true" to require and diagnose stamping.
 `)
 }

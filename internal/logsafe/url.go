@@ -59,11 +59,10 @@ const truncationMarker = "..."
 // source still has to reduce to "unknown" and decisions/0021's data: observation
 // rests on the reduction it was verified with. All three still hold.
 //
-// A non-http(s) value that wraps an http(s) one - "blob:https://x/y", a data:
-// URI whose payload quotes a URL - retains the inner URL's complete canonical
-// origin while bounding its suffix. Other fallbacks are bounded before
-// reduction as needed; file: values remain tail-first so their filename
-// survives.
+// The explicit blob: and filesystem: wrappers retain an inner http(s)
+// origin whole while bounding the suffix. Generic fallbacks, including data:,
+// are bounded before scanning and may therefore lose an http(s) run interrupted
+// by that bound; file: values remain tail-first so their filename survives.
 func URL(raw string) string {
 	// Gate on the literal scheme, not the parsed one. url.Parse accepts forms
 	// carrying no authority at all - "http:evil.example" (opaque) and

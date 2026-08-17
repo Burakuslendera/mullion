@@ -2,17 +2,16 @@
 
 package webview2
 
-// Diagnostics answer a question the registry cannot. "Is a WebView2 runtime
-// installed" is easy and nearly useless; the question that decides whether a
-// window will open is "which runtime would *this* process load, and does it
-// still export the entry point we call".
+// Diagnostics answer a prerequisite question the registry cannot: which
+// WebView2 runtime this process would load, and whether its client DLL still
+// exports the entry point this package calls. Passing that check does not prove
+// COM initialization, environment/controller creation, embedding, visibility or
+// rendering will succeed.
 //
-// The second half is the point. mullion drives the runtime's own client DLL
-// directly (docs/decisions/0001) because the Evergreen runtime does not ship
-// WebView2Loader.dll, and Microsoft documents that export as subject to change.
-// A test pins its existence - but only on the machine that runs the test suite.
-// The machine that matters is the user's, and until this existed there was no
-// way to ask the question there.
+// mullion drives the runtime's own client DLL directly (docs/decisions/0001)
+// because the Evergreen runtime does not ship WebView2Loader.dll, and Microsoft
+// documents that export as subject to change. A test can pin its existence only
+// on the machine that runs it; this diagnostic asks on the user's machine.
 
 // RuntimeReport describes the WebView2 runtime this process would load.
 type RuntimeReport struct {

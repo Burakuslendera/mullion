@@ -73,9 +73,9 @@ type ICoreWebView2Environment struct {
 // WebResourceRequested event.
 //
 // content may be nil, which is how a bodyless response (204, or an error page
-// with no payload) is expressed. Ownership: the returned response is a new
-// reference and the caller must Release it; the runtime AddRefs content itself,
-// but the caller still owns its own reference to the stream.
+// with no payload) is expressed. Creation takes no reference on content. The
+// returned response is a new reference the caller must Release; attach a body
+// with PutContent so the response retains the stream.
 func (e *ICoreWebView2Environment) CreateWebResourceResponse(content *IStream, statusCode int32, reasonPhrase, headers string) (*ICoreWebView2WebResourceResponse, error) {
 	reason, err := wstr(reasonPhrase)
 	if err != nil {

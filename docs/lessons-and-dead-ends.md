@@ -87,9 +87,14 @@ Each of these was implemented and measured. None fixed it:
 
 **Failed because** Electron renders offscreen and **WebView2 does not**. Hidden window → Chromium throttles → nothing renders → the JS-driven ready signal never fires. Chicken-and-egg: the window waits for `frontend_ready`; `frontend_ready` waits for a render; the render will not happen while hidden. The safety-net timer fired first, revealed the window mid-load with the loading screen visible, and the ready signal arrived seconds *after* that — strictly worse than doing nothing. Confirmed from timestamps, not theory.
 
-**Instead — two parts.** (1) **DWM cloaking (`DWMWA_CLOAK`) instead of hiding:** a cloaked window keeps `WS_VISIBLE`, so Chromium keeps rendering and the ready signal fires normally, but DWM does not composite it to the screen. Uncloak on ready and the window appears fully painted. (2) **A separate frameless loading window:** the main window is invisible while loading, so the loading UI needs its own home — a small `WS_POPUP` window (no caption, `WS_EX_TOOLWINDOW` so it gets no taskbar button), painted natively, created before the message loop starts and destroyed on reveal.
+**Historical resolution — two parts.** At the time, the implementation used (1) **DWM cloaking (`DWMWA_CLOAK`) instead of hiding:** a cloaked window keeps `WS_VISIBLE`, so Chromium keeps rendering and the ready signal fires normally, but DWM does not composite it to the screen. Uncloak on ready and the window appears fully painted. It also used (2) **a separate frameless loading window:** the main window is invisible while loading, so the loading UI needs its own home — a small `WS_POPUP` window (no caption, `WS_EX_TOOLWINDOW` so it gets no taskbar button), painted natively, created before the message loop starts and destroyed on reveal.
 
 **Follow-on trap in the reveal.** Uncloaking is not enough. The window was shown (and given foreground) *while cloaked*, so it lost foreground to whatever the user clicked next; on uncloak it stayed behind other windows and had to be picked from the taskbar. `SetForegroundWindow` alone does not reliably fix this — the foreground-steal restriction can refuse it. What works is the z-order dance, since a window may always change *its own* z-order: `SetWindowPos(hwnd, HWND_TOPMOST, ...)` then `SetWindowPos(hwnd, HWND_NOTOPMOST, ...)` (both with `SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE`) pulls it visually to the top; `SetForegroundWindow` afterwards is a best-effort attempt at keyboard focus.
+
+**Current status.** That cloaking/loading-window resolution is historical and is
+not implemented by current mullion. Non-`StartHidden` startup now uses the
+bounded shell-ready/timer show gate described in
+[startup-gates-and-watchdog.md](./startup-gates-and-watchdog.md).
 
 **Lesson.** Do not port a lifecycle pattern from Electron to WebView2 without checking whether it depends on offscreen rendering. Several do.
 
@@ -309,4 +314,4 @@ does not.
 
 The four items about what a log line may say are in [logging-dead-ends.md](./logging-dead-ends.md) with the sections they summarise.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: mark the DWM-cloak and loading-window resolution as historical and link the current startup show gate.

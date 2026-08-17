@@ -4,10 +4,12 @@ A Win32 window host for WebView2, in pure Go. No CGo. No local port.
 
 `mullion` creates the window, embeds WebView2 in it, and hands the frame to your
 frontend: your HTML draws the title bar, and the window procedure still does the
-things a native caption does — drag, double-click to maximise, resize edges,
-snap, the system menu, per-monitor DPI. Assets are served to the WebView straight
-out of an `fs.FS` over an in-process virtual host, so nothing listens on a socket
-and there is no HTTP server to firewall.
+things a native caption does — drag, double-click to maximise, resize edges, the
+system menu, per-monitor DPI, and Snap through edge drag, `Win`+arrow and
+`Win+Z`. The maximize-button hover Snap Layout flyout is outside this custom-frame
+boundary. Assets are served to the WebView straight out of an `fs.FS` over an
+in-process virtual host, so nothing listens on a socket and there is no HTTP
+server to firewall.
 
 ![The examples/basic demo: a frameless window with an HTML title bar, working caption buttons, and a bridge round-trip to Go](docs/images/demo.png)
 
@@ -73,8 +75,9 @@ is one half of it; [`docs/`](docs/) is the other.
 ## What it does
 
 - **The frame is yours.** Custom title bar, caption buttons, eight resize zones,
-  system menu, snap. `WM_NCCALCSIZE`, `WM_NCHITTEST`, `WM_GETMINMAXINFO` and
-  `WM_DPICHANGED` are handled for you; you write the CSS.
+  system menu, and Snap through edge drag, `Win`+arrow and `Win+Z` — not the
+  maximize-button hover flyout. `WM_NCCALCSIZE`, `WM_NCHITTEST`,
+  `WM_GETMINMAXINFO` and `WM_DPICHANGED` are handled for you; you write the CSS.
 - Where the runtime supports it (WebView2 131+), the non-client region is real:
   CSS `app-region: drag` becomes an actual `HTCAPTION` and the shell handles the
   dragging. Older runtimes fall back to an injected JavaScript drag path
@@ -89,9 +92,12 @@ is one half of it; [`docs/`](docs/) is the other.
 - `window.open` and `target=_blank` open in the user's default browser — the
   host never spawns a second, chrome-less WebView window. Only `http`/`https`
   targets are handed to the system; any other scheme is dropped.
-- A render watchdog fires if the frontend never paints, and reports what it saw:
-  whether the document arrived, whether the stylesheets and scripts arrived, and
-  what the last bridge call was.
+- A render watchdog fires if the frontend never paints. In embedded-asset mode,
+  it reports bucketed document, stylesheet and script responses; `last_bridge`
+  reports only the latest application method handed to `Config.Bridge` and its
+  `received` or `completed` status. With `Config.URL`, the asset counters provide
+  no evidence about the caller's server: use navigation status, frontend phase,
+  application-bridge and server evidence.
 - **Pure Go.** The runtime is located, loaded and driven from `internal/webview2`
   — the COM interfaces, the event handlers and the environment bootstrap are all
   written here, against Microsoft's published interface definitions. There is no C
@@ -205,18 +211,24 @@ refuses it, the navigation goes ahead as an ordinary one and says so at warn, ra
 than loading the foreign document *and* opening a second copy in your browser
 ([decisions/0027](docs/decisions/0027-cancel-is-committed-after-the-runtime-performs-it.md)).
 
-`Logger` takes pre-sanitised single strings — file system paths are reduced to
-their base name, and URLs to scheme, host and path, with the query and fragment
-dropped and only a bare `?` or `#` left to record that they were there. A message
-that *contains* a URL — a JS error from `window.onerror`, a recovered panic naming
-the navigation it was handling — keeps it: every `http`/`https` run inside the
-message is reduced by that same URL rule rather than by the path rule, which used
-to delete the host
+`Logger` takes pre-sanitised single strings. A URL field is guaranteed to retain
+scheme, the complete host and a bounded path only for a valid absolute
+HTTP(S) URL whose authority can be printed safely. Query and fragment values are
+dropped, with only a bare `?` or `#` recording their presence. The
+scheme/host/path projection has a 160-byte budget; a cut path gets a visible
+`...`, followed by any query/fragment presence markers. `blob:` and
+`filesystem:` wrappers preserve a valid inner HTTP(S)
+origin while bounding the suffix. Other schemes and non-parseable,
+authority-less or unsafe-host forms use the bounded `Message` fallback instead,
+so their origin is not promised to survive.
+
+An arbitrary message is not treated as one URL. Recognised HTTP(S) runs inside
+it are reduced by the same URL rule, while the surrounding text follows the
+message and filesystem-path rules
 ([decisions/0028](docs/decisions/0028-message-keeps-the-urls-inside-it.md)).
-Messages can be forwarded verbatim without leaking a token someone put in a query
-string; the one thing they now print whole is a local path sitting inside an
-http(s) URL's own path — a dev server's `/@fs/` form does that — because a URL
-path is not reduced as a filesystem path. `SlogLogger(*slog.Logger)` is provided.
+A local path inside an HTTP(S) URL's own path — such as a dev server's `/@fs/`
+form — remains a URL path and is not reduced as a filesystem path.
+`SlogLogger(*slog.Logger)` is provided.
 
 Your `Logger` must be safe to call from more than one goroutine. Most lines come
 from the UI thread, but not all: the render watchdog and the startup show gate
@@ -264,39 +276,50 @@ go install github.com/Burakuslendera/mullion/cmd/mullion@latest
 mullion doctor
 ```
 
-`go install` puts the binary in `$(go env GOPATH)/bin`, and the bare
-`mullion doctor` works only when that directory is on your `PATH`. On a stock
-Windows install it already is: the Go installer adds the default
-`%USERPROFILE%\go\bin` for you. What breaks it is a relocated `GOPATH` — the
-binaries move with it, and the installer's `PATH` entry does not.
+`go install` writes the binary to `GOBIN` when `go env GOBIN` is non-empty;
+otherwise it uses `$(go env GOPATH)/bin`. The bare `mullion doctor` works only
+when the directory Go actually selected is on your `PATH`.
 
 No checkout, no PowerShell. It prints the environment a window bug report needs
-— Windows build, GPUs, every monitor with its **physical** resolution and
-scaling — and then the question a registry lookup cannot answer: **which
-WebView2 runtime this machine would actually load, and whether it still exports
-the entry point mullion calls.** It starts no browser and opens no window. Exit
-code `0` means mullion can start here; `1` means it cannot, and the block says
-why.
+— Windows build, best-effort GPU and monitor inventory — and then the question a
+registry lookup cannot answer: **which WebView2 runtime this machine would
+select, and whether it still exports the entry point mullion calls.** It starts
+no browser and opens no window. Exit code `0` means the supported-architecture,
+runtime-selection and export prerequisites checked by `doctor` passed; it does
+not guarantee that full `Host` startup, COM environment/controller creation or
+window creation will succeed. Exit code `1` means one of those checked
+prerequisites failed, and the block says why.
 
 On Windows/386 or Windows/ARM64, that block reports the unsupported process
 architecture without probing or loading a WebView2 DLL; a cross-build alone
 does not make the COM ABI usable.
 
-Monitors are measured with per-monitor DPI awareness declared first. Windows
-reports a *virtualised* resolution to a process that has not asked, so a
-hand-written "1536x864" for a 1920x1080 monitor at 125% is the one number a DPI
-report must not contain — which is why this is a command and not a checklist.
+Monitor collection requests per-monitor-v2 DPI awareness first so the process
+can avoid DPI-virtualised coordinates. The request, enumeration and individual
+monitor/DPI probes are best effort rather than startup prerequisites: the report
+does not guarantee a complete inventory or that every reported dimension is
+physical.
 
-One more helper lives beside it: `mullion backdrop` covers every monitor with a
-flat grey while you screenshot a window, so the margin around it — the shadow
-and the corners are worth keeping in frame — carries nothing of your desktop.
-Your mullion window is lifted in front of the grey as it opens; capture with
-whatever tool you like, press Esc on the backdrop when done
-([decisions/0013](docs/decisions/0013-backdrop-is-a-mullion-command.md)). From
-a checkout, `scripts/screenshot.ps1` automates the whole capture; the image
-above was taken that way, on the same flat ground.
+One more helper lives beside it: `mullion backdrop` opens a flat grey ground
+across the virtual screen while you screenshot a window. It is not topmost, so
+any window the user raises remains above it. By default it looks for the first
+top-level window whose class is `MullionWindow` (`-class` overrides this; empty
+skips matching). If that first match exists and is visible, the helper attempts
+a non-activating z-order sandwich with the target above the backdrop and watches
+the target. The moves are best effort: when there is no visible first match, or
+the z-order does not take, bring the window forward manually with Alt+Tab.
+Capture with whatever tool you like and press Esc on the backdrop when done
+([decisions/0013](docs/decisions/0013-backdrop-is-a-mullion-command.md)). From a
+checkout, `scripts/screenshot.ps1` automates the whole capture; the image above
+was taken that way, on the same flat ground.
 
 ## Known limitations
+
+- **The maximize-button hover Snap Layout flyout is not available with the
+  HTML title bar.** The shipping frame still supports edge drag (Aero Snap),
+  `Win`+arrow and `Win+Z`; only hovering the HTML maximize button lacks the
+  native flyout. The boundary and rejected alternatives are documented in
+  [snap-and-nonclient-region.md](docs/snap-and-nonclient-region.md#6-what-actually-gives-you-snap).
 
 - **An asset whose name carries no type mullion knows is a download, not a
   document.** The content type comes from the name and never from the bytes, so a

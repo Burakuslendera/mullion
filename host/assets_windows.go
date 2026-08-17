@@ -43,16 +43,15 @@ func newAssetProvider(assets fs.FS, log *logSink, origin canonicalOrigin, diagno
 }
 
 // webResourceRequested answers one intercepted request out of the fs.FS. Serving
-// the document is not where a slow startup goes, which is worth saying where a
-// reader looks first: on WebView2 150.0.4078.83, about 2.03 s passed between the
-// "asset response served" line for index.html and the renderer asking for its
-// first subresource, across seven runs. A NetLog capture named the span - a
-// HOST_RESOLVER_MANAGER_JOB for the virtual host, 2.007 s, spanning that
-// window - so the cost was resolving the synthetic host name, not answering the
-// request. The default moved to a name under the TLD RFC 6761 reserves for
-// loopback, which measured 47-141 ms instead and took issue #77's aborts with it.
-// The reasoning and measurements live in decision 0030 and docs/assets.md.
-// Callers that select a name outside that TLD retain the resolver wait.
+// the document is not where the measured startup wait went, which is worth saying
+// where a reader looks first: on WebView2 150.0.4078.83, about 2.03 s passed
+// between serving index.html and the first subresource request across seven runs.
+// NetLog named a 2.007 s HOST_RESOLVER_MANAGER_JOB for mullion.local; a separate
+// mullion.test run measured 2.027 s. The default under the TLD RFC 6761 reserves
+// for loopback measured 47-141 ms instead and took issue #77's aborts with it.
+// Those measurements do not establish the timing of every caller-selected name;
+// names outside the reserved TLD may retain the resolver wait. See decision 0030
+// and docs/assets.md.
 func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs, environment *webview2.ICoreWebView2Environment) {
 	if request == nil {
 		provider.log.Warn("mullion: asset request unavailable")
@@ -88,11 +87,11 @@ func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebVi
 		provider.log.Error("mullion: asset response failed, reason=" + logsafe.Reason(err))
 		return
 	}
-	// Deferred so a panic between here and the return cannot strand the two
-	// owned references: the event dispatch recovers panics and keeps the
-	// process alive, which would leak them for good (issue #45). The release
-	// still runs after PutResponse - by then the runtime has taken its own
-	// references, so ours are redundant.
+	// Deferred so the creator references are released after the PutResponse
+	// handoff attempt even if the recovered event dispatch sees a panic
+	// (issue #45). On success the runtime retains the response, whose successful
+	// PutContent retains the stream. On failure no runtime response reference
+	// exists, so this same release cleans up the response and stream chain.
 	defer provider.releaseResponse(webviewResponse, stream)
 	if err := args.PutResponse(webviewResponse); err != nil {
 		provider.log.Error("mullion: asset response put failed, reason=" + logsafe.Reason(err))
@@ -302,11 +301,11 @@ func errorAssetResponse(status int, request assetRequest) assetResponse {
 }
 
 // assetHeaders builds the response header block for a served asset. mullion
-// always emits an explicit Content-Type, so nosniff is inert for every type it
-// generates except the sniffable ones (text/plain): it stops bytes an app serves
-// as text/plain on the bridge origin from being content-sniffed to text/html and
-// executed (issue #13). The no-store family keeps the in-process asset stream
-// from being cached, so an edit to the fs.FS is picked up on the next load.
+// always emits an explicit Content-Type. nosniff keeps opaque and text resources
+// from being promoted by content sniffing and makes executable-resource loads
+// such as scripts and stylesheets obey their MIME requirements; it cannot repair
+// an incorrect explicit label. The no-store family keeps the in-process asset
+// stream from being cached, so an edit to the fs.FS is picked up on the next load.
 func assetHeaders(contentType string) string {
 	return "Content-Type: " + contentType + "\r\n" +
 		"X-Content-Type-Options: nosniff\r\n" +

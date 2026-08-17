@@ -301,15 +301,12 @@ func TestBeginRunRejectsUndrainedQuit(t *testing.T) {
 	}
 }
 
-// TestWindowDestroyTeardownStopsTheTimersAndBrowser locks the WM_DESTROY
-// teardown contract: both timers die with the window - a startup show gate
-// left armed would fire after the destroy and post wmNativeShow to the dead
-// HWND (issue #54's companion observation), and a surviving render watchdog
-// would report a render timeout against a window that no longer exists - and
-// a committed browser is shut down while the HWND is still alive. The
-// watchdog's timer state is not inspectable, so its stop is observed the same
-// way TestNavigateFailureStopsTheRenderWatchdog observes it: the timeout ERROR
-// must never appear.
+// TestWindowDestroyTeardownStopsTheTimersAndBrowser locks the extracted teardown
+// seam: pending startup-timer state is cleared, no later watchdog timeout
+// appears, the Browser helper enters shutdown, and stored HWND, Browser, and
+// destruction state make their expected transitions. It does not dispatch a
+// real WM_DESTROY or prove live HWND/controller ordering or races with callbacks
+// that already fired.
 func TestWindowDestroyTeardownStopsTheTimersAndBrowser(t *testing.T) {
 	host, logger := newTestHost(t, Config{ShowTimeout: time.Hour, RenderTimeout: 20 * time.Millisecond})
 	host.startStartupShowGate()

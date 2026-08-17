@@ -11,23 +11,22 @@ import (
 
 // The completions that must NOT arm the fallback surface, and the one start
 // that must never be cancelled. Two suppressions sit in front of the machine:
-// benignAbort, which reads ConnectionAborted as harmless only where mullion
-// served the bytes itself and the navigation was on-origin (issue #72,
-// decisions/0024), and noteGateCancelledOutcome, which consumes the
-// PinNavigationToOrigin gate's own OperationCanceled before the machine sees it
-// (issue #6, decisions/0023). Both fail open by design: without identity the
-// surface arms.
-
-// The tests below lock what an aborted navigation means (issue #72,
-// decisions/0024). A same-origin document navigation was observed completing
-// ConnectionAborted although its asset had been served 200, with the runtime
-// starting the navigation again by itself - and arming on that abort replaced a
-// live frontend with the fallback page, whose Retry aborted the same way, so it
-// looped until an attempt happened to survive.
-
-// Serving the embedded fs.FS in process, an abort of a navigation that was
-// headed for the trusted origin cannot mean "could not load": mullion produced
-// every byte of it.
+// benignAbort accepts ConnectionAborted only for an exactly attributed,
+// on-origin embedded navigation (issue #72, decisions/0024 and 0037), while
+// noteGateCancelledOutcome consumes expected failed/cancelled cleanup for the
+// PinNavigationToOrigin gate's accepted cancel request (issue #6,
+// decisions/0023 and 0027). Anonymous cancel credit is bounded cleanup only;
+// restoring fallback authority still requires exact identity.
+//
+// The tests below lock issue #72's accepted classification. A same-origin
+// document navigation was observed completing ConnectionAborted after its asset
+// response was served 200, with the runtime starting the navigation again; arming
+// on that abort replaced a live frontend and its Retry repeated the loop.
+//
+// This is not proof that mullion produced or WebView2 consumed every byte for
+// that navigation. Asset responses carry no navigation ID, so the implementation
+// deliberately requires the source mode, trusted target and exact start/
+// completion identity together.
 func TestErrorSurfaceAbortDoesNotArmWhenAssetsAreServedInProcess(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 	// The start the completion below belongs to - issue #72's sequence. The gate
@@ -83,6 +82,9 @@ func TestErrorSurfaceOtherFailuresStillArmInProcess(t *testing.T) {
 func TestErrorSurfaceAbortWithoutIdentityStillArms(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 
+	// This id-less helper drive is the legacy decision-0020 state-machine seam.
+	// A production getter failure retains its provenance and is handled by the
+	// unclassifiable, fail-closed completion path instead.
 	if !noteFail(host, 0) {
 		t.Fatal("an id-less abort must still arm: 0020's machine is the fallback wherever identity is unavailable")
 	}

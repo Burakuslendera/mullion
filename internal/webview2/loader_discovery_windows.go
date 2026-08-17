@@ -83,19 +83,18 @@ func (r resolved) runtimeType() int {
 
 // FindRuntime locates the WebView2 runtime this process should use.
 //
-// Order of precedence, which mirrors the official loader:
+// WEBVIEW2_BROWSER_EXECUTABLE_FOLDER has precedence over discovery. It is a pin,
+// not a hint: if the folder has no usable runtime we fail instead of silently
+// falling back, because running a different browser build than the one pinned is
+// worse than not running at all.
 //
-//  1. WEBVIEW2_BROWSER_EXECUTABLE_FOLDER, if set. This is a pin, not a hint: if
-//     the folder has no usable runtime we fail instead of silently falling back
-//     to the installed one, because running a different browser build than the
-//     one that was pinned is worse than not running at all.
-//  2. The per-user Evergreen install (HKCU).
-//  3. The machine-wide Evergreen install (HKLM), 32-bit registry view first -
-//     EdgeUpdate is a 32-bit process and writes under WOW6432Node - then the
-//     64-bit view for hosts that do not have one.
+// Evergreen registrations are discovered from HKCU, then HKLM's 32-bit view
+// (EdgeUpdate is a 32-bit process and writes under WOW6432Node), then HKLM's
+// 64-bit view. That is discovery order, not selection precedence: every usable
+// Evergreen candidate competes by version and the newest wins.
 //
-// Every candidate is verified against the disk before it is accepted; the
-// registry outlives uninstalls and half-finished updates.
+// Every candidate is verified against the disk before selection; the registry
+// outlives uninstalls and half-finished updates.
 func FindRuntime() (folder string, version string, err error) {
 	found, err := findRuntime()
 	if err != nil {
@@ -224,17 +223,10 @@ func readEdgeUpdateClient(root registry.Key, path string, access uint32) (versio
 	return version, strings.TrimSpace(location), true
 }
 
-// selectRuntime turns candidates into the one runtime to load.
-//
-// exists is injected so the whole selection rule - precedence, version
-// ordering, the refusal to fall back past a pin - is testable without a
-// WebView2 install.
 // firstExistingClient returns the first client DLL that exists under any of a
-// candidate's folders, and whether there was one. The folder order is the
-// candidate's own, so the first hit is the one that wins - which is why this
-// returns on the first match rather than collecting. Extracted so selectRuntime
-// reads as the precedence rule it is, instead of three nested loops and a flag
-// to escape them.
+// candidate's folders. Folder order belongs to that candidate, so its first hit
+// wins. Keeping this search separate leaves selectRuntime responsible for pin
+// precedence and Evergreen version selection.
 func firstExistingClient(item candidate, arch string, exists func(string) bool) (resolved, bool) {
 	for _, folder := range item.folders {
 		for _, path := range clientPaths(folder, arch) {
@@ -253,6 +245,9 @@ func firstExistingClient(item candidate, arch string, exists func(string) bool) 
 	return resolved{}, false
 }
 
+// selectRuntime honors an explicit pin outright; otherwise it selects the newest
+// usable Evergreen candidate. exists is injected so pin refusal, disk filtering
+// and version selection are testable without a WebView2 installation.
 func selectRuntime(candidates []candidate, arch string, exists func(string) bool) (resolved, error) {
 	var best resolved
 	var haveBest bool

@@ -24,21 +24,16 @@ type Report struct {
 	GPUs     []string
 	Monitors []Monitor
 
-	// Homes are the spellings of the current user's profile directory. They are
-	// never printed: they are what paths are redacted against, so a runtime
-	// pinned somewhere under the home directory does not carry a user name into
-	// a public issue.
-	//
-	// Plural, because Windows hands out two. A profile directory whose name
-	// contains a space also has an 8.3 short name, and a path that arrives in
-	// that spelling sails straight past a redaction that only knows the long one
-	// - carrying the first six characters of the user name with it. That is not
-	// hypothetical: it is what the first live run of this command printed.
+	// Homes contains up to two spellings of the current user's profile
+	// directory: the long form when available and a distinct 8.3 short form
+	// when Windows provides one. They are never printed; they are what paths are
+	// redacted against, so either spelling cannot carry a user name into a
+	// public issue.
 	Homes []string
 }
 
-// WebView2Section is the runtime mullion would actually load on this machine,
-// and whether it can be driven at all.
+// WebView2Section describes the runtime mullion would select on this machine
+// and whether it exposes the entry point the host requires.
 type WebView2Section struct {
 	// Found is true when a runtime was selected. Problem says why not, when not.
 	Found   bool
@@ -62,9 +57,9 @@ type WebView2Section struct {
 	ExportProblem string
 }
 
-// Monitor is one display, measured with per-monitor DPI awareness declared, so
-// the numbers are physical rather than the virtualised ones Windows hands to a
-// process that has not asked.
+// Monitor is one readable entry in the best-effort display inventory. Its
+// dimensions are physical when Windows accepts the preceding per-monitor-v2
+// awareness request; the probe cannot guarantee that process-wide request.
 type Monitor struct {
 	Width, Height         int
 	Left, Top             int
@@ -83,10 +78,9 @@ func (m Monitor) Scale() int {
 	return (m.DPI*100 + 48) / 96
 }
 
-// Usable reports whether mullion can start on this machine: a runtime was
-// selected, and it exports the entry point the host calls. It is what the
-// command's exit code says, so that the report can be read by a script and not
-// only by a person.
+// Usable reports whether the prerequisites checked by doctor passed: a runtime
+// was selected and it exports the entry point the host calls. This drives the
+// command's exit code; it does not start a Host or prove hosting/rendering.
 func (r Report) Usable() bool {
 	return r.WebView2.Found && r.WebView2.ExportFound
 }
@@ -100,10 +94,10 @@ func Format(r Report) string {
 	writer.field("mullion", build)
 	if !identifiesTheBuild(build) {
 		// The version line exists to name the code that was running. When it
-		// cannot, saying so - and saying how to fix it - beats printing a word
-		// that looks like an answer. "go run" stamps no VCS information; only
-		// "go build", "go install" and an explicit -buildvcs=true do.
-		writer.note(`no commit recorded - "go run" does not stamp it; use "go run -buildvcs=true" from a checkout`)
+		// cannot, saying so - and saying how to diagnose it - beats printing a
+		// word that looks like an answer. Go's default -buildvcs=auto stamps only
+		// when its repository and tool conditions are met.
+		writer.note(`no commit recorded in a usable VCS stamp; retry with "go run -buildvcs=true" from a checkout to require and diagnose stamping`)
 	}
 	writer.field("OS", fallback(r.OS, "unknown"))
 	writer.field("Arch", fallback(r.Arch, "unknown"))
@@ -135,7 +129,7 @@ func Format(r Report) string {
 	writer.out.WriteString("```\n")
 
 	if len(r.Monitors) > 0 {
-		writer.out.WriteString("\nMeasured with per-monitor DPI awareness, so the resolutions above are physical.\n")
+		writer.out.WriteString("\nMonitor inventory is best effort after requesting per-monitor DPI awareness; reported resolutions are physical when Windows accepted that request.\n")
 	}
 	return writer.out.String()
 }

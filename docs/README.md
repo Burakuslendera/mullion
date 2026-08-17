@@ -13,12 +13,17 @@ other document answers one narrower question below.
 | Question | Document |
 | --- | --- |
 | How does the host work, end to end? | [architecture.md](./architecture.md) |
+| How do startup show gates and the render watchdog work? | [startup-gates-and-watchdog.md](./startup-gates-and-watchdog.md) |
 | How does the host talk to WebView2? | [webview2-and-assets.md](./webview2-and-assets.md) |
+| How do WebView2 zoom and native hit-testing stay aligned? | [webview2-zoom-and-native-hit-testing.md](./webview2-zoom-and-native-hit-testing.md) |
 | How are assets served without a port? | [assets.md](./assets.md) |
+| How are repository guards verified against false success? | [guard-verification.md](./guard-verification.md) |
+| What are the guards' exhaustive authorities and proof ceilings? | [guard-authority-details.md](./guard-authority-details.md) |
 | Why is the frame / hit-test / DPI code shaped like this? | [frame-and-dpi.md](./frame-and-dpi.md) |
 | Canonical native hit-test geometry and issue #113 gates | [hit-test.md](./hit-test.md) |
 | Snap, the non-client region and caption behaviour | [snap-and-nonclient-region.md](./snap-and-nonclient-region.md) |
 | Where do those snap / non-client claims come from? | [snap-sources.md](./snap-sources.md) |
+| What is the headless-versus-live Snap testing boundary? | [snap-testing-boundary.md](./snap-testing-boundary.md) |
 | **Why is it done this way, and what would change that?** | [decisions/](./decisions/) |
 | What was already tried, and why was it abandoned? | [lessons-and-dead-ends.md](./lessons-and-dead-ends.md) |
 | The same question, for what a log line may say | [logging-dead-ends.md](./logging-dead-ends.md) |
@@ -44,4 +49,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: add canonical hit-test and verification-continuation navigation.
+> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: complete the documentation index with guard, startup, Snap-testing and WebView2 zoom continuations.

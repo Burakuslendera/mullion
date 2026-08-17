@@ -13,23 +13,22 @@ import (
 // #68 and the identity follow-up under #6). The runtime reports a data:
 // document's source as the empty string - measured live at both the event args
 // and the core - so the fallback error surface can only be recognised by
-// navigation state, and these transitions are what decide whether its caption
-// buttons work. Completions carrying a navigation id are attributed positively
-// against the id noteSurfaceNavigationStarting claimed (decisions/0021); the
-// id-less drives (navigation id 0) lock the order-based fallback, which must
-// stay exactly decision 0020's machine. Each test walks the note* methods the
-// way the navigation callbacks would.
+// navigation state, and these transitions decide whether its caption buttons
+// work. Non-zero completion ids are attributed against the id claimed at
+// NavigationStarting (decisions/0021 and 0037). The id-less drives are legacy
+// decision-0020 state-machine seams; production preserves getter provenance and
+// handles a failed identity getter through the unclassifiable, fail-closed path.
+// Each test walks the note* methods directly rather than emulating that adapter.
 
 // statusNone is COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN (0): the status a
 // successful completion carries, which the machine must not read, and equally
 // the stand-in for a failure whose status is none of the ones it branches on.
 const statusNone = webview2.WebErrorStatus(0)
 
-// noteFail, noteCancel and noteOK drive noteNavigationOutcome the way the
-// completion callback would: a network failure, a superseded navigation's
-// cancellation, and a success. Passing id 0 models a completion whose identity
-// is unavailable, which is what routes the machine into the order-based
-// fallback the id-less tests lock.
+// noteFail, noteCancel and noteOK drive the legacy noteNavigationOutcome seam as
+// a network failure, superseded cancellation and success. Passing id 0 selects
+// decision 0020's order-based state-machine fallback; it does not model the
+// production callback's provenance-aware handling of a failed identity getter.
 func noteFail(host *Host, id uint64) bool {
 	if id == 0 {
 		return host.planNavigationOutcomeObserved(

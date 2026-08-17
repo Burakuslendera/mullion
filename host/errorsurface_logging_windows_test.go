@@ -265,14 +265,12 @@ func TestGateCancelledCompletionIsReportedWithItsNavigation(t *testing.T) {
 // in the in-process mode, each aborting and each suppressed. The count they must
 // leave behind is zero.
 //
-// The failure this locks is the second half - a real failure still moving the
-// count. Before decisions/0026 the warning lived in the completion callback,
-// which no headless test can drive, so the machine produced no warning at all
-// and the count read 0 whatever happened; the assertion below fails against that
-// code. The first half is the mutant lock in the other direction: it fails the
-// moment a warning is put back anywhere in the machine that every failure passes
-// through. What no test driving the machine can see is the callback itself -
-// TestNavigationCompletedCallbackReportsNoFailureItself covers that.
+// The failure this locks is the state-machine count: a real unsuppressed
+// failure must still move it, while the six accepted aborts must not. Current
+// headless tests also invoke NavigationCompletedCallback from newWebViewBrowser
+// directly. TestNavigationCompletedCallbackReportsNoFailureItself retains the
+// distinct static source check that the callback contains no independent
+// reporting or classification.
 func TestSuppressedAbortsDoNotInflateSessionWarnCount(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 

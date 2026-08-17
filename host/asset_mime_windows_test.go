@@ -7,9 +7,10 @@ import "testing"
 // contentTypeForAsset decides how the browser interprets the bytes an asset
 // serves, so its extension mapping is a small security surface: the wrong type
 // can turn inert data into executable script in the mullion.localhost origin.
-// The hardcoded switch and the unknown-extension fallback are deterministic and
-// locked here; the mime.TypeByExtension middle branch reads the machine's
-// registry MIME table and is deliberately left unpinned.
+// The hardcoded switch and unknown-extension fallback are deterministic and
+// locked here. The mime.TypeByExtension middle branch uses Go's compiled-in MIME
+// table plus Windows registry extensions or overrides; that contribution remains
+// deliberately unpinned.
 //
 // The function takes no content. Until issue #100 it fell back to
 // http.DetectContentType, and this table asserted that a name with no extension
@@ -31,15 +32,14 @@ func TestContentTypeForAsset(t *testing.T) {
 		{"ico", "favicon.ico", "image/x-icon"},
 		{"uppercase extension", "INDEX.HTML", "text/html; charset=utf-8"},
 		{"mixed case", "Style.Css", "text/css; charset=utf-8"},
-		// These rows pin the contract, not the layer that satisfies it, and for
-		// most of them the layer underneath is not the machine's registry: Go's
-		// mime package compiles its own table in and the registry can only add to
-		// it. Measured, mime.TypeByExtension answers for every extension below
-		// except ".woff" and ".woff2", so deleting those cases from the switch
-		// still passes the suite while deleting the woff ones does not. What no
-		// headless test here can stand in for is a *future* Go whose built-in
-		// table changes an answer; that is what these rows are insurance against
-		// (decisions/0031).
+		// These rows pin the contract, not the layer that satisfies it. Go's
+		// mime package compiles a table in, and the Windows registry may extend
+		// or override it. Measured, mime.TypeByExtension answers for every
+		// extension below except ".woff" and ".woff2", so deleting those cases
+		// from the switch still passes the suite while deleting the woff ones
+		// does not. What no headless test here can stand in for is a future Go or
+		// registry table changing an answer; that is what these rows are
+		// insurance against (decisions/0031).
 		{"htm", "index.htm", "text/html; charset=utf-8"},
 		{"txt", "notes.txt", "text/plain; charset=utf-8"},
 		{"mjs", "module.mjs", "text/javascript; charset=utf-8"},

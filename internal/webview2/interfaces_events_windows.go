@@ -26,9 +26,10 @@ type ICoreWebView2WebMessageReceivedEventArgs struct {
 	Vtbl *ICoreWebView2WebMessageReceivedEventArgsVtbl
 }
 
-// GetSource is the URI of the document that posted the message. Worth checking
-// before trusting a message: it is the only thing distinguishing the app's own
-// page from an iframe.
+// GetSource returns the URI of the document that posted the message. It is not
+// authenticated frame identity: same-source frames can share it. Keep getter
+// failure distinct from an observed empty URI; policy may use a successfully
+// read origin only with any separate state its authority requires.
 func (a *ICoreWebView2WebMessageReceivedEventArgs) GetSource() (string, error) {
 	var source *uint16
 	hr, _, _ := a.Vtbl.GetSource.Call(
@@ -111,8 +112,8 @@ func (a *ICoreWebView2NavigationStartingEventArgs) GetIsUserInitiated() (bool, e
 }
 
 // GetIsRedirected reports whether this start is an HTTP redirect of an earlier
-// navigation. A redirect keeps its navigation id, so a correlating caller sees
-// the same id start more than once.
+// navigation. Redirects are expected to retain the navigation id, but this
+// repository has not verified that behavior; callers handle repeats defensively.
 func (a *ICoreWebView2NavigationStartingEventArgs) GetIsRedirected() (bool, error) {
 	var redirected int32
 	hr, _, _ := a.Vtbl.GetIsRedirected.Call(
