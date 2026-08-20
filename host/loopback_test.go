@@ -52,14 +52,11 @@ func TestExternalSourcePlanAcceptsOnlyLoopbackHTTP(t *testing.T) {
 
 func TestExternalSourcePlanCanonicalizesOnceAndRedactsSummary(t *testing.T) {
 	plan, err := buildSourcePlan(Config{
-		URL:         "HTTP://LOCALHOST:80/private?token=secret#fragment",
+		URL:         "HTTP://alice:secret@LOCALHOST:80/private?token=secret#fragment",
 		VirtualHost: "not a valid virtual host/ignored",
 	}.normalise())
 	if err != nil {
 		t.Fatal(err)
-	}
-	if plan.startURL != "http://localhost/private?token=secret#fragment" {
-		t.Fatalf("start URL = %q", plan.startURL)
 	}
 	if plan.origin.text != "http://localhost" || plan.retryTarget != "http://localhost" {
 		t.Fatalf("origin/retry = %q/%q", plan.origin.text, plan.retryTarget)

@@ -163,8 +163,14 @@ interrupts. The resulting string is cloned before retention. Application bridge
 payloads are outside this diagnostic limit and still pass to `Config.Bridge`
 unchanged ([0035](decisions/0035-frontend-diagnostics-are-bounded.md)).
 
-The decisions are [0025](decisions/0025-urls-are-logged-as-urls.md) and
-[0028](decisions/0028-message-keeps-the-urls-inside-it.md).
+The startup `asset source` summary is not produced by any reducer above. Its
+canonical owner is [assets.md](./assets.md): the immutable source plan formats
+the already canonical, credential-free origin, rather than sanitising a raw
+caller URL after the fact. [Decision 0036](decisions/0036-one-source-plan-defines-origin.md)
+is the rationale and recurrence trip-wire; decisions
+[0025](decisions/0025-urls-are-logged-as-urls.md) and
+[0028](decisions/0028-message-keeps-the-urls-inside-it.md) continue to own
+ordinary URL and free-text log reduction only.
 
 ## 3. The short version
 
@@ -176,4 +182,4 @@ The decisions are [0025](decisions/0025-urls-are-logged-as-urls.md) and
    value in a comma-separated `key=value` record must fold the delimiters before
    it is logged. (§2)
 
-> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: record the structured-field delimiter-injection dead end and the Field/FieldFileName boundary that preserves the existing free-text and URL reducers.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: distinguish the source-plan startup summary from general URL/message reducers and route readers to its canonical owner.

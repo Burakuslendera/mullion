@@ -14,12 +14,27 @@ socket; the request never leaves the process. Because that callback is the only
 authority, it is also the only place the boundary can be enforced:
 
 The filter and callback do not reconstruct that origin. `New` creates one
-canonical source plan and the filter pattern, `assetProvider` origin check,
-initial navigation, bridge gate, Retry target and source log all consume it
-([decision 0036](./decisions/0036-one-source-plan-defines-origin.md)). Registering
-the embedded filter is mandatory after the Browser commit: failure immediately
-uncommits and shuts down that Browser before settings, scripts, watchdog or
-navigation, then returns for the terminal host policy to report once. No request
+immutable canonical source plan, and the filter pattern, `assetProvider` origin
+check, initial navigation, bridge gate, Retry target and source log all consume
+it ([decision 0036](./decisions/0036-one-source-plan-defines-origin.md)).
+`sourcePlan.summary` is created from the plan's canonical, credential-free
+origin; logging never re-reads the raw `Config.URL` or `Config.VirtualHost`.
+Credentials, path, query and fragment may remain in an external initial
+navigation capability, but none can enter the retained startup summary.
+`TestExternalSourcePlanCanonicalizesOnceAndRedactsSummary` locks that separation,
+while `TestEmbeddedSourcePlanCanonicalizesEveryConsumer` locks the corresponding
+embedded consumer agreement.
+
+An invalid embedded `Config.VirtualHost` fails source-plan construction. On
+supported Windows, `Run` returns that error before process DPI setup, runtime
+discovery, COM, window-class registration or `HWND` creation.
+`TestInvalidSourcePreflightPrecedesSupportedNativeStartup` counts the first two
+native dependencies to lock this early boundary; it does not execute native
+setup.
+Registering the embedded filter is mandatory after the Browser commit: failure
+immediately uncommits and shuts down that Browser before settings, scripts,
+watchdog or navigation, then returns for the terminal host policy to report
+once. No request
 path runs without its filter.
 
 | Condition | Result |
@@ -142,12 +157,12 @@ a runtime that already speaks HTTP — instead. It is empty by default, so the n
 guarantee is unchanged.
 
 **mullion still opens no socket.** The caller runs the server; mullion only
-navigates to it. `Config.URL` is parsed once into the same source plan: its
-canonical HTTP(S) loopback origin drives bridge admission, later navigation
-policy, Retry and the redacted source log while its path/query/fragment remain on
-the initial navigation. The exact configured start URL alone is a
-navigation-authorized capability; userinfo retained there never proves origin
-identity for another navigation or bridge message. When `Config.URL` is set, the
+navigates to it. `Config.URL` is parsed once into the source plan described
+above. Its canonical HTTP(S) loopback origin drives bridge admission, later
+navigation policy, Retry and the source summary, while the exact configured
+start URL alone retains the caller's path, query, fragment or userinfo.
+That navigation-only capability never proves origin identity for another
+navigation or bridge message. When `Config.URL` is set, the
 `WebResourceRequested` filter is not registered and the boundary matrix above
 does not run — the caller's server owns those concerns.
 The injected scripts still run on every navigation, so `window.<ns>` works on
@@ -168,9 +183,10 @@ That last point is why `Config.URL` is pinned to **loopback** (`127.0.0.1`,
 `localhost`, `::1`) over `http`/`https`, and any other URL is rejected by `Run`:
 injecting `Config.Bridge` — the application's Go methods — into an arbitrary remote
 origin would hand that origin a path into Go. Loopback keeps it on the local machine.
-Every run logs the source in effect (`asset source=embedded-fs …` or
-`asset source=external-url, url=…`, with the path dropped), so a report shows which
-was used. See [decisions/0012](./decisions/0012-config-url-loopback.md).
+Every run logs the plan summary (`asset source=embedded-fs …` or
+`asset source=external-url, url=…`), so a report identifies the source without
+repeating caller URL details. The loopback rationale remains
+[decision 0012](./decisions/0012-config-url-loopback.md).
 
 ### COM stream lifetime
 
@@ -367,4 +383,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: reject shared rendering controls at the asset boundary; stat asset entries before reading so directories are missing assets and real favicon.ico files are served before the 204 shortcut.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: make the immutable credential-free source summary and invalid-VirtualHost pre-native boundary canonical and name their focused tests.
