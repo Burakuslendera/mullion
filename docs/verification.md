@@ -147,8 +147,8 @@ entry ticket to acceptance, not acceptance itself.
 
 ## 3. Manual acceptance checklist
 
-Launch `examples/basic` with `Push-Location examples/basic; go run .; Pop-Location`
-(or run the host application), then walk the list. Launch alone is not proof; only the human observations below count.
+Launch `examples/basic` with `Push-Location examples/basic; go run .; Pop-Location` (or run the host application), then walk the list. Launch alone is not proof; only the human observations below count.
+An ordinary reporter/user need only run the relevant checks on their existing display layout, report each monitor's resolution/scale and the observed result, and mark unavailable scale factors `not covered` or `unverified`; they are not expected to change OS DPI settings solely for a report, and that missing coverage does not make their session a failure. This does not waive release acceptance for a frame, DPI or hit-test behavior change: the maintainer or a dedicated verifier must supply the required mixed-DPI/different-scale evidence on a suitable setup.
 
 - [ ] **Temporary issue #112 large-metric fixture, before and in addition to the normal checklist.** Use an odd physical restored window rect `[l,r) x [t,b)`;
       record `w`, `h`, `mx=l+floor(w/2)` and `my=t+floor(h/2)`. Run three temporary Config passes, keeping the other metrics ordinary:
@@ -397,4 +397,4 @@ The dated records now live in the linked continuation
 focused evidence and explicit live/headless boundary. Keep this document's
 acceptance rules and checklist here; append command results and observations to
 the continuation rather than growing this file past its 400-line limit.
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: synchronize platform and race gates, separate live proof, and narrow race, leak, asset-timing, issue #124 and HWND-reuse claims.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: distinguish ordinary reporter DPI coverage from maintainer-owned mixed-DPI release acceptance while preserving the full live checklist.
