@@ -522,32 +522,52 @@ async function verifyResizeEdgeAllowList() {
   const scenario = createResizeScenario(8);
   await settlePromises();
 
-  for (const edge of ["toString", "valueOf", "constructor", "hasOwnProperty", "__proto__"]) {
+  for (const edge of [
+    "toString",
+    "valueOf",
+    "constructor",
+    "hasOwnProperty",
+    "__proto__",
+    "",
+    "diagonal",
+  ]) {
     const target = new FakeElement("div");
     target.setAttribute("data-mullion-resize-edge", edge);
     const event = dispatchPointerDown(scenario, target, Number.NaN, Number.NaN);
     assert.equal(
       scenario.resizeCalls.length,
       0,
-      `an inherited Object.prototype member was accepted as a resize edge: ${edge}`,
+      `invalid resize edge was dispatched: ${JSON.stringify(edge)}`,
     );
-    assert.equal(event.defaultPrevented, false, `${edge} was consumed as a resize gesture`);
-    assert.equal(event.propagationStopped, false, `${edge} stopped event propagation`);
+    assert.equal(
+      event.defaultPrevented,
+      false,
+      `invalid resize edge was consumed: ${JSON.stringify(edge)}`,
+    );
+    assert.equal(
+      event.propagationStopped,
+      false,
+      `invalid resize edge stopped propagation: ${JSON.stringify(edge)}`,
+    );
   }
 
-  const validTarget = new FakeElement("div");
-  validTarget.setAttribute("data-mullion-resize-edge", "left");
-  const validEvent = dispatchPointerDown(scenario, validTarget, Number.NaN, Number.NaN);
-  assert.deepEqual(scenario.resizeCalls, ["left"], "a valid own resize edge was rejected");
-  assert.equal(validEvent.defaultPrevented, true, "a valid own resize edge was not consumed");
-  assert.equal(validEvent.propagationStopped, true, "a valid own resize edge did not stop propagation");
-
-  const unknownTarget = new FakeElement("div");
-  unknownTarget.setAttribute("data-mullion-resize-edge", "diagonal");
-  const unknownEvent = dispatchPointerDown(scenario, unknownTarget, Number.NaN, Number.NaN);
-  assert.deepEqual(scenario.resizeCalls, ["left"], "an unknown resize edge was dispatched");
-  assert.equal(unknownEvent.defaultPrevented, false, "an unknown resize edge was consumed");
-  assert.equal(unknownEvent.propagationStopped, false, "an unknown resize edge stopped propagation");
+  for (const edge of resizeEdges) {
+    const target = new FakeElement("div");
+    target.setAttribute("data-mullion-resize-edge", edge);
+    const event = dispatchPointerDown(scenario, target, Number.NaN, Number.NaN);
+    assert.equal(
+      scenario.resizeCalls.at(-1),
+      edge,
+      `valid own resize edge was rejected: ${edge}`,
+    );
+    assert.equal(event.defaultPrevented, true, `${edge} resize gesture was not consumed`);
+    assert.equal(
+      event.propagationStopped,
+      true,
+      `${edge} resize gesture did not stop propagation`,
+    );
+  }
+  assert.deepEqual(scenario.resizeCalls, resizeEdges, "valid resize edges dispatched out of order");
 }
 
 async function verifyFrameStateOrderingAndMoveLoop() {

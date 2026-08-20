@@ -128,6 +128,10 @@ bounded shell-ready/timer show gate described in
 
 **Warning about this very fix.** In one configuration the clamp was a **runtime no-op** — the trace showed the parent's `WM_NCHITTEST` returning only resize-border codes, never `HTCAPTION`; the clamp never fired once. The drag came from somewhere else entirely: an injected `position: fixed` resize-edge overlay *inside the web content*, sitting directly below the caption, catching the pointer and starting a top-edge resize that looked like a drag. The clamp was correct, harmless and irrelevant. Only the trace log proved it.
 
+The current overlay fallback contract and its JavaScript test boundary are
+canonical in [`hit-test.md`](./hit-test.md); this historical warning is not a
+second definition of valid resize edges.
+
 > Background: with a fully extended client area, a custom `WM_NCHITTEST` returning `HTMAXBUTTON` does **not** produce the Snap flyout; it appears to require a real DWM-managed non-client caption. Chromium-based shells get around this because the renderer lives in the window hierarchy the shell owns, so its hit-test can cooperate with `DwmDefWindowProc`. WebView2 lives in a *separate* child HWND that masks the top-level hit-test on hover. A fully custom HTML title bar **plus** native Snap may simply not be reachable in a WebView2 host.
 
 ---
@@ -314,4 +318,4 @@ does not.
 
 The four items about what a log line may say are in [logging-dead-ends.md](./logging-dead-ends.md) with the sections they summarise.
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: mark the DWM-cloak and loading-window resolution as historical and link the current startup show gate.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: route the resize-overlay dead end to the canonical fallback contract instead of duplicating it.

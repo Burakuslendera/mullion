@@ -133,7 +133,7 @@
     const edgeFromTarget = (target) => {
       if (!(target instanceof Element)) return "";
       const edge = target.dataset.__DATASET__ || "";
-      // `in` would admit Object.prototype names like toString/constructor; own-property filtering keeps the fixed edge allow-list while host validation remains unchanged.
+      // Object.hasOwn keeps Object.prototype names out of this fixed edge allow-list.
       return Object.hasOwn(zoneStyles, edge) ? edge : "";
     };
     const onPointerDown = (event) => {

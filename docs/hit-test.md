@@ -74,8 +74,11 @@ or tooltip trace can consume it.
 
 The injected resize overlay mirrors the independent half-extent bounds in CSS
 coordinates; its eight zones opt out of ancestor `app-region: drag`, and valid
-event coordinates outrank stale DOM targets. CSS hit-test overrides still use the
-rules above.
+event coordinates outrank stale DOM targets. When coordinates are unavailable
+and routing falls back to `data-<namespace>-resize-edge`, only the eight own keys
+in the fixed zone table are resize gestures. Inherited `Object.prototype` names
+and unknown values neither dispatch a resize nor prevent or stop the
+application's event. CSS hit-test overrides still use the rules above.
 
 ## 2. Issue #113 hot-path invariants
 
@@ -122,6 +125,13 @@ diagnostic formatter must return an empty string with zero allocations, while th
 enabled contract checks its fields. These tests prove lazy composition and
 formatting gates without faking live Win32 timings.
 
+The frontend half is locked by `scripts/test-bridge.mjs`:
+`verifyResizeEdgeAllowList` forces unavailable coordinates so routing must use
+the attribute fallback. It proves that all eight own table keys dispatch and
+consume the event, while inherited `Object.prototype` names and an unknown edge
+do neither. This is a JavaScript event-routing seam; it does not prove delivery
+through a live WebView.
+
 The headless boundary does not prove the cost or behavior of a live `HWND`, DWM,
 monitor topology, WebView child hit routing, tooltip visuals, or shell cursor
 messages. Those remain live verification obligations in
@@ -136,4 +146,4 @@ messages. Those remain live verification obligations in
 - [`docs/decisions/0041-wm-nchittest-reader-gates.md`](./decisions/0041-wm-nchittest-reader-gates.md)
 - [`docs/decisions/0019-maximized-hittest-stays-in-process.md`](./decisions/0019-maximized-hittest-stays-in-process.md)
 
-> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: make issue #113 hit-test reader, allocation and headless-test contracts canonical.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: name the frontend resize fallback test boundary and its own-key/non-consuming negative contract.
