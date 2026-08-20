@@ -28,18 +28,34 @@ The SDK's usual entry point is `CreateCoreWebView2EnvironmentWithOptions`, expor
 `WebView2Loader.dll`, which an application is expected to ship beside its executable.
 The library ships no such DLL. Instead:
 
-1. **Discover the runtime.** Read the Evergreen registration Edge Update publishes under
-   `Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}` —
-   `pv` (product version) and `location` — from `HKCU`, then `HKLM` in the 32-bit
-   registry view (Edge Update is a 32-bit installer and writes under `WOW6432Node`),
-   then the 64-bit view. `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` overrides all of it and is
-   treated as a **pin**: if the folder holds no usable runtime the host fails rather
-   than silently falling back to a different browser build. Every candidate is checked
-   against the disk before it is accepted, because the registry outlives uninstalls,
-   and a relative `location` value is dropped rather than resolved against the process
-   working directory, so a malformed or planted registry entry cannot steer the load
-   to a CWD-relative path (issue #69).
-   The pin uses the same absolute-path invariant as registry `location`: bare relative paths, `.\...`, drive-relative `C:...`, and rooted `\...` values are rejected as invalid pins; the existing pin diagnostic is returned without fallback or disk probing.
+1. **Gate the process architecture, then discover the runtime.** `findRuntime`
+   rejects every target except `windows/amd64` before registry, pin, disk or DLL
+   work ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
+   On the supported target, read the Evergreen registration Edge Update publishes
+   under
+   `Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`:
+   `pv` (product version) and `location`, from `HKCU`, then `HKLM` in the 32-bit
+   registry view (Edge Update is a 32-bit installer and writes under
+   `WOW6432Node`), then the 64-bit view.
+
+   `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` overrides all registry candidates and is
+   a **pin**, not a hint. It must be an absolute Windows path. Bare relative,
+   `.\...`, drive-relative `C:...`, and rooted-but-drive-relative `\...` values
+   are invalid. An invalid pin returns the existing pin diagnostic immediately:
+   it cannot fall back to the registry, probe the disk, resolve the runtime DLL,
+   or load another browser build. A valid absolute pin can proceed to ordinary
+   candidate validation, but if it contains no usable runtime the host still
+   fails rather than selecting a different build.
+
+   Registry `location` has the same absolute-path invariant, but a malformed or
+   stale registry candidate may fall through to later registry/default
+   candidates. Every candidate is checked against disk before acceptance because
+   registry entries outlive uninstalls. This distinction prevents either a
+   planted registry value or an explicit pin from steering a load through the
+   process working directory (issue #69). The headless
+   `TestDiscoverCandidatesRejectsRelativePinnedFolders` locks the invalid-pin
+   no-fallback/no-disk boundary; it does not load a real WebView2 DLL.
+
 2. **Load the runtime's own COM server**, `<runtime>\EBWebView\<arch>\EmbeddedBrowserWebView.dll`,
    with `LOAD_WITH_ALTERED_SEARCH_PATH` so its siblings resolve out of the install
    folder and not out of ours (the wrong folder, and possibly a writable one).
@@ -251,4 +267,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: document #98 ownership/reporting boundaries, Embed panic cleanup, event-reference transfer, BOOL out-parameter width, and headless verification limits; document #111's absolute-path invariant and invalid-pin diagnostic for runtime discovery.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: define the absolute executable-folder pin as fail-closed before fallback, disk and DLL work, and link its architecture gate and headless test.

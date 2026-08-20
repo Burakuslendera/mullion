@@ -9,7 +9,6 @@ package webview2
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -107,14 +106,15 @@ func TestFindRuntimeAMD64ProceedsThroughDiscovery(t *testing.T) {
 		t.Fatalf("amd64 calls = %q, want discovery,disk,DLL version", got)
 	}
 }
+
 func TestDiscoverCandidatesRejectsRelativePinnedFolders(t *testing.T) {
-	for i, relative := range []string{
+	for _, relative := range []string{
 		`EdgeWebView\Application`,
 		`.\runtime`,
 		`C:runtime`,
 		`\runtime`,
 	} {
-		t.Run(fmt.Sprintf("%d_%s", i, relative), func(t *testing.T) {
+		t.Run(relative, func(t *testing.T) {
 			t.Setenv(BrowserExecutableFolderEnv, relative)
 
 			candidates := discoverCandidates()
