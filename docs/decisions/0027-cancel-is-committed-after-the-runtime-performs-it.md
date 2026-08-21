@@ -1,6 +1,6 @@
 # 0027. A navigation cancel is committed only after the runtime has performed it
 
-**Status:** Accepted; getter provenance and exact restoration after confirmed cancel are refined by [0037](./0037-event-values-preserve-getter-provenance.md)
+**Status:** Accepted; getter provenance and exact restoration after confirmed cancel are refined by [0037](./0037-event-values-preserve-getter-provenance.md), and [0043](./0043-external-routes-are-uri-only-os-activations.md) owns the current URI-only external-routing consequences
 
 ## Contents
 
@@ -275,4 +275,4 @@ What could not be exercised live is the failure this record is mostly about:
 `put_Cancel` returning an error has never been observed and cannot be provoked
 from outside.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: route cancel provenance forward to 0037 and add the required navigation index without changing the historical decision.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point the historical cancel-ordering decision to 0043 for the current external-routing contract.

@@ -1,6 +1,6 @@
 # 0029. The system-browser launch runs off the UI thread, bounded
 
-**Status:** Accepted
+**Status:** Accepted; [0043](./0043-external-routes-are-uri-only-os-activations.md) clarifies that the eight-worker bound is concurrency only and owns the current URI-only external-routing contract
 
 ## Context
 
@@ -184,4 +184,4 @@ ran it on this branch and it passed (run 30171063722) — the first race-detecto
 run over the new goroutine. What it touches is `host.log` (already atomic, and
 now documented for concurrent use) and a buffered channel.
 
-> Last updated: 2026-07-25 | Editor: Claude (Opus 5) | Change: new record - the system-browser launch moves to a bounded set of per-launch goroutines with their own STA apartment, so a WebView2 event handler no longer parks the UI thread on ShellExecuteW (issue #74); Config.Logger's concurrency promise is written down rather than changed. Measured live the same day: the handler's own time is below the clock's resolution, and ShellExecuteW takes 230 ms on a launch that has to start the browser - the number the Context could previously only infer.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point the historical worker-bound decision to 0043 for the current concurrency-not-rate and URI-only routing contract.

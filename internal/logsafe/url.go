@@ -51,13 +51,17 @@ const truncationMarker = "..."
 //     distinguishable - which is what issue #77 needs from these lines.
 //   - a value cut to fit ends in "..." so a reader can tell that it was.
 //
-// Everything else falls back to the bounded reduction: a value that is not
-// http(s) to begin with, one that does not parse, an authority-less form
-// ("http:evil.example", "http:/C:/Users/alice/x"), and any host failing the
-// rules above. That fallback is load-bearing. A file: URL's path really is a
-// local filesystem path and must still collapse to its file name; the empty
-// source still has to reduce to "unknown" and decisions/0021's data: observation
-// rests on the reduction it was verified with. All three still hold.
+// The bounded fallback remains for a value that is not http(s) to begin with,
+// an authority-less form ("http:evil.example", "http:/C:/Users/alice/x"), any
+// host failing the rules above when no raw userinfo is present, and other
+// parse-invalid paths. A literal http(s) value that fails reduction with raw
+// userinfo in its authority instead becomes "unknown" plus bare query/fragment
+// markers: after a parse failure no part of that credential-bearing authority is
+// trustworthy. Other parse-invalid paths keep the fallback. That fallback is
+// load-bearing. A file: URL's path
+// really is a local filesystem path and must still collapse to its file name; the
+// empty source still has to reduce to "unknown" and decisions/0021's data:
+// observation rests on the reduction it was verified with. All three still hold.
 //
 // The explicit blob: and filesystem: wrappers retain an inner http(s)
 // origin whole while bounding the suffix. Generic fallbacks, including data:,
@@ -77,11 +81,38 @@ func URL(raw string) string {
 	head, hasQuery, hasFragment := splitURLMarks(raw)
 	reduced, ok := reduceHTTPURL(head, hasQuery, hasFragment)
 	if !ok {
-		// A fallback still has to avoid cutting a host into a believable prefix,
-		// preserve query/fragment presence, and mark any bounded result.
+		// A failed parse cannot distinguish credentials from a host once raw
+		// userinfo is present. Refuse the whole untrusted authority rather than
+		// handing credentials to the plain fallback; retain only the bounded
+		// unknown value and query/fragment presence.
+		if rawHTTPAuthorityHasUserinfo(head) {
+			return reduceURLFallback("", false, hasQuery, hasFragment)
+		}
+		// Other fallbacks still have to avoid cutting a host into a believable
+		// prefix, preserve query/fragment presence, and mark any bounded result.
 		return reduceURLFallback(head, false, hasQuery, hasFragment)
 	}
 	return reduced
+}
+
+// rawHTTPAuthorityHasUserinfo reports literal userinfo evidence without parsing
+// or copying raw. URL already established a literal http(s) prefix. The raw
+// authority ends at either path separator or at a query/fragment marker; the
+// latter two are normally absent because splitURLMarks has already removed them.
+func rawHTTPAuthorityHasUserinfo(raw string) bool {
+	schemeEnd := len("http://")
+	if len(raw) >= len("https://") && strings.EqualFold(raw[:len("https://")], "https://") {
+		schemeEnd = len("https://")
+	}
+	for index := schemeEnd; index < len(raw); index++ {
+		switch raw[index] {
+		case '@':
+			return true
+		case '/', '\\', '?', '#':
+			return false
+		}
+	}
+	return false
 }
 
 func reduceURLFallback(raw string, scanURLs, hasQuery, hasFragment bool) string {

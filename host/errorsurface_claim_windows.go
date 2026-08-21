@@ -13,13 +13,14 @@ package host
 // everything here runs on the UI thread from the navigation callbacks, so none
 // of the fields it touches need a lock.
 
-// noteAndGateNavigation runs the error-surface identity claim and then the
-// PinNavigationToOrigin gate for one NavigationStarting, and reports whether to
-// cancel. The surface's own navigation - claimed only from the exact generated
-// URL or a successfully read empty URI - is never cancelled. Cancelling it
-// would tear down mullion's own fallback page the moment it was recognised.
-// Split from the callback so the claim-beats-gate rule and the gate are both
-// headless-testable (issue #6, decisions/0023).
+// noteAndGateNavigation runs the error-surface identity claim before the
+// PinNavigationToOrigin gate for one NavigationStarting and reports whether to
+// cancel. The surface's own navigation is claimed only for a pending generation
+// whose URI getter succeeded with the exact generated URL or a successfully read
+// empty URI. The empty NavigationStarting form is tolerated but unverified; live
+// fallback starts reported the full URL. Failed getters, arbitrary data: URIs,
+// and other values fail closed. A successful claim precedes origin pinning so
+// mullion does not cancel its own fallback (decisions/0023 and 0037).
 //
 // Deciding is all it does. What follows a cancel - remembering the id and
 // routing the target - happens in noteNavigationCancelled only after PutCancel
@@ -75,13 +76,13 @@ func (host *Host) noteNavigationTargetObserved(
 // whether the claim happened, so the caller can log it. Split from the
 // callback so the claim is headless-testable without a Browser.
 //
-// The claim is guarded twice. errorSurfacePending scopes it to the window
-// between the host issuing the surface Navigate and that navigation starting,
-// so no later data: navigation can steal the identity. The URI match then
-// keeps a racing foreign navigation - one already queued when the host
-// navigated - from being claimed inside that window: its http(s) URI matches
-// none of the accepted forms, so it passes through unclaimed and the surface's
-// own start, which the runtime guarantees will still fire, claims later.
+// The claim is guarded by pending generation and successful URI provenance.
+// errorSurfacePending scopes it to the interval after mullion commits to
+// Navigate; only the exact generated URL or a successfully read empty URI then
+// matches. A racing foreign HTTP(S) or arbitrary data: start passes unclaimed.
+// A foreign start successfully reporting empty has not been observed; if it
+// steals a pending claim, decision 0037 classifies that as the conditional P2
+// tripwire.
 func (host *Host) noteSurfaceNavigationStarting(uri string, navigationID uint64) bool {
 	return host.noteSurfaceNavigationStartingKnown(uri, true, navigationID)
 }
@@ -123,9 +124,10 @@ func (host *Host) noteSurfaceNavigationStartingObserved(
 }
 
 // surfaceURIMatches admits only the exact generated URL or a successfully read
-// empty value. The latter is WebView2's measured representation of a data:
-// document; a getter failure is kept separate by the caller and never reaches
-// this predicate.
+// empty URI. Empty was measured for the fallback's WebMessage source, not for its
+// NavigationStarting URI; the successful-empty start remains a tolerated,
+// unverified runtime form. Getter failure stays separate and arbitrary data:
+// values never match (decision 0037).
 func surfaceURIMatches(reported, expected string) bool {
 	return reported == expected || reported == ""
 }

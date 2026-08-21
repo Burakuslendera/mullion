@@ -149,6 +149,26 @@ func TestBridgeRejectsUnknownResizeEdge(t *testing.T) {
 	}
 }
 
+type restrictedFallbackControl struct {
+	method string
+	args   string
+	log    string
+}
+
+// Keep the restricted fallback capability set owned in one fixed-size fixture.
+// The production-callback test below and the direct dispatcher contract both
+// consume it, so WindowFrameState cannot silently disappear while prose still
+// describes all seven controls.
+var restrictedFallbackControls = [7]restrictedFallbackControl{
+	{methodStartDrag, "[]", "titlebar drag requested"},
+	{methodStartResize, `["left"]`, "resize requested, edge=left"},
+	{methodMinimise, "[]", "minimize requested"},
+	{methodToggleMaximise, "[]", "maximize toggle requested"},
+	{methodIsMaximised, "[]", ""},
+	{methodFrameState, "[]", ""},
+	{methodClose, "[]", "quit requested"},
+}
+
 // TestBridgeRestrictedSourcePreservesWatchdogEvidenceAndWindowControls is the
 // headless fallback-surface regression. The failed application owns the render
 // watchdog evidence. diagnostics.js is injected into the data: fallback too, but
@@ -181,20 +201,24 @@ func TestBridgeRestrictedSourcePreservesWatchdogEvidenceAndWindowControls(t *tes
 		}
 	}
 
-	controls := []struct {
-		method string
-		args   string
-		log    string
-	}{
-		{methodStartDrag, "[]", "titlebar drag requested"},
-		{methodStartResize, `["left"]`, "resize requested, edge=left"},
-		{methodMinimise, "[]", "minimize requested"},
-		{methodToggleMaximise, "[]", "maximize toggle requested"},
-		{methodIsMaximised, "[]", ""},
-		{methodFrameState, "[]", ""},
-		{methodClose, "[]", "quit requested"},
+	seenControls := make(map[string]struct{}, len(restrictedFallbackControls))
+	for _, control := range restrictedFallbackControls {
+		if !errorSurfaceMethodAllowed(control.method) {
+			t.Fatalf("fallback control %q is absent from the restricted capability set", control.method)
+		}
+		if _, duplicate := seenControls[control.method]; duplicate {
+			t.Fatalf("restricted fallback capability fixture repeats %q", control.method)
+		}
+		seenControls[control.method] = struct{}{}
 	}
-	for id, control := range controls {
+	if len(seenControls) != 7 {
+		t.Fatalf("restricted fallback capability count = %d, want exactly 7", len(seenControls))
+	}
+	if _, ok := seenControls[methodFrameState]; !ok {
+		t.Fatal("restricted fallback capabilities omit WindowFrameState")
+	}
+
+	for id, control := range restrictedFallbackControls {
 		raw := `{"id":` + strconv.Quote(strconv.Itoa(id)) + `,"method":` +
 			strconv.Quote(control.method) + `,"args":` + control.args + `}`
 		reply := host.handleWebMessage(raw, false)
@@ -233,50 +257,79 @@ func TestBridgeRestrictedSourcePreservesWatchdogEvidenceAndWindowControls(t *tes
 	}
 }
 
-func TestWebMessageCallbackKeepsFallbackOutOfTrustedAdmission(t *testing.T) {
+func TestProductionCallbacksClaimKnownEmptyFallbackBeforePinAndRestrictItsBridge(t *testing.T) {
 	var bridgeCalls int
 	host, logger := newTestHost(t, Config{
-		StartHidden: true,
+		StartHidden:           true,
+		PinNavigationToOrigin: true,
 		Bridge: func(string) string {
 			bridgeCalls++
 			return ""
 		},
 	})
+	host.MarkFrontendPhase("application bootstrap")
+	beforeDiagnostics := host.diagnostics.timeoutSummary()
 	host.errorSurfaceURL = "data:text/html,surface"
-	noteFail(host, 0)
+	if !noteFail(host, 0) {
+		t.Fatal("failed document did not arm a pending fallback generation")
+	}
 	issueCurrentErrorSurface(t, host)
-	if !host.noteSurfaceNavigationStarting("", 0) {
-		t.Fatal("production fallback setup did not claim the successful empty source")
-	}
-	browser := host.newWebViewBrowser()
-	if browser.MessageCallback == nil {
-		t.Fatal("production Browser constructor left MessageCallback disconnected")
-	}
-	callback := browser.MessageCallback
-	applicationCall := `{"id":"app","method":"GetSecret","args":[]}`
 
-	callback(webview2.WebMessageObservation{Message: applicationCall}, nil)
-	callback(webview2.WebMessageObservation{Message: `{"id":"ready","method":"` + methodReady + `","args":[]}`}, nil)
+	browser := host.newWebViewBrowser()
+	if browser.NavigationStartingCallback(webview2.NavigationStartingObservation{
+		URI:          "",
+		NavigationID: 41,
+	}) {
+		t.Fatal("successfully observed empty fallback start reached the origin pin")
+	}
+	if host.errorSurfaceNav != knownNavigationIdentity(41) {
+		t.Fatalf("claimed fallback identity = %+v, want known value 41", host.errorSurfaceNav)
+	}
+	if host.errorSurfacePending || !host.errorSurfaceActive {
+		t.Fatalf("known-empty start did not claim pending authority: pending=%t active=%t",
+			host.errorSurfacePending, host.errorSurfaceActive)
+	}
+
+	logStart := len(logger.String())
+	for id, control := range restrictedFallbackControls {
+		browser.MessageCallback(webview2.WebMessageObservation{
+			Message: `{"id":` + strconv.Quote(strconv.Itoa(id)) + `,"method":` +
+				strconv.Quote(control.method) + `,"args":` + control.args + `}`,
+		}, nil)
+	}
+	allowedLog := logger.String()[logStart:]
+	if got := strings.Count(allowedLog, "bridge response sender unavailable"); got != len(restrictedFallbackControls) {
+		t.Fatalf("restricted fallback responses = %d, want exactly %d:\n%s",
+			got, len(restrictedFallbackControls), allowedLog)
+	}
+	for _, control := range restrictedFallbackControls {
+		if control.log != "" && !strings.Contains(allowedLog, control.log) {
+			t.Fatalf("production callback did not execute fallback control %q; log missing %q:\n%s",
+				control.method, control.log, allowedLog)
+		}
+	}
+
+	for _, raw := range []string{
+		`{"id":"app","method":"GetSecret","args":[]}`,
+		`{"id":"shell","method":"` + methodShellReady + `","args":[]}`,
+		`{"id":"ready","method":"` + methodReady + `","args":[]}`,
+		`{"id":"phase","method":"` + methodPhase + `","args":["fallback document created"]}`,
+		`{"id":"diagnostic","method":"` + methodDiagnostic + `","args":["error","fallback diagnostic"]}`,
+	} {
+		browser.MessageCallback(webview2.WebMessageObservation{Message: raw}, nil)
+	}
 	if bridgeCalls != 0 {
-		t.Fatal("fallback source reached Config.Bridge through the production callback")
+		t.Fatalf("restricted fallback reached Config.Bridge %d times", bridgeCalls)
 	}
 	host.renderMu.Lock()
-	fallbackReady := host.frontendReady
+	ready, shellReady := host.frontendReady, host.frontendShellReady
 	host.renderMu.Unlock()
-	if fallbackReady {
-		t.Fatal("fallback source changed readiness through the production callback")
+	if ready || shellReady {
+		t.Fatalf("restricted fallback changed readiness: ready=%t shellReady=%t", ready, shellReady)
 	}
-	callback(webview2.WebMessageObservation{Message: `{"id":"drag","method":"` + methodStartDrag + `","args":[]}`}, nil)
-	if !strings.Contains(logger.String(), "titlebar drag requested") {
-		t.Fatal("production callback rejected an allowed fallback window control")
-	}
-
-	callback(webview2.WebMessageObservation{
-		Message: applicationCall,
-		Source:  host.source.origin.text,
-	}, nil)
-	if bridgeCalls != 1 {
-		t.Fatalf("trusted source bridge calls = %d, want 1", bridgeCalls)
+	if after := host.diagnostics.timeoutSummary(); after != beforeDiagnostics {
+		t.Fatalf("restricted fallback changed retained diagnostics:\nbefore %q\nafter  %q",
+			beforeDiagnostics, after)
 	}
 }
 

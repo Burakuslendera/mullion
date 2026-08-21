@@ -169,15 +169,29 @@ routes through the tagged UI command rather than dereferencing a looked-up
 `HWND` on the caller.
 
 Two threads enter a COM apartment, not one. The UI thread's is the process's
-(`initializeCOM`, step 3 above). The second belongs to the system-browser launch:
-`ShellExecuteW` blocks until the target application has started, and running it
-inside a WebView2 event handler parked the message loop for as long as that took,
-so each launch gets a goroutine that pins its OS thread, enters its own STA,
-launches and returns
+(`initializeCOM`, step 3 above). The second belongs to each system-browser
+launch: `ShellExecuteW` can block while resolving and starting the registered
+handler, so running it in a WebView2 event handler would park the message loop.
+Each launch gets a goroutine that pins its OS thread, enters its own STA, calls
+the shell, and returns
 ([decisions/0029](./decisions/0029-system-browser-launch-off-the-ui-thread.md)).
-Eight may be in flight; over that a launch is dropped and said out loud. It
-touches no window, so the rule above is unaffected — nothing window-affine runs
-there.
+At most eight such workers may be in flight; excess launches are dropped and
+warned. This bounds concurrent goroutines, OS threads, and shell calls only. It
+is not a lifetime, per-document, per-origin, or time-window rate limit.
+
+The opt-in `PinNavigationToOrigin` route hands off only after WebView2 accepts
+cancellation. The default-on `NewWindowRequested` attempt first requires
+`PutHandled(true)` to succeed; only that success suppresses the runtime popup.
+`GetUri` and `GetIsUserInitiated` must then both succeed before the host routes.
+A getter failure produces no host launch after suppression; a `PutHandled`
+failure produces no host launch and leaves runtime popup behavior unspecified.
+Both routes pass the successfully observed HTTP(S) URI unchanged to
+`ShellExecuteW` as a fresh OS URL activation, not request replay: method, body,
+headers, referrer, opener, WebView profile, and session are not preserved.
+Windows and the handler decide process, tab, profile/session, stored-credential,
+userinfo, query, fragment, and network behavior. `IsUserInitiated` remains
+diagnostic classification, never physical-input authority
+([decision 0043](./decisions/0043-external-routes-are-uri-only-os-activations.md)).
 
 That worker is why `Config.Logger` carries a concurrency contract: an
 implementation must be safe to call from more than one goroutine. The launch
@@ -285,11 +299,11 @@ and never reaches the application:
 
 ```
 WindowShow   WindowHide   WindowClose   WindowMinimise   WindowToggleMaximise
-WindowIsMaximised   WindowStartDrag   WindowStartResize
+WindowIsMaximised   WindowFrameState   WindowStartDrag   WindowStartResize
 WindowShellReady   WindowReady   WindowPhase   WindowDiagnostic
 ```
 
-The first eight are the window controls. The last four are the signals the injected
+The first nine are the window controls. The last four are the signals the injected
 scripts send back: the show gate (`shellReady`), the render watchdog (`ready`), and
 the frontend diagnostics (`phase`, `diagnostic`).
 
@@ -303,19 +317,25 @@ origin matching gates `Config.Bridge`
 
 The fallback is a separate generation-bound capability, never a `data:` origin
 allow-list ([decision 0037](./decisions/0037-event-values-preserve-getter-provenance.md)).
-A failure makes one generation pending; only a successfully read exact generated
-URL or empty URI on its NavigationStarting claims it as active. The next start
-suspends controls immediately; only the matching confirmed cancel or benign abort
-restores the still-visible page, and unclassifiable completion state fails closed.
+A failure makes one generation pending. Before origin pinning, only a successful
+URI getter reporting the exact generated URL or a successfully read empty URI
+claims it active. The empty NavigationStarting form is tolerated but unverified;
+live fallback starts reported the full URL. Failed getters, arbitrary `data:`
+URIs, and all other values fail closed. The next start suspends controls
+immediately; only a matching
+confirmed cancel or benign abort restores the still-visible page, and
+unclassifiable completion state fails closed.
 Benign-abort attribution deliberately retains only the exact last navigation
 start; an older status-9 completion therefore arms the fallback and may replace
 a live document. [Decision 0024](./decisions/0024-benign-abort-in-process.md)
 owns that availability cost. Issue #87's two bounded live probes did not
 reproduce the required ordering; see the
 [dated verification record](./verification-records.md#2026-08-records).
-That active fallback receives exactly six reserved methods — start drag, start
-resize, minimise, toggle maximise, query maximised and close — but never readiness,
-diagnostics or `Config.Bridge`. Rejected messages receive no reply to correlate.
+That active fallback receives exactly seven reserved methods:
+`WindowStartDrag`, `WindowStartResize`, `WindowMinimise`,
+`WindowToggleMaximise`, `WindowIsMaximised`, `WindowFrameState`, and
+`WindowClose`; never readiness, diagnostics, or `Config.Bridge`. Rejected
+messages receive no reply to correlate.
 An unknown trusted-origin method with a bridge configured is the application's to
 answer; with none, it yields `ok: false`. A malformed request is logged and
 dropped, never a panic.
@@ -355,6 +375,7 @@ before reading a pinned runtime path or probing the machine. CI gives the
 supported target its own explicit Windows/x64 runtime-and-suite job, executes
 the rejection gates under Windows/386 WOW64, and keeps ARM64 compile-only.
 Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
-abstraction is attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
+abstraction is attempted
+([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: expose decision 0024's stale-ID cost and issue #87's no-repro boundary from the orientation path.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: define conditional new-window handling, exact-URI OS activation, concurrency-not-rate, and the current nine-control dispatcher/seven-control fallback subset.

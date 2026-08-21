@@ -150,9 +150,19 @@ a runtime nor a window
 `add_NavigationCompleted`, `add_ProcessFailed` and `add_NewWindowRequested` each take a
 COM object the runtime calls back into: a vtable, an IUnknown implementation and a
 refcount, written in Go. Four constraints govern them, and three of the four are fatal
-when violated. `NewWindowRequested` is where a single-window host takes `window.open` /
-`target=_blank` over from the runtime: it suppresses the runtime's own detached new
-window and routes an http/https target to the system browser (decisions/0022).
+when violated. `NewWindowRequested` is where a single-window host attempts to
+take `window.open` / `target=_blank` over from the runtime. It first calls
+`PutHandled(true)`; only success suppresses the runtime popup. The URI and
+`IsUserInitiated` getters must then both succeed before the host routes the
+HTTP(S) URI unchanged. Getter failure produces no host launch after suppression;
+`PutHandled` failure produces no host launch and leaves runtime behavior
+unspecified. The opt-in `PinNavigationToOrigin` route performs the same handoff
+only after WebView2 accepts cancellation. Each handoff is a fresh OS URL
+activation, not preservation of method, body, headers, referrer, opener, WebView
+profile, or session. The handler decides userinfo/query/fragment and
+profile/session behavior. Eight workers bound concurrency, not lifetime rate;
+`IsUserInitiated` is diagnostic rather than physical-input authority
+([decision 0043](./decisions/0043-external-routes-are-uri-only-os-activations.md)).
 
 - **Build vtables once, lazily after the architecture gate.** `windows.NewCallback`
   allocates from a small, fixed table and never frees an entry. A callback allocated
@@ -277,4 +287,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: document permitted cross-navigation overlap, unspecified completion status and issue #87's bounded evidence link.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: define conditional NewWindowRequested handling and exact-URI fresh OS activation without request/profile/session preservation.

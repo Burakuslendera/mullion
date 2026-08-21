@@ -74,6 +74,60 @@ acceptance rules and checklist in the parent document.
 
 - **2026-08-21 — Issue #127 remote boundary / not covered:** the portable jobs cross-compiled Windows/ARM64 but did not execute it; Windows/ARM64 therefore remains compile-only. The Windows lanes checked build/test behavior plus runtime discovery and the required WebView2 export, but created no visible window and do not prove WebView2 control hosting or rendering. The formatting-only `f69f129` pre-push checks likewise make no runtime-behavior claim.
 
+- **2026-08-21 — Issue #75 first live attempt, inconclusive:** Windows build
+  26200.9168/amd64, Go 1.26.5, and WebView2 151.0.4129.93. Command transport
+  removed backslashes from the intended absolute
+  `UserDataFolder`, yielding malformed drive-relative
+  `C:UsersPublicmullion-issue75-probe-20260821-01profile`. WebView2 resolved it
+  beneath the temporary consumer and never completed controller creation; the
+  25-second failsafe ended with HRESULT `0x80004004` (`Operation aborted`) before
+  visibility. There were zero `window.open` calls, route events, external tabs,
+  or server requests. This is setup-failure evidence only: it says nothing about
+  popup suppression, `NewWindowRequested`, `PutHandled`, or routing. Exact
+  command-line-matched owned WebView2 processes and temporary source/profile
+  files were removed; repository status remained identically ` M host/config.go`
+  and no tracker action occurred.
+
+- **2026-08-21 — Issue #75 corrected live URI-route probe:** Windows build
+  26200.9168/amd64, Go 1.26.5, and WebView2 151.0.4129.93. A single 750 ms timer
+  recorded `direct_user_gesture=false` while
+  `navigator.userActivation.isActive=true` and `hasBeenActive=true`; exactly one
+  `NewWindowRequested` route logged `user_initiated=true` and the redacted
+  `uri=http://127.0.0.1:49358/issue75?#`. That host callback can run only after
+  `PutHandled(true)`, `GetUri`, and `GetIsUserInitiated` succeed, although the
+  live log does not expose separate results for those three operations. The
+  caller-owned loopback server then received the primary
+  `GET /issue75?token=synthetic` with no `Authorization`, `Cookie`, or `Referer`;
+  the fragment was absent at the server. Fifteen feed-shaped GETs and one favicon
+  GET followed; the probe did not schedule them and assigns no cause. The host,
+  server, matched WebView2 process, temporary consumer, fresh profile, and spill
+  were cleaned; the only retained raw evidence is local, the target was never
+  remote, repository status remained identically ` M host/config.go`, and no
+  tracker action occurred. This one route proves the observed URI handoff/server
+  reach on this setup only. It makes no POST, repeated-rate, default-browser
+  profile/session, credential-forwarding, or ancillary-request-attribution claim;
+  [decision 0043](./decisions/0043-external-routes-are-uri-only-os-activations.md)
+  owns those boundaries.
+
+- **2026-08-22 — Issue #75 malformed-userinfo P2 correction:** the
+  literal-HTTP(S) logging reducer now scans the raw authority only after URL
+  reduction fails. A literal `@` before the first `/`, `\`, `?`, or `#` rejects
+  the entire untrusted authority and retains only `unknown` plus bare
+  query/fragment markers. The exact invalid-percent-escape reproducer
+  `https://alice:bad%zz@evil.example?token=s3cr3t#private-fragment` is locked to
+  `unknown?#`; a parse-invalid path with `@` after its separator locks the
+  ordinary fallback boundary. An allocation regression compares 1 KiB and 1 MiB
+  malformed userinfo so the diagnostic cannot regain input-sized retained state.
+  The production new-window callback regression locks rejection before the
+  opener and the same credential-free diagnostic.
+
+- **2026-08-22 — Issue #75 malformed-userinfo evidence boundary / not live:**
+  this is source and deterministic headless regression coverage; no live WebView
+  producer emitted the malformed target, no `ShellExecuteW` call was attempted,
+  and no receiving-browser behavior is claimed. The valid-target live route
+  recorded on 2026-08-21 remains separate evidence and does not prove this
+  rejected-target diagnostic branch.
+
 ## Issue #113
 
 - **Automated, repo-local Windows host focus:** `go test -count=1 ./host -run '^(Test(NativeCaption|ShouldUseDWMCaption|DWMCaption|NativeHitTestDiagnostic|WindowProc)|TestTitlebarDragHitTestDiagnostic|TestFormatNativeHitTest)'` passed with repository-local `GOTMPDIR` and `GOCACHE`. It covers the policy matrix, lazy candidate composition, zero unread candidate calls, one call per real reader, unchanged decision precedence, latched diagnostic switches, the diagnostic formatter gate and zero allocations on disabled pure paths.
@@ -85,4 +139,4 @@ acceptance rules and checklist in the parent document.
 
 The pure tests do not measure live `LazyProc.Call`, `GetWindowRect`, DPI/monitor queries, DWM results, logger implementation cost, or actual mouse-message frequency. A live Windows run with a real window remains required for those costs and for tooltip/caption visual behavior. No test creates a window.
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: record issue #87's bounded probes, live basic regression smoke, and successful remote CI with explicit no-window boundary.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: record issue #75's malformed HTTP(S) userinfo P2 diagnostic correction, deterministic coverage, allocation bound, and explicit no-live-producer boundary.

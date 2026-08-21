@@ -89,9 +89,8 @@ is one half of it; [`docs/`](docs/) is the other.
   lands on a fallback you control rather than the browser's error page.
 - The bridge is `window.mullion.invoke("Method", ...args)`, which returns a
   `Promise`. Window controls are reserved and never reach your code.
-- `window.open` and `target=_blank` open in the user's default browser — the
-  host never spawns a second, chrome-less WebView window. Only `http`/`https`
-  targets are handed to the system; any other scheme is dropped.
+- `window.open` and `target=_blank` route only after WebView2 accepts suppression and both getters succeed; getter failure launches nothing.
+  A `PutHandled` failure leaves popup behavior to the runtime. Only HTTP(S) routes.
 - A render watchdog fires if the frontend never paints. In embedded-asset mode,
   it reports bucketed document, stylesheet and script responses; `last_bridge`
   reports only the latest application method handed to `Config.Bridge` and its
@@ -202,14 +201,17 @@ navigation-only capability: retained userinfo can authenticate that exact
 caller-authorized URL, but a userinfo-bearing candidate never proves reusable
 origin identity. See [decision 0036](docs/decisions/0036-one-source-plan-defines-origin.md).
 
-`PinNavigationToOrigin` is the other field worth a paragraph. Off by default; set it
-and a top-level navigation that leaves the trusted origin is cancelled instead of
-loading in the WebView, and an `http`/`https` target is handed to the system browser
-instead.
-mullion acts on that cancel only once the runtime confirms it took: if the runtime
-refuses it, the navigation goes ahead as an ordinary one and says so at warn, rather
-than loading the foreign document *and* opening a second copy in your browser
-([decisions/0027](docs/decisions/0027-cancel-is-committed-after-the-runtime-performs-it.md)).
+`PinNavigationToOrigin` remains opt-in and off by default; it routes a safe
+off-origin top-level navigation only after WebView2 accepts cancellation.
+New-window routing is attempted by default: `PutHandled(true)` must succeed to
+suppress the runtime popup, and `GetUri` plus `GetIsUserInitiated` must both
+succeed before Mullion launches. Getter failure launches nothing; `PutHandled`
+failure leaves runtime popup behavior unspecified. Both routes give the exact
+safe HTTP(S) URI to `ShellExecuteW` as a fresh OS URL activation, without method,
+body, headers, opener, WebView profile, or session preservation. The browser
+decides userinfo/query/fragment and profile/session behavior. Eight workers are
+concurrency, not rate; `IsUserInitiated` is diagnostic, not input authority; see
+[decision 0043](docs/decisions/0043-external-routes-are-uri-only-os-activations.md).
 
 `Logger` takes pre-sanitised single strings. A URL field is guaranteed to retain
 scheme, the complete host and a bounded path only for a valid absolute
@@ -218,9 +220,9 @@ dropped, with only a bare `?` or `#` recording their presence. The
 scheme/host/path projection has a 160-byte budget; a cut path gets a visible
 `...`, followed by any query/fragment presence markers. `blob:` and
 `filesystem:` wrappers preserve a valid inner HTTP(S)
-origin while bounding the suffix. Other schemes and non-parseable,
-authority-less or unsafe-host forms use the bounded `Message` fallback instead,
-so their origin is not promised to survive.
+origin while bounding the suffix. Parse-invalid HTTP(S) raw-authority userinfo becomes
+`unknown` plus bare `?`/`#`. Other schemes and remaining non-parseable, authority-less,
+or unsafe-host forms use bounded `Message` fallback, so their origin is not promised.
 
 An arbitrary message is not treated as one URL. Recognised HTTP(S) runs inside
 it are reduced by the same URL rule, while the surrounding text follows the
@@ -395,3 +397,4 @@ MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 The only dependency is `golang.org/x/sys` (BSD 3-Clause). Nothing else is
 vendored, embedded or redistributed — including the WebView2 Runtime, which is a
 system component that mullion locates and calls into.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: document conditional new-window suppression/routing and URI-only OS activation with concurrency-not-rate, diagnostic gesture classification, and no request/profile/session preservation.

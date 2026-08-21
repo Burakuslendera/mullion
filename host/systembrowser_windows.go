@@ -17,29 +17,30 @@ import (
 // SW_SHOWNORMAL: open the browser in a normal (non-minimised) window.
 const swShowNormal = 1
 
-// externalOpenLimit is how many system-browser launches may be in flight at
-// once. It is a bound, not a capacity estimate: reaching it is reported, and the
-// launch that reached it is dropped.
+// externalOpenLimit is how many system-browser launch workers may be in flight
+// at once. It bounds concurrent goroutines, pinned OS threads, and blocking
+// ShellExecuteW calls only. It is not a lifetime, per-document, per-origin, or
+// time-window rate limit: once a worker returns, the same document may claim the
+// slot again. Reaching the bound is reported and that launch is dropped
+// (decision 0043).
 //
-// Eight, and the reason is a shape rather than a measurement, the same way
-// cancelledNavSlots' is. Every launch is content-driven - a window.open, a link
-// click - so the number is chosen by the page, not the host, and an unbounded
-// design is a goroutine and an OS thread per event with a hostile document for a
-// pump (the structure decisions/0027 refused for the ledger). A cold launch
-// measured 230 ms in decision 0029, but an external scheme handler can remain
-// blocked beyond host control. Eight leaves room for ordinary repeated clicks
-// while keeping those launches bounded.
+// Eight is a shape rather than a throughput measurement, the same way
+// cancelledNavSlots' is. Every launch is content-driven - a window.open or link
+// activation - while a scheme handler can remain blocked beyond host control.
+// Eight leaves room for ordinary repeated opens without permitting a hostile
+// document to create an unbounded number of simultaneous workers.
 const externalOpenLimit = 8
 
-// routeNewWindow sends a new-window request - a window.open or a target=_blank
-// link the runtime raised through NewWindowRequested - to the system browser
-// when the target is a safe external URL, and drops it otherwise (issue #6).
+// routeNewWindow is called only after PutHandled(true), GetUri, and
+// GetIsUserInitiated all succeed in the WebView2 adapter. PutHandled
+// failure may leave runtime popup behavior in effect; either getter failure
+// leaves the popup suppressed but produces no host launch. Given all three
+// successes, this default-on route hands the observed HTTP(S) URI unchanged to
+// the system-browser activation and drops unsafe schemes (decisions/0022 and
+// 0043).
 //
-// The runtime's own new window was already suppressed in the webview2 layer, so
-// a single-window frameless host never spawns a detached, chrome-less WebView2.
-// Dropping an unsafe scheme therefore means the request simply does nothing,
-// which is the safe outcome: the alternative is launching whatever handler the
-// scheme names, and off-origin content must not be able to reach one.
+// isUserInitiated is WebView2's diagnostic classification. It is logged but
+// never gates routing and is not treated as physical-input authority.
 func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 	if !isExternalBrowserSafe(uri) {
 		host.log.Debug("mullion: new window dropped, unsupported scheme, uri=" + logsafe.Field(logsafe.URL(uri)))
@@ -63,8 +64,9 @@ func (host *Host) shouldCancelNavigation(uri string) bool {
 
 // noteNavigationCancelled records a cancel request accepted by PutCancel. It
 // enters the navigation in the cancelled ledger so an expected failed/cancelled
-// completion is cleanup, and hands an http/https target to the system browser;
-// every other scheme is dropped under the NewWindowRequested containment.
+// completion is cleanup, and hands a successfully observed HTTP(S) URI unchanged
+// to the same system-browser activation as the default-on new-window route.
+// Every other scheme is dropped (decisions/0027 and 0043).
 //
 // PutCancel success accepts the request but does not prove abandonment. A later
 // successful completion means the navigation committed anyway and returns to
@@ -73,11 +75,10 @@ func (host *Host) shouldCancelNavigation(uri string) bool {
 // completion (issue #73, decisions/0027 and 0037).
 //
 // An unreadable URI arrives as the empty string, which is no origin's, so the
-// gate has just cancelled a navigation it could not read. That is the
-// fail-closed direction and it is deliberate - a gate that lets through what it
-// cannot identify is not a gate - but it may have killed a legitimate in-origin
-// navigation, and nothing downstream can tell. It is the one drop worth a
-// warning; the webview2 layer reports the underlying getter failure alongside it.
+// gate has just cancelled a navigation it could not read. That fail-closed drop
+// is deliberate - a gate that lets through what it cannot identify is not a
+// gate - and it is warned alongside the WebView2 getter failure. Nothing is
+// routed because no successfully observed URI exists.
 func (host *Host) noteNavigationCancelled(uri string, navigationID uint64, isUserInitiated bool) {
 	host.noteNavigationCancelledObserved(
 		uri,
@@ -106,12 +107,12 @@ func (host *Host) noteNavigationCancelledObserved(
 	}
 }
 
-// isExternalBrowserSafe reports whether uri may be handed to the system browser.
-// Only http and https are allowed: ShellExecute launches whatever handler is
-// registered for a scheme, so a foreign document's window.open must not be able
-// to name file: or an arbitrary custom protocol and have the host open it.
-// url.Parse lower-cases the scheme, so the match is already case-insensitive; a
-// URL that does not parse is refused.
+// isExternalBrowserSafe reports whether uri may be handed unchanged to the
+// system browser. Only HTTP and HTTPS are allowed: ShellExecute launches the
+// registered handler, so foreign content must not be able to name file: or an
+// arbitrary custom protocol. This gate deliberately does not rewrite userinfo,
+// query, or fragment; diagnostics redact them separately (decision 0043).
+// url.Parse normalises scheme case, and an unparseable URL is refused.
 func isExternalBrowserSafe(uri string) bool {
 	parsed, err := url.Parse(uri)
 	if err != nil {
@@ -125,19 +126,21 @@ func isExternalBrowserSafe(uri string) bool {
 	}
 }
 
-// openInSystemBrowser hands an http/https URL to the user's default browser, off
-// the UI thread.
+// openInSystemBrowser hands an HTTP(S) URI unchanged to the registered handler
+// as a fresh ShellExecuteW "open" activation, off the UI thread (decision 0043).
+// It does not preserve or replay an HTTP method, body, headers, referrer, opener,
+// WebView profile, selected browser profile, WebView-held cookies or stored
+// credentials, or session. Userinfo, query, and fragment remain part of the
+// unchanged URI; Windows and the handler decide their treatment plus process,
+// window/tab, and profile.
 //
-// Both routes into here run from a WebView2 event handler, and those run on the
-// UI thread inside the message loop. ShellExecuteW blocks until the scheme
-// association is resolved and the target application has started, which on a cold
-// default browser is not instant - and while it blocks the loop does not pump, so
-// the frameless window stops answering: no drag, no caption buttons, no resize,
-// and the runtime is still waiting on the handler as well (issue #74,
-// decisions/0029). The launch therefore gets a goroutine of its own, and the
-// handler returns immediately.
-//
-// Callers gate the URL with isExternalBrowserSafe first; this does not re-check.
+// Both routes enter here from a WebView2 event handler on the UI thread.
+// ShellExecuteW may block until the association is resolved and the target
+// application starts; keeping that work in the handler would stop the message
+// loop from answering drag, caption, resize, or WebView2. The launch therefore
+// gets its own worker and the handler returns immediately (issue #74,
+// decision 0029). Callers gate the URI with isExternalBrowserSafe first; this
+// function does not re-check or mutate it.
 func (host *Host) openInSystemBrowser(uri string) {
 	if host.openExternal != nil {
 		// The test seam (issue #76). Nothing in production sets it, and it stays
@@ -178,17 +181,15 @@ func (host *Host) releaseExternalOpenSlot() {
 	<-host.externalOpenSlots
 }
 
-// shellExecuteOpen is the launch itself: ShellExecute with the "open" verb,
-// against whatever application Windows associates with the URL's scheme. It
-// deliberately picks no browser and forces none - the association is the user's
-// to make. When no default is set, Windows shows its own "How do you want to open
-// this?" chooser, which is the right outcome, and ShellExecute still returns
-// success. Only a scheme with no association at all fails (SE_ERR_NOASSOC = 31 <=
-// 32), which the warning below records; on Windows 10/11 http/https always
-// resolves to at least Edge, so that is effectively unreachable.
+// shellExecuteOpen is the URI-only OS activation: ShellExecuteW with the "open"
+// verb and the exact admitted URI as lpFile. It deliberately picks no browser,
+// process, window, tab, profile, or session. The registered handler owns all of
+// those choices and the resulting request behavior; a successful return proves
+// only that the shell accepted the activation, not that any HTTP request
+// preserved WebView state (decision 0043).
 //
-// It runs on a goroutine of its own and is the one piece of the routing a
-// headless test cannot exercise - it would launch a browser - so it is verified
+// It runs on its own worker and is the one piece of routing a headless test
+// cannot exercise without launching the registered browser, so it is verified
 // live. Its captured Run admission lets warnings reach the embedder's
 // concurrent-safe Logger only while that Run still owns them.
 func (host *Host) shellExecuteOpen(uri string, admission runAdmission) {

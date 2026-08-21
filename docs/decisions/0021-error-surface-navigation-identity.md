@@ -2,6 +2,21 @@
 
 **Status:** Accepted; the navigation-cancel gate it anticipated ("`put_Cancel` stays unwrapped") landed as [0023](./0023-navigation-cancel-gate.md), which wraps `put_Cancel`. Refined by [0024](./0024-benign-abort-in-process.md): which attributed failures arm the surface at all. The completion callback's generic `navigation failed` WARN that this record's Decision describes as preceding the classification is removed by [0026](./0026-navigation-failure-level-follows-classification.md): a failed completion is reported once, by the branch that classifies it, at that classification's level (issue #79). Getter failure provenance and fallback claim authority are refined by [0037](./0037-event-values-preserve-getter-provenance.md). The attribution rules themselves are unchanged
 
+**Current authority correction:** decision 0037 now permits a claim only for a
+pending generation whose URI getter succeeded with the exact generated URL or a
+successfully read empty URI. The empty NavigationStarting form is tolerated but
+unverified; live fallback starts reported the full generated URL. The claim runs
+before origin pinning; a failed getter, arbitrary `data:` URI, or any other value
+fails closed. A claimed fallback receives exactly seven restricted methods:
+`WindowStartDrag`, `WindowStartResize`, `WindowMinimise`,
+`WindowToggleMaximise`, `WindowIsMaximised`, `WindowFrameState`, and
+`WindowClose`—never readiness, diagnostics, or `Config.Bridge`. A foreign
+successfully read empty-URI producer is unverified; observing one steal a pending
+claim is the conditional P2 tripwire. The body
+below preserves the historical tolerance and evidence context. External routing
+instead belongs to [0043](./0043-external-routes-are-uri-only-os-activations.md);
+issue #87 remains a separate accepted stale-ID risk.
+
 ## Context
 
 0017 identifies the fallback error surface by navigation state, because the
@@ -151,4 +166,4 @@ completion-less residual 0020 recorded.
   (the origin's success dropped the admission; the frontend's bridge flowed)
   with zero rejects and zero seal lines across the session.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: route getter provenance and fallback claim authority forward to 0037; the historical attribution body remains unchanged.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: state the exact current fallback authority, seven-method restriction, and routing/issue-87 split while preserving the historical attribution record.

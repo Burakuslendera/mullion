@@ -28,11 +28,11 @@ type bridgeRequest struct {
 // leave Config.Bridge nil and still get drag, resize, minimise, maximise and
 // close.
 //
-// allowBridge gates the application's own methods and the reserved readiness
-// and diagnostic methods. A restricted source is mullion's data: error surface;
-// it may drive only the caption, fallback drag and fallback resize controls that
-// surface uses, never readiness, retained diagnostics, or Config.Bridge
-// (decisions/0014).
+// allowBridge gates application methods plus reserved readiness and diagnostics.
+// A restricted source is mullion's claimed data: error surface. It receives
+// exactly WindowStartDrag, WindowStartResize, WindowMinimise,
+// WindowToggleMaximise, WindowIsMaximised, WindowFrameState, and WindowClose;
+// never readiness, diagnostics, or Config.Bridge (decisions/0014 and 0037).
 func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 	var request bridgeRequest
 	if err := json.Unmarshal([]byte(raw), &request); err != nil {
@@ -75,13 +75,13 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 	return response
 }
 
-// errorSurfaceMethodAllowed is deliberately narrower than the reserved-method
-// set. The data: fallback needs its caption buttons, the old-runtime drag path,
-// and the resize overlay (including the maximised-state query). Its injected
-// diagnostics and readiness helpers must not overwrite the failed application's
-// watchdog evidence. WebView2's current CoreWebView2 WebMessageReceived path is
-// top-level-only; keeping this boundary narrow also contains a future migration
-// to frame message receipt, where a hostile data: iframe could reach it.
+// errorSurfaceMethodAllowed is the canonical seven-method restricted list. The
+// claimed fallback needs caption controls, old-runtime drag, resize overlay,
+// maximised-state query, and atomic frame state. Its injected diagnostics and
+// readiness helpers must not overwrite the failed application's watchdog
+// evidence, and Config.Bridge stays trusted-origin-only. Keep the closed list at
+// this dispatch boundary if frame message receipt is ever added, because a
+// hostile data: frame must not inherit fallback authority.
 func errorSurfaceMethodAllowed(method string) bool {
 	switch method {
 	case methodStartDrag,

@@ -5,6 +5,8 @@ package host
 import (
 	"strings"
 	"testing"
+
+	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
 // isExternalBrowserSafe is the gate on what a foreign document's window.open can
@@ -55,6 +57,57 @@ func TestRouteNewWindowDropsUnsafeSchemes(t *testing.T) {
 	}
 	if strings.Contains(logger.String(), "routed to system browser") {
 		t.Fatalf("an unsafe scheme reached the system-browser route:\n%s", logger.String())
+	}
+}
+
+func TestProductionNewWindowRoutesNonGestureURIExactlyAndReducesDiagnostics(t *testing.T) {
+	const target = "https://alice:hunter2@popup.example/opened.html?token=s3cr3t#private-fragment"
+	host, logger := newTestHost(t, Config{StartHidden: true})
+	var opened []string
+	host.openExternal = func(uri string) { opened = append(opened, uri) }
+
+	host.newWebViewBrowser().NewWindowRequestedCallback(webview2.NewWindowRequestedObservation{
+		URI:             target,
+		IsUserInitiated: false,
+	})
+
+	if len(opened) != 1 || opened[0] != target {
+		t.Fatalf("system-browser hand-off = %v, want exact observed URI %q once", opened, target)
+	}
+	logged := logger.String()
+	if !strings.Contains(logged,
+		"new window routed to system browser, user_initiated=false, uri=https://popup.example/opened.html?#\n") {
+		t.Fatalf("non-gesture route diagnostic was not reduced as expected:\n%s", logged)
+	}
+	for _, forbidden := range []string{"alice", "hunter2", "token", "s3cr3t", "private-fragment"} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("route diagnostic leaked %q from userinfo, query, or fragment:\n%s", forbidden, logged)
+		}
+	}
+}
+
+func TestProductionNewWindowRejectsMalformedUserinfoWithoutDiagnosticDisclosure(t *testing.T) {
+	const target = "https://alice:bad%zz@evil.example?token=s3cr3t#private-fragment"
+	host, logger := newTestHost(t, Config{StartHidden: true})
+	var opened []string
+	host.openExternal = func(uri string) { opened = append(opened, uri) }
+
+	host.newWebViewBrowser().NewWindowRequestedCallback(webview2.NewWindowRequestedObservation{
+		URI:             target,
+		IsUserInitiated: true,
+	})
+
+	if len(opened) != 0 {
+		t.Fatalf("malformed target reached the system-browser hand-off: %v", opened)
+	}
+	logged := logger.String()
+	if !strings.Contains(logged, "new window dropped, unsupported scheme, uri=unknown?#\n") {
+		t.Fatalf("malformed target diagnostic was not reduced as expected:\n%s", logged)
+	}
+	for _, forbidden := range []string{"alice", "bad", "evil.example", "token", "s3cr3t", "private-fragment"} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("malformed target diagnostic leaked %q:\n%s", forbidden, logged)
+		}
 	}
 }
 

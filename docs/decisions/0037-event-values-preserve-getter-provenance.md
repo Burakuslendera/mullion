@@ -1,6 +1,6 @@
 # 0037. Event values preserve getter provenance before granting fallback authority
 
-**Status:** Accepted
+**Status:** Accepted; owns current fallback claim authority, separately from [0043](./0043-external-routes-are-uri-only-os-activations.md)'s external-routing contract
 
 ## Context
 
@@ -22,19 +22,25 @@ value only when its getter succeeded.
 A navigation failure creates a revocable, unissued fallback plan; it grants no
 authority. Immediately before `Navigate`, the current plan becomes **pending**.
 A NavigationStarting event makes that issued generation **active** only when the
-URI getter succeeded and reported the exact generated URL or the observed empty
-representation, and the pending generation is claimed. The next top-level start
-suspends active controls immediately. A matching, positively classified benign
-abort or confirmed cancel restores the still-visible fallback exactly; a
-completion whose success or required identity is unavailable clears the
-capability and fails closed; a known success does not require an error status.
-Unissued, pending and active are distinct throughout.
+URI getter succeeded and reported the exact generated URL or a successfully read
+empty URI, and that pending generation is claimed. The empty form is tolerated
+but remains unverified on NavigationStarting; prior live fallback starts
+reported the full generated URL. Claim evaluation runs before
+`PinNavigationToOrigin`: a matching fallback start is not cancelled, but a
+failed URI getter, an arbitrary `data:` URI, or any other value cannot claim and
+fails closed. The next top-level start suspends active controls immediately.
+A matching, positively classified benign abort or confirmed cancel restores the
+still-visible fallback exactly; a completion whose success or required identity
+is unavailable clears the capability and fails closed; a known success does not
+require an error status. Unissued, pending and active are distinct throughout.
 
 The source plan never admits `data:` as an origin, and no blanket `data:` rule is
-added. The claimed fallback receives only six methods: start drag, start resize,
-minimise, toggle maximise, query maximised and close. It never reaches readiness,
-diagnostics or `Config.Bridge`. This change adds no random capability token; the
-successful source/URI observation plus claimed generation is the authority.
+added. The claimed fallback receives exactly seven reserved methods:
+`WindowStartDrag`, `WindowStartResize`, `WindowMinimise`,
+`WindowToggleMaximise`, `WindowIsMaximised`, `WindowFrameState`, and
+`WindowClose`. It never reaches readiness, diagnostics, or `Config.Bridge`.
+This change adds no random capability token; the successful source/URI
+observation plus claimed pending generation is the authority.
 
 ## Alternatives rejected
 
@@ -65,8 +71,11 @@ because an embedder Logger may re-enter host policy.
 Supersede this record if WebView2 provides an authenticated document identity on
 both NavigationStarting and WebMessageReceived, stable across the fallback's
 lifetime, so authority no longer depends on the empty-source observation. A host
-callback consuming an event value without checking its paired getter error, or
-any source-only `data:` admission, is an immediate trip-wire.
+callback consuming an event value without checking its paired getter error, any
+source-only `data:` admission, or any grant outside the seven-method list is an
+immediate tripwire. A foreign navigation successfully reporting an empty URI
+while a fallback generation is pending remains unverified; observing it steal
+the claim is a conditional P2 tripwire.
 
 ## Evidence
 
@@ -83,6 +92,6 @@ any source-only `data:` admission, is an immediate trip-wire.
   and `host/errorsurface_identity_windows_test.go`: pending/active claim,
   suspension, exact restoration and unknown-completion behavior.
 - `host/bridge_windows_test.go`: failed source never dispatches and a claimed
-  fallback remains outside trusted-origin admission with exactly six controls.
+  fallback remains outside trusted-origin admission with exactly seven controls.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add successful-value, foreign-URI and production re-entrancy trip-wires to the event-provenance evidence.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: correct the current exact-or-successful-empty claim-before-pin authority, seven-method restriction, fail-closed cases, and conditional P2 tripwire.

@@ -212,6 +212,26 @@ func TestURLParseFailureStillDropsTheQuery(t *testing.T) {
 	}
 }
 
+func TestURLMalformedAuthorityUserinfoFailsClosed(t *testing.T) {
+	const malformed = "https://alice:bad%zz@evil.example?token=s3cr3t#private-fragment"
+	got := URL(malformed)
+	if want := "unknown?#"; got != want {
+		t.Fatalf("URL(%q) = %q, want %q", malformed, got, want)
+	}
+	for _, forbidden := range []string{"alice", "bad", "evil.example", "token", "s3cr3t", "private-fragment"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("URL(%q) leaked %q in %q", malformed, forbidden, got)
+		}
+	}
+
+	// An @ after a path separator is path data, not evidence that the failed
+	// authority contained userinfo. Keep the established parse-invalid fallback.
+	const malformedPath = "https://evil.example/50%zz@path?token=s3cr3t#private-fragment"
+	if got, want := URL(malformedPath), "http50%zz@path?#"; got != want {
+		t.Fatalf("URL(%q) = %q, want the existing fallback %q", malformedPath, got, want)
+	}
+}
+
 func TestURLFallbackKeepsMarkersAndRejectsCutHosts(t *testing.T) {
 	invalid := "https://" + strings.Repeat("a", 150) + ".mullion.local.evil.example/50%off/p?token=secret#tail"
 	got := URL(invalid)
@@ -295,6 +315,23 @@ func TestURLUserinfoAllocationBytesAreInputSizeIndependent(t *testing.T) {
 	oneMiB := measure(1 << 20)
 	if oneMiB > oneKiB+512 {
 		t.Fatalf("URL allocated bytes grow with userinfo input: 1 KiB=%d, 1 MiB=%d", oneKiB, oneMiB)
+	}
+}
+
+func TestURLMalformedUserinfoAllocationBytesAreInputSizeIndependent(t *testing.T) {
+	measure := func(size int) int64 {
+		input := "https://alice:" + strings.Repeat("a", size) + "%zz@evil.example?token=s3cr3t#private"
+		return testing.Benchmark(func(b *testing.B) {
+			for range b.N {
+				reducedURLSink = URL(input)
+			}
+		}).AllocedBytesPerOp()
+	}
+
+	oneKiB := measure(1 << 10)
+	oneMiB := measure(1 << 20)
+	if oneMiB > oneKiB+512 {
+		t.Fatalf("URL allocated bytes grow with malformed userinfo input: 1 KiB=%d, 1 MiB=%d", oneKiB, oneMiB)
 	}
 }
 

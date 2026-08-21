@@ -233,12 +233,13 @@ func unavailableNavigationFailureFields(
 //
 // Classification creates only an unissued plan. issueErrorSurfaceNavigation
 // makes the surface pending/loading immediately before Browser.Navigate.
-// Admission begins only when NavigationStarting successfully reports either the
-// exact generated URL or WebView2's measured empty representation of a data:
-// document. That claim still precedes document creation and its earliest
-// messages, while preventing the departing failed document from borrowing
-// empty-source controls before Navigate. Config.Bridge remains behind
-// source-plan trust and never accepts the empty source.
+// Admission begins only when NavigationStarting successfully reports the exact
+// generated URL or an empty URI. Empty is a tolerated, unverified
+// NavigationStarting form; live fallback starts reported the full URL, while the
+// empty representation was measured on WebMessage source. The claim precedes
+// document creation and its earliest messages without letting the failed
+// departing document borrow controls before Navigate. Config.Bridge remains
+// behind source-plan trust and never accepts empty source.
 //
 // Completions are positively attributed only when both this completion and the
 // surface claim carry the same exact non-zero identity (decisions/0021): the
@@ -515,15 +516,14 @@ func (host *Host) noteOrderedOutcome(
 }
 
 // errorSurfaceMessageAllowed admits a web message that messageSourceAllowed
-// rejected when it can only plausibly come from mullion's own fallback error
-// surface: the source is the empty string - the runtime's representation of a
-// data: document (issue #56, measured live) - and NavigationStarting positively
-// claimed the current fallback generation.
-// The later bridge dispatch grants only the six existing fallback window-control
-// methods, so injected readiness and diagnostics cannot mutate the failed
-// application's watchdog evidence;
-// Config.Bridge stays behind messageSourceTrusted, which never accepts an empty
-// source (decisions/0014).
+// rejected only when its empty source can be tied to mullion's positively
+// claimed current fallback generation (decision 0037).
+//
+// Bridge dispatch then grants exactly seven reserved methods:
+// WindowStartDrag, WindowStartResize, WindowMinimise, WindowToggleMaximise,
+// WindowIsMaximised, WindowFrameState, and WindowClose. It never grants
+// readiness, diagnostics, or Config.Bridge; messageSourceTrusted never accepts
+// an empty source.
 func (host *Host) errorSurfaceMessageAllowed(source string) bool {
 	return source == "" && host.errorSurfaceActive
 }
