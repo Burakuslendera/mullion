@@ -36,10 +36,15 @@ the fallback surface when **both** hold:
   by default (0023), so a link or a script assignment can take the top frame to
   any origin, and such a navigation is a real socket load mullion serves none of.
 
-A completion carries no URI, so `noteNavigationTarget` records the answer at
-`NavigationStarting`, keyed by navigation id. The exemption requires that id to
-still match: a completion for an older navigation cannot borrow another
-navigation's target and falls through to the ordinary failure path, which arms.
+A completion carries no URI, so `noteNavigationTarget` records the target at
+`NavigationStarting`, keyed by the tagged navigation identity. The exemption
+requires that identity to remain the exact last start. The single slot is
+deliberate and fail-closed: after any later start, an older or provenance-less
+abort cannot borrow the newer target and takes the ordinary failure path. That
+path arms the fallback and can replace a still-live frontend. This is the
+accepted availability cost of refusing to suppress a failure whose target is no
+longer known; [issue #87](https://github.com/Burakuslendera/mullion/issues/87)
+questions whether the exact live ordering makes that cost reachable.
 
 `benignAbort` is that condition, applied in `noteForeignOutcome` after the absorb
 branch and before arming, and it logs the suppression at debug. It applies only
@@ -76,6 +81,9 @@ completions carrying no id - is unchanged.
 
 ## Consequences
 
+- A later start makes an older abort arm even if that older navigation was
+  on-origin, and arming navigates away from any live document. The focused
+  stale-ID test locks that deliberate fail-closed choice.
 - In process and on the trusted origin, a genuine load failure reported as
   `ConnectionAborted` no longer shows the surface. The exposure is narrower than
   the mode alone would make it, but it is **not** empty: `webResourceRequested`
@@ -118,6 +126,11 @@ completions carrying no id - is unchanged.
   make the condition too coarse, and the fix would move to a true
   resource-to-navigation correlation - which needs a runtime that reports the
   navigation id on the resource request.
+- A live trace with `NavigationStarting(A)`, a distinct `NavigationStarting(B)`,
+  then `NavigationCompleted(A, IsSuccess=false, ConnectionAborted)` reaching the
+  fallback arming path would establish issue #87's missing premise and justify
+  reconsidering bounded target history. Overlap alone, a different completion
+  status, or only B failing does not.
 - The runtime giving the restarted navigation the *same* id as the aborted one
   would make the abort recognisable directly, which is a better rule than either
   condition here.
@@ -142,8 +155,11 @@ completions carrying no id - is unchanged.
   check), `TestErrorSurfaceAbortWithoutIdentityStillArms` (the id-less scope),
   `TestErrorSurfaceSealsInProcessToo` (the seal scope) and
   `TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted` (the no-op property).
-- That the live loop stops is `unverified` pending the live probe: the repro is
-  non-deterministic, so the check is a run of in-origin navigations with no
-  fallback surface in the log.
+- [Issue #87](https://github.com/Burakuslendera/mullion/issues/87) and the dated
+  [verification record](../verification-records.md#2026-08-records) own the
+  current reachability boundary. Two bounded live probes found no exact
+  A-start/B-start/A-`ConnectionAborted` ordering. Those negative observations do
+  not disprove the risk: the deterministic stale-ID test proves the chosen
+  state-machine result, not that WebView2 currently emits the required sequence.
 
-> Last updated: 2026-07-24 | Editor: Claude (Opus 5) | Change: new record - an aborted navigation is benign only where mullion served it and it was on-origin (issue #72, refining 0021); the mode-only first cut is recorded as rejected.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: record issue #87's explicit stale-ID arming cost, no-repro boundary and exact change-mind condition.

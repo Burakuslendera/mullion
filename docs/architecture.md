@@ -307,6 +307,12 @@ A failure makes one generation pending; only a successfully read exact generated
 URL or empty URI on its NavigationStarting claims it as active. The next start
 suspends controls immediately; only the matching confirmed cancel or benign abort
 restores the still-visible page, and unclassifiable completion state fails closed.
+Benign-abort attribution deliberately retains only the exact last navigation
+start; an older status-9 completion therefore arms the fallback and may replace
+a live document. [Decision 0024](./decisions/0024-benign-abort-in-process.md)
+owns that availability cost. Issue #87's two bounded live probes did not
+reproduce the required ordering; see the
+[dated verification record](./verification-records.md#2026-08-records).
 That active fallback receives exactly six reserved methods — start drag, start
 resize, minimise, toggle maximise, query maximised and close — but never readiness,
 diagnostics or `Config.Bridge`. Rejected messages receive no reply to correlate.
@@ -351,4 +357,4 @@ the rejection gates under Windows/386 WOW64, and keeps ARM64 compile-only.
 Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: correct contents order and startup routing, remove unsupported process-main-thread ownership, and document command exceptions.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: expose decision 0024's stale-ID cost and issue #87's no-repro boundary from the orientation path.

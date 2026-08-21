@@ -171,15 +171,17 @@ The injected scripts still run on every navigation, so `window.<ns>` works on
 the caller's origin; a failed load shows Mullion's controllable fallback instead
 of Edge's chromeless error screen (`host/errorpage.go`).
 
-That difference also decides what a *failed* navigation means. With `Config.URL`
-set there is a socket in the path, so an aborted load can be a dead endpoint — the
-case the fallback page exists for. Serving the embedded assets in process there is
-none, so an abort of a navigation that was headed for the trusted origin can only
-be one the runtime abandoned and restarted, and showing the fallback there would
-replace a live frontend over nothing. Only that combination skips the page; an
-aborted *off-origin* navigation is a real socket load and still shows it, because
-`Config.URL` being empty does not keep the top frame on the origin — see
-[decisions/0024](./decisions/0024-benign-abort-in-process.md).
+That difference also controls how an abort is classified. With `Config.URL` set,
+a socket load can fail and must arm the fallback. For embedded assets, an exactly
+attributed `ConnectionAborted` aimed at the trusted origin is treated as the
+runtime abandoning a navigation it restarts, based on issue #72; this is a
+classification, not proof that every byte was delivered. Off-origin, anonymous
+and stale-identity aborts still arm. In particular, a later navigation start
+overwrites the single recorded target, so an older abort takes the fail-closed
+path and may replace a live frontend.
+[Decision 0024](./decisions/0024-benign-abort-in-process.md) owns that cost; its
+bounded reachability evidence is in the
+[verification records](./verification-records.md#2026-08-records).
 
 That last point is why `Config.URL` is pinned to **loopback** (`127.0.0.1`,
 `localhost`, `::1`) over `http`/`https`, and any other URL is rejected by `Run`:
@@ -385,4 +387,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: point the canonical Go 1.24 asset-root rationale to its authoritative superseding decision.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: qualify the benign-abort classification and link issue #87's stale-ID reachability evidence.

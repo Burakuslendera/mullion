@@ -427,11 +427,13 @@ func (host *Host) noteForeignOutcome(
 // WebResourceRequested responses are not correlated to navigation IDs, and a
 // served response does not show that the runtime consumed every resource body.
 //
-// The exact non-zero id must still match the recorded start. An older or
-// provenance-less completion cannot borrow that target and falls through to arm,
-// the safe direction. The exemption deliberately does not extend to
-// noteOrderedOutcome: without identity there is no resource-to-navigation
-// correlation, so decision 0020's machine stands.
+// The exact non-zero identity must still match the recorded last start. Older
+// or provenance-less completions arm rather than borrow another target. That
+// deliberate single-slot choice can replace a still-live frontend with the
+// fallback; it is decision 0024's accepted availability cost, while issue #87
+// records the exact live A-start/B-start/A-status-9 tripwire. The exemption
+// does not extend to noteOrderedOutcome: without identity there is no
+// resource-to-navigation correlation, so decision 0020's machine stands.
 func (host *Host) benignAbort(status webview2.WebErrorStatus, identity navigationIdentity) bool {
 	if status != webview2.WebErrorStatusConnectionAborted || !host.source.embedded {
 		return false

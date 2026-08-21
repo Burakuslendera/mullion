@@ -192,6 +192,16 @@ process-failure and message adapters do the same. See
 [decisions/0027](./decisions/0027-cancel-is-committed-after-the-runtime-performs-it.md)
 and [0037](./decisions/0037-event-values-preserve-getter-provenance.md).
 
+Microsoft's [WebView2 navigation-event
+contract](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/navigation-events)
+permits events with different navigation IDs to overlap, including start A,
+start B, then completion A. It does not guarantee that A completes with
+`ConnectionAborted`, or that cancelling B changes A's status. Mullion's exact
+stale-ID result and availability cost belong to
+[decision 0024](./decisions/0024-benign-abort-in-process.md); issue #87's bounded
+live observations are recorded once in the
+[verification records](./verification-records.md#2026-08-records).
+
 ### Completion and embed lifetime
 
 Issue #98 closes one invariant across the asynchronous loader and `Browser.Embed`:
@@ -267,4 +277,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: define the absolute executable-folder pin as fail-closed before fallback, disk and DLL work, and link its architecture gate and headless test.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: document permitted cross-navigation overlap, unspecified completion status and issue #87's bounded evidence link.

@@ -39,6 +39,30 @@ acceptance rules and checklist in the parent document.
 - **2026-08-21 — graceful close and assessment:** the repeat logged close requested/allowed, destroy requested, WebView2 shutdown requested, teardown reason `message_loop_exit`, message-loop exit and process exit 0; the Chromium unregister line seen after the earlier forced `Ctrl+C` was absent. Within these two runs, the ~13-second first startup was not persistent; a persistent startup regression is therefore unlikely on this exact setup, but its cause—including profile creation—remains unverified.
 - **2026-08-21 — not covered / `unverified`:** cursor-glyph and other visual behavior at DPI scales other than the observed 96 DPI, pixel alignment, and mixed-DPI behavior were not exercised; both monitors used the same DPI. Invalid inherited edge names for #102 remain covered only in the headless JS VM, and malicious credential/control summary redaction for #82 remains covered only by headless tests. Race/CGo coverage was not part of this live session.
 
+- **2026-08-21 — Issue #87 bounded live probes:** Windows build 26200/amd64,
+  Go 1.26.5 and WebView2 151.0.4129.93. Probe 1 comprised two successful A-only
+  controls and six B-present trials at 0/1/10/50/250/500 ms. In every B-present
+  trial, A reported status 9 and was benignly suppressed before B started; B
+  then reported status 14. No trial produced the required
+  A-start/B-start/A-status-9 ordering or fallback arming. Probe 2 comprised four
+  timing-equivalent probe/control pairs at 0/10/50/250 ms. Each probe established
+  genuine A-start/B-start/A-complete overlap: A succeeded 1.23–1.48 s after B
+  started, and only B failed, with status 0; every paired no-B control also
+  succeeded. Neither bounded matrix reproduced #87.
+  These negatives do not disprove the risk: WebView2 permits cross-ID overlap
+  but does not guarantee status 9 or B-cancel causality. [Decision
+  0024](./decisions/0024-benign-abort-in-process.md) remains accepted. [Issue
+  #87](https://github.com/Burakuslendera/mullion/issues/87) records the P2
+  evidence gate: the exact A-start/B-start/A-`ConnectionAborted` condition
+  reaching fallback arming remains unproduced. Raw temporary logs and tables
+  are local evidence, not repository fixtures. Separate residuals do not close
+  that gate: #75's known-empty
+  pending-fallback claim remains unverified; getter provenance was fixed under
+  #86; and a late old-browser callback after a new `Run` was already unverified.
+  None of those residuals is #87 closure evidence.
+
+- **2026-08-21 — Issue #87 live basic regression smoke:** On the previously doctor-recorded Windows 11 25H2 build 26200.9168/amd64 workstation with Go 1.26.5, WebView2 151.0.4129.93 and 96 DPI, `go run examples/basic` logged 200 responses for `index.html`, `style.css` and `app.js`, shell-ready, `Ping` received/completed, visible, navigation completed and frontend-ready; `LaunchToVisible=3104ms`, `ShellReady=3054ms`, `Ready=3117ms`, visible-to-ready 13 ms, `Warn=0 Error=0`. Terminal interaction evidence covered all eight resize routes—left `10`, right `11`, top `12`, top-left `13`, top-right `14`, bottom `15`, bottom-left `16`, bottom-right `17`—with paired active `true`/`false` move-size generations and matching client/controller bounds. Repeated `960x1033` half-work-area and `1920x1032` full-work-area bounds were logged, but the log does not identify the gesture that caused each. Alt+F4 logged close requested/allowed, destroy, WebView2 shutdown, `message_loop_exit` and process exit 0. This basic smoke did not exercise the #87 A/B/status-9 interleave. Terminal evidence does not establish cursor glyphs, pixel alignment, smoothness or mixed-DPI behavior.
+
 - **2026-08-21 — Issue #127 remote Go 1.27 compatibility evidence:** GitHub Actions run [`32425771310`](https://github.com/Burakuslendera/mullion/actions/runs/32425771310) resolved the Windows `stable` lane to Go 1.27.0 and failed there only because that toolchain's `gofmt` changed an ABI-manifest test fixture; the Go 1.24 Windows lane and both portable lanes succeeded. Formatting-only commit [`f69f129`](https://github.com/Burakuslendera/mullion/commit/f69f129) made the manifest stable across both printers; its recorded pre-push commands ran whole-tree `gofmt -l .`, `go test -count=1 ./internal/webview2`, and a dual-toolchain formatting diff under both Go 1.24 and Go 1.27, all clean.
 - **2026-08-21 — Issue #127 successful remote matrix:** follow-up run [`32427012163`](https://github.com/Burakuslendera/mullion/actions/runs/32427012163) on `f69f129` completed successfully with 5/5 jobs: Windows Go 1.24 and `stable` (Go 1.27), the dedicated Windows x64 `stable` job, and portable Go 1.24 and `stable`. This is current-release compatibility evidence, not a floor change: the supported minimum remains Go 1.24.
 - **2026-08-21 — Issue #127 active Go-floor audit:** [`go.mod`](../go.mod) remains `go 1.24` with no `toolchain` directive; README and CONTRIBUTING state Go 1.24 or newer; and the Windows and portable CI matrices remain `["1.24", "stable"]`. The active asset-root comments and regression fixture are consistent with Go 1.24. No floor, dependency, source, test or workflow change was required. [Decision 0042](./decisions/0042-go-1-24-remains-the-released-consumer-floor.md) owns the corrected policy and release-history evidence chain; [Issue #127](https://github.com/Burakuslendera/mullion/issues/127) owns its acceptance.
@@ -59,4 +83,4 @@ acceptance rules and checklist in the parent document.
 
 The pure tests do not measure live `LazyProc.Call`, `GetWindowRect`, DPI/monitor queries, DWM results, logger implementation cost, or actual mouse-message frequency. A live Windows run with a real window remains required for those costs and for tooltip/caption visual behavior. No test creates a window.
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: add Issue #127's focused dual-toolchain, doctor, leak and decision-integrity results with their no-window boundary.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: describe issue #87's bounded live evidence, exact unproduced condition, and separate live basic regression smoke with explicit terminal-only coverage.

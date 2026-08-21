@@ -44,7 +44,7 @@ These files are that record.
 | [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted; anticipated cancel gate landed as 0023, refined by 0024, log levels by 0026, getter authority by 0037 |
 | [0022](./0022-new-windows-to-system-browser.md) | New windows are routed to the system browser, never opened in the host | Accepted, launch moved off the UI thread by 0029 |
 | [0023](./0023-navigation-cancel-gate.md) | A top-level navigation off the trusted origin is cancelled, opt-in | Accepted, ordering corrected by 0027, launch moved off the UI thread by 0029 |
-| [0024](./0024-benign-abort-in-process.md) | An aborted navigation is not a load failure when mullion serves the assets | Accepted |
+| [0024](./0024-benign-abort-in-process.md) | An aborted navigation is not a load failure when mullion serves the assets | Accepted; [exact stale-ID tripwire recorded in issue #87](https://github.com/Burakuslendera/mullion/issues/87) |
 | [0025](./0025-urls-are-logged-as-urls.md) | A URL reaching a log line is reduced as a URL, not as a filesystem path | Accepted, trip-wire fired by 0028 |
 | [0026](./0026-navigation-failure-level-follows-classification.md) | A failed navigation is logged at the level the host's own classification gives it | Accepted |
 | [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md) | A navigation cancel is committed only after the runtime has performed it | Accepted, event provenance and fallback restoration refined by 0037 |
@@ -104,4 +104,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: index accepted decision 0042 as the authority for the Go 1.24 consumer floor and mark stale-premise decision 0033 superseded.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: record issue #87's exact stale-ID tripwire under accepted decision 0024.

@@ -170,13 +170,13 @@ type Host struct {
 	cancelledNavUnknown   int
 
 	// navStart is the tagged identity of the last top-level navigation the
-	// runtime reported starting, and navStartInOrigin whether that navigation
-	// targeted the trusted origin. They answer the one question a completion
-	// cannot: where its navigation was going, which is what decides whether an
-	// aborted one could have failed for real (benignAbort, decisions/0024). One
-	// slot is enough because the pair is only ever read for a completion whose
-	// exact non-zero identity still matches; older or anonymous completions
-	// fall through to the ordinary failure path, which is the safe direction.
+	// runtime reported starting, and navStartInOrigin says whether it targeted
+	// the trusted origin. A completion has no URI, so benignAbort needs this pair
+	// to classify status 9 (decision 0024). The single slot is deliberate: only
+	// the exact last start may use the exemption; older or anonymous completions
+	// arm rather than borrow another target. That fail-closed choice can replace
+	// a still-live frontend with the fallback. It is 0024's accepted availability
+	// cost; issue #87 records the exact live A-start/B-start/A-status-9 tripwire.
 	// UI thread only.
 	navStart         navigationIdentity
 	navStartInOrigin bool

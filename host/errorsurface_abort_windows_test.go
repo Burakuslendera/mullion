@@ -109,9 +109,11 @@ func TestErrorSurfaceAbortOffOriginStillArms(t *testing.T) {
 	}
 }
 
-// The exemption belongs to the navigation the runtime last reported starting.
-// A completion for an older one cannot borrow that answer - nothing says where
-// *it* was going - so it falls through and arms, the safe direction.
+// This locks decision 0024's deliberate single-slot cost, not a missing test
+// case. After a later start, an older completion can no longer prove its target
+// and arms rather than borrowing the newer target. Arming may replace a
+// still-live frontend; issue #87 records the exact live
+// A-start/B-start/A-ConnectionAborted tripwire.
 func TestErrorSurfaceAbortWithAStaleIdStillArms(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	host.noteAndGateNavigation(host.source.origin.text+"/a.html", 3)
