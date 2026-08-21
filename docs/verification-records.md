@@ -49,17 +49,20 @@ acceptance rules and checklist in the parent document.
   genuine A-start/B-start/A-complete overlap: A succeeded 1.23–1.48 s after B
   started, and only B failed, with status 0; every paired no-B control also
   succeeded. Neither bounded matrix reproduced #87.
-  These negatives do not disprove the risk: WebView2 permits cross-ID overlap
-  but does not guarantee status 9 or B-cancel causality. [Decision
+  These negatives do not disprove the accepted risk: WebView2 permits cross-ID
+  overlap but does not guarantee status 9 or B-cancel causality. [Decision
   0024](./decisions/0024-benign-abort-in-process.md) remains accepted. [Issue
-  #87](https://github.com/Burakuslendera/mullion/issues/87) records the P2
-  evidence gate: the exact A-start/B-start/A-`ConnectionAborted` condition
-  reaching fallback arming remains unproduced. Raw temporary logs and tables
-  are local evidence, not repository fixtures. Separate residuals do not close
-  that gate: #75's known-empty
-  pending-fallback claim remains unverified; getter provenance was fixed under
-  #86; and a late old-browser callback after a new `Run` was already unverified.
-  None of those residuals is #87 closure evidence.
+  #87](https://github.com/Burakuslendera/mullion/issues/87) is
+  CLOSED/NOT_PLANNED; it reopens only if the exact
+  A-start/B-start/A-`ConnectionAborted` condition reaches fallback arming, which
+  remains unproduced. Raw temporary logs and tables are local evidence, not
+  repository fixtures. Separate residuals do not satisfy or reopen that gate:
+  the successfully read empty pending-fallback claim previously catalogued with
+  #75 is carried by [decision
+  0037](./decisions/0037-event-values-preserve-getter-provenance.md) as its
+  conditional P2 tripwire; getter provenance was fixed under #86; and a late
+  old-browser callback after a new `Run` was already unverified. None reopens
+  closed #87.
 
 - **2026-08-21 — Issue #87 live basic regression smoke:** On the previously doctor-recorded Windows 11 25H2 build 26200.9168/amd64 workstation with Go 1.26.5, WebView2 151.0.4129.93 and 96 DPI, `go run examples/basic` logged 200 responses for `index.html`, `style.css` and `app.js`, shell-ready, `Ping` received/completed, visible, navigation completed and frontend-ready; `LaunchToVisible=3104ms`, `ShellReady=3054ms`, `Ready=3117ms`, visible-to-ready 13 ms, `Warn=0 Error=0`. Terminal interaction evidence covered all eight resize routes—left `10`, right `11`, top `12`, top-left `13`, top-right `14`, bottom `15`, bottom-left `16`, bottom-right `17`—with paired active `true`/`false` move-size generations and matching client/controller bounds. Repeated `960x1033` half-work-area and `1920x1032` full-work-area bounds were logged, but the log does not identify the gesture that caused each. Alt+F4 logged close requested/allowed, destroy, WebView2 shutdown, `message_loop_exit` and process exit 0. This basic smoke did not exercise the #87 A/B/status-9 interleave. Terminal evidence does not establish cursor glyphs, pixel alignment, smoothness or mixed-DPI behavior.
 
@@ -109,24 +112,41 @@ acceptance rules and checklist in the parent document.
   [decision 0043](./decisions/0043-external-routes-are-uri-only-os-activations.md)
   owns those boundaries.
 
-- **2026-08-22 — Issue #75 malformed-userinfo P2 correction:** the
-  literal-HTTP(S) logging reducer now scans the raw authority only after URL
-  reduction fails. A literal `@` before the first `/`, `\`, `?`, or `#` rejects
-  the entire untrusted authority and retains only `unknown` plus bare
-  query/fragment markers. The exact invalid-percent-escape reproducer
+- **2026-08-22 — Issue #75 malformed-userinfo P2 correction:** [decision
+  0044](./decisions/0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md)
+  owns the output guarantee. The literal-HTTP(S) logging reducer scans the raw
+  authority after normal URL reduction fails. That authority ends at the first
+  `/`, `\`, `?`, or `#`; a literal `@` before the boundary rejects the entire
+  untrusted authority and retains only `unknown` plus bare query/fragment
+  markers. Reverse solidus deliberately follows the WebView/WHATWG special-URL
+  path boundary, so a later `@` is path data under the established fallback.
+  The exact direct-value reproducer
   `https://alice:bad%zz@evil.example?token=s3cr3t#private-fragment` is locked to
-  `unknown?#`; a parse-invalid path with `@` after its separator locks the
-  ordinary fallback boundary. An allocation regression compares 1 KiB and 1 MiB
-  malformed userinfo so the diagnostic cannot regain input-sized retained state.
-  The production new-window callback regression locks rejection before the
-  opener and the same credential-free diagnostic.
+  `unknown?#`; the backslash control locks the ordinary fallback boundary.
+  Embedded `Message`/`Diagnostic` runs share the guarantee. While their
+  authority is open, only literal space terminates the run; TAB, LF, CR, VT, and
+  FF stay inside so later userinfo remains visible and any control-bearing raw
+  authority fails closed to `unknown`. After `/`, `\`, `?`, or `#`, ASCII
+  whitespace again terminates the run and preserves multiline path evidence.
+  `Diagnostic("error 'https://alice:bad%zz@evil.example'")` is locked exactly to
+  `error 'unknown`; the five-control valid/malformed userinfo matrix forbids all
+  credential and authority pieces, and its completed-path controls preserve the
+  path and following prose. A trusted production `WindowDiagnostic` callback
+  carries the multiline reproducer through `MarkFrontendDiagnostic`,
+  `logsafe.Diagnostic`, and the configured `Logger`; the emitted line contains
+  only the sanitized `error 'unknown` projection. Existing foreign-source and
+  fallback diagnostic denial regressions remain separate. Production new-window
+  and accepted cancel-route regressions still lock rejection before the opener
+  and the same credential-free direct-value diagnostic. The allocation
+  regression still compares 1 KiB and 1 MiB malformed userinfo so output cannot
+  regain input-sized retained state.
 
 - **2026-08-22 — Issue #75 malformed-userinfo evidence boundary / not live:**
-  this is source and deterministic headless regression coverage; no live WebView
-  producer emitted the malformed target, no `ShellExecuteW` call was attempted,
-  and no receiving-browser behavior is claimed. The valid-target live route
-  recorded on 2026-08-21 remains separate evidence and does not prove this
-  rejected-target diagnostic branch.
+  this is source, deterministic headless regression, and independent security
+  review coverage. No live WebView producer emitted the malformed target, no
+  `ShellExecuteW` call was attempted, and no receiving-browser behavior is
+  claimed. The valid-target live route recorded on 2026-08-21 remains separate
+  evidence and does not prove this rejected-target diagnostic branch.
 
 ## Issue #113
 
@@ -139,4 +159,4 @@ acceptance rules and checklist in the parent document.
 
 The pure tests do not measure live `LazyProc.Call`, `GetWindowRect`, DPI/monitor queries, DWM results, logger implementation cost, or actual mouse-message frequency. A live Windows run with a real window remains required for those costs and for tooltip/caption visual behavior. No test creates a window.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: record issue #75's malformed HTTP(S) userinfo P2 diagnostic correction, deterministic coverage, allocation bound, and explicit no-live-producer boundary.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: rename 0044 for its output guarantee and record embedded control-split and trusted WindowDiagnostic malformed-userinfo evidence.

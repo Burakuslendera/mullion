@@ -53,29 +53,16 @@ and hands everything else to the plain reduction. Its fallback is bounded too:
 an interrupted candidate is dropped rather than emitted as a host prefix, a cut
 ends in `...`, and raw query/fragment presence remains a bare `?` or `#`.
 
-For a validated HTTP(S) URL it emits the scheme, the whole credential-free
-authority, and the path. Userinfo is validated in place but never copied into
-the projection. It drops the query and fragment, keeping a bare `?` or `#` read
-off the raw value so two navigations differing only there stay distinguishable.
-It bounds the *result*, never the input, and only ever cuts the path: an
-authority is printed whole or not at all, and a cut value ends in `...`.
-
-If HTTP(S) reduction fails and a literal `@` occurs in the raw authority, the
-authority cannot be separated safely into credentials and host. The diagnostic
-therefore becomes exactly `unknown` plus the bare query/fragment markers. The
-authority scan ends at the first `/`, `\`, `?`, or `#`, so an `@` in a
-parse-invalid path does not suppress the established fallback. The scan uses
-string indexes only; neither it nor the `unknown` result retains input-sized
-state.
-
-A credential-free authority that is not hostname-shaped (ASCII letters, digits
-and `.-_:[]`) uses the bounded plain fallback rather than being printed as an
-authority. Every URL that reaches a log line goes through `URL`. Rendering
-controls and invalid UTF-8 are folded at the shared logsafe boundary without
-expansion. For issue #115, the rendering-control acceptance set is deliberately
-exactly U+200B–U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069 and U+FEFF;
-it is not an exhaustive copy of Unicode's `Bidi_Control` class, and U+061C is
-not included without separate scope and evidence.
+It emits scheme, host and path. It drops the query and fragment, keeping a bare
+`?` or `#` read off the raw value so two navigations differing only there stay
+distinguishable. It bounds the *result*, never the input, and only ever cuts the
+path - a host is printed whole or the value is not reduced as a URL at all - and
+a cut value ends in `...`. A host that is not hostname-shaped (ASCII letters,
+digits and `.-_:[]`) sends the whole value to `Message` rather than being
+printed. Every URL that reaches a log line goes through it. Rendering controls
+and invalid UTF-8 are folded at the shared logsafe boundary without expansion.
+For issue #115, the rendering-control acceptance set is deliberately exactly U+200B–U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069 and U+FEFF; it is not an exhaustive copy of Unicode's `Bidi_Control` class,
+and U+061C is not included without separate scope and evidence.
 
 ## Alternatives rejected
 
@@ -129,10 +116,8 @@ their complete inner HTTP origin with a bounded opaque suffix; oversized
 inherits Go's parse semantics, which are not Chromium's. Every divergence found
 in review was fail-closed at the security gates - `isExternalBrowserSafe` and
 `sameHTTPOrigin` re-parse the raw value and reject what Go will not read - so the
-divergence affects the log only. A URL Chromium accepts can still land in the
-fallback and lose its host. When failed reduction also finds literal userinfo in
-the raw HTTP(S) authority, losing the entire authority is mandatory: only
-`unknown` and bare query/fragment markers survive.
+divergence affects the log only. It still means a URL Chromium accepts can land
+in the fallback and lose its host.
 
 **An IPv6 zone identifier takes the fallback**, because `%` is refused in a host.
 
@@ -157,19 +142,16 @@ new URL-bearing log line should be reachable the same way.
 
 ## Evidence
 
-The reduction is locked by `internal/logsafe/url_test.go` and
-`url_host_test.go`; the call sites by `host/webview_logging_windows_test.go` and
-`host/systembrowser_windows_test.go`. The mangling above, the truncation attack,
-the valid credential case, and malformed userinfo with an invalid percent escape
-are covered. The malformed-userinfo production-path regression enters the real
-new-window callback, proves that the parse-invalid target is not handed to the
-opener, and requires a credential-free `unknown?#` diagnostic.
+Commit on branch `fix-78-logsafe-url`. The reduction is locked by
+`internal/logsafe/url_test.go` and `url_host_test.go`; the call sites by
+`host/webview_logging_windows_test.go` and
+`host/systembrowser_windows_test.go`. The mangling above, the truncation attack
+and the credential case were each measured, and each has a mutant that reverts
+the guard and fails the corresponding test.
 
-Not verified live. The malformed-userinfo correction changes only rejected
-target diagnostics and has no live WebView producer claim. The earlier URL
-reduction change likewise altered only log text; the `examples/basic` checklist
-item in [verification.md](../verification.md) that reads one of those lines was
-not run for it - `observed` for the headless behaviour, `unverified` for the live
-log.
+Not verified live. This change alters only the text of log lines, and the
+`examples/basic` checklist item in [verification.md](../verification.md) that
+reads one of them was not run for it - `observed` for the headless behaviour,
+`unverified` for the live log. The next live run against issue #77 exercises it.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: make parse-invalid HTTP(S) authorities with literal userinfo fail to `unknown` plus bare query/fragment markers and record the rejected new-window diagnostic boundary.
+> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: preserve wrapped HTTP origins and file-name tails in bounded fallbacks; record shared rendering-control folding and invalid-UTF-8 bounds for issues #89 and #115.

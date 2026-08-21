@@ -14,8 +14,11 @@ fails closed. A claimed fallback receives exactly seven restricted methods:
 successfully read empty-URI producer is unverified; observing one steal a pending
 claim is the conditional P2 tripwire. The body
 below preserves the historical tolerance and evidence context. External routing
-instead belongs to [0043](./0043-external-routes-are-uri-only-os-activations.md);
-issue #87 remains a separate accepted stale-ID risk.
+instead belongs to [0043](./0043-external-routes-are-uri-only-os-activations.md).
+Issue #87 is CLOSED/NOT_PLANNED as a separate accepted stale-ID availability
+risk and reopens only on the exact A-start/B-start/A-`ConnectionAborted`
+ordering reaching fallback arming, as specified by
+[0024](./0024-benign-abort-in-process.md).
 
 ## Context
 
@@ -166,4 +169,4 @@ completion-less residual 0020 recorded.
   (the origin's success dropped the admission; the frontend's bridge flowed)
   with zero rejects and zero seal lines across the session.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: state the exact current fallback authority, seven-method restriction, and routing/issue-87 split while preserving the historical attribution record.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: retain 0037's seven-method current authority and record issue #87's closed accepted-risk reopen gate.

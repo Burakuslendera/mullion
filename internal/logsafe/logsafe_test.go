@@ -310,6 +310,62 @@ func TestDiagnosticBoundsInputAndKeepsFirstMeaningfulURL(t *testing.T) {
 	}
 }
 
+func TestDiagnosticMalformedUserinfoIsNeverEmitted(t *testing.T) {
+	const input = `error 'https://alice:bad%zz@evil.example'`
+	const want = `error 'unknown`
+	got := Diagnostic(input)
+	if got != want {
+		t.Fatalf("Diagnostic(%q) = %q, want %q", input, got, want)
+	}
+	for _, forbidden := range []string{"alice", "bad", "evil.example", "%zz"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("Diagnostic(%q) retained %q in %q", input, forbidden, got)
+		}
+	}
+}
+
+func TestDiagnosticControlTerminatedOpenAuthorityIsUnknown(t *testing.T) {
+	for _, terminator := range []byte{'\t', '\n', '\r', '\v', '\f'} {
+		for _, userinfo := range []string{"alice:secret", "alice:bad%zz"} {
+			input := "error 'https://" + userinfo + "@evil.example'" +
+				string(terminator) + "stack"
+			got := Diagnostic(input)
+			if got != "error 'unknown" {
+				t.Fatalf("Diagnostic(%q) = %q, want %q", input, got, "error 'unknown")
+			}
+			for _, forbidden := range []string{"alice", "secret", "bad", "evil.example", "%zz"} {
+				if strings.Contains(got, forbidden) {
+					t.Fatalf("Diagnostic(%q) retained %q in %q", input, forbidden, got)
+				}
+			}
+		}
+	}
+}
+
+func TestDiagnosticControlInsideUserinfoDoesNotExposeItsContinuation(t *testing.T) {
+	for _, terminator := range []byte{'\t', '\n', '\r', '\v', '\f'} {
+		for _, parts := range []struct {
+			before string
+			after  string
+		}{
+			{"alice:", "secret"},
+			{"alice:bad%", "zz"},
+		} {
+			input := "error 'https://" + parts.before + string(terminator) +
+				parts.after + "@evil.example' stack"
+			got := Diagnostic(input)
+			if got != "error 'unknown stack" {
+				t.Fatalf("Diagnostic(%q) = %q, want %q", input, got, "error 'unknown stack")
+			}
+			for _, forbidden := range []string{"alice", "secret", "bad", "evil.example", "%", "zz"} {
+				if strings.Contains(got, forbidden) {
+					t.Fatalf("Diagnostic(%q) retained %q in %q", input, forbidden, got)
+				}
+			}
+		}
+	}
+}
+
 func TestDiagnosticNeverPrintsAnInterruptedHost(t *testing.T) {
 	raw := "before https://mullion.example." + strings.Repeat("attacker", DiagnosticLimit)
 	got := Diagnostic(raw)
@@ -336,11 +392,23 @@ func TestDiagnosticFileNameDoesNotRetainLargeInput(t *testing.T) {
 
 func TestDiagnosticRejectsAuthorityCutByASCIIWhitespace(t *testing.T) {
 	for _, terminator := range []byte{'\t', '\n', '\r', '\v', '\f'} {
-		raw := strings.Repeat("context ", DiagnosticLimit) +
-			"https://mullion.local" + "host" + string(terminator) + ".evil.example/path"
-		got := Diagnostic(raw)
-		if strings.Contains(got, "https://mullion.localhost") {
+		input := "error https://mullion.local" + string(terminator) + "stack"
+		got := Diagnostic(input)
+		if got != "error unknown" {
+			t.Fatalf("Diagnostic(%q) = %q, want %q", input, got, "error unknown")
+		}
+		if strings.Contains(got, "mullion.local") {
 			t.Fatalf("terminator %#x preserved an incomplete authority: %q", terminator, got)
+		}
+	}
+}
+
+func TestDiagnosticControlAfterCompleteAuthorityPreservesPathAndTail(t *testing.T) {
+	for _, terminator := range []byte{'\t', '\n', '\r', '\v', '\f'} {
+		input := "error https://evil.example/path" + string(terminator) + "stack"
+		got := Diagnostic(input)
+		if got != "error https://evil.example/path stack" {
+			t.Fatalf("Diagnostic(%q) = %q, want %q", input, got, "error https://evil.example/path stack")
 		}
 	}
 }

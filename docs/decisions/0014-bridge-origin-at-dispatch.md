@@ -2,6 +2,12 @@
 
 **Status:** Accepted; both halves of the follow-up landed - new-window routing as [0022](./0022-new-windows-to-system-browser.md), the opt-in navigation-cancel gate as [0023](./0023-navigation-cancel-gate.md); fallback source authority is refined by [0037](./0037-event-values-preserve-getter-provenance.md)
 
+**Current refinement — read before the historical body:** the six-method
+fallback list below records what 0014 accepted at the time. It is not the
+current allow-list. [Decision 0037](./0037-event-values-preserve-getter-provenance.md)
+and current code own seven restricted methods, including `WindowFrameState`.
+The historical sections remain unchanged.
+
 ## Context
 
 `window.<ns>` — the window controls and `Config.Bridge`, the embedding
@@ -115,4 +121,4 @@ Node's built-in `vm` and locks complete diagnostic forwarding. Issue #6 carries
 the original origin-gate analysis and reproduction reasoning; issue #88 carries
 the fallback evidence-retention follow-up.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: route fallback source authority forward to 0037 without rewriting this historical decision.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point prominently to 0037's current seven-method fallback authority while preserving 0014's historical body.

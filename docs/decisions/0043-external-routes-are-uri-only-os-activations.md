@@ -24,8 +24,11 @@ This record owns only issue #75 items 1, 2 and 4: routing frequency, the OS/brow
 boundary, and URI-only request semantics. Item 3 is fallback authority, owned
 separately by
 [decision 0037](./0037-event-values-preserve-getter-provenance.md) and not
-restated here. Issue #87 remains a separate accepted stale-navigation-ID
-availability risk, not evidence for changing either boundary.
+restated here. [Issue #87](https://github.com/Burakuslendera/mullion/issues/87)
+is CLOSED/NOT_PLANNED: its stale-navigation-ID availability cost is an accepted
+risk, not evidence for changing either boundary. It reopens only if the exact
+`A-start/B-start/A-ConnectionAborted` ordering reaches fallback arming, as
+specified by [decision 0024](./0024-benign-abort-in-process.md).
 
 No current routing residual in this record is P0, P1, or P2. The accepted
 residuals are low/P4 availability, privacy, and compatibility consequences.
@@ -37,7 +40,7 @@ umbrella [#126](https://github.com/Burakuslendera/mullion/issues/126) and its
 content-boundary child
 [#130](https://github.com/Burakuslendera/mullion/issues/130) own paired platform
 evidence, not routing-policy selection or revision; #130 explicitly excludes
-absorbing #75. Issue #87 remains the separate accepted stale-ID risk named above.
+absorbing #75.
 
 ## Decision
 
@@ -57,9 +60,10 @@ a separate boundary. A validated URL projects its whole credential-free
 authority and bounded path, with only bare query/fragment markers. If HTTP(S)
 reduction fails and the raw authority contains literal userinfo, no authority is
 trusted: the diagnostic is `unknown` plus those bare markers. Diagnostics
-therefore expose no userinfo, query values, or fragment values. URI fidelity at
-the host handoff does not promise how the receiving browser interprets
-userinfo, query, or fragment.
+therefore expose no userinfo, query values, or fragment values. [Decision
+0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) owns this
+malformed-userinfo refinement. URI fidelity at the exact URI handoff does not
+promise how the receiving browser interprets userinfo, query, or fragment.
 
 Every handoff is a fresh OS URL activation. It is not replay of the WebView2
 navigation or popup request. Mullion preserves no HTTP method, body, request
@@ -158,7 +162,7 @@ evidence records observed ancillary requests without assigning a cause.
 Mullion still cannot promise a new process, window, or tab, a particular browser
 profile, authentication state, credential forwarding, query/fragment treatment,
 or the exact resulting HTTP request. It promises only scheme admission, exact
-host handoff, credential-free diagnostics (including `unknown` plus markers for
+URI handoff, credential-free diagnostics (including `unknown` plus markers for
 a rejected parse-invalid HTTP(S) authority carrying raw userinfo), bounded
 in-flight workers, and route timing relative to successful WebView2
 handling/cancellation.
@@ -217,8 +221,12 @@ handling/cancellation.
   `TestProductionNewWindowRoutesNonGestureURIExactlyAndReducesDiagnostics`
   locks exact safe-target handoff and the credential-free validated projection.
   `TestProductionNewWindowRejectsMalformedUserinfoWithoutDiagnosticDisclosure`
-  enters the production callback and locks no opener call plus `unknown?#` for a
-  parse-invalid credential-bearing target.
+  and
+  `TestProductionCancelRouteRejectsMalformedUserinfoWithoutDiagnosticDisclosure`
+  enter both production callbacks and lock no opener call plus `unknown?#` for a
+  parse-invalid credential-bearing target. [Decision
+  0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) owns that
+  refinement and its narrower backslash path boundary.
   `TestSafeTargetsAreHandedToTheSystemBrowser`,
   `TestExternalOpenSlotsAreBoundedAndSayWhenTheyRunOut`, and the focused routing
   contract tests lock the remaining observable host boundaries. `ShellExecuteW`
@@ -239,4 +247,4 @@ handling/cancellation.
   owns the original consequence inventory and historical corrections; this
   decision, not the tracker text, owns the accepted current routing contract.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: specify whole credential-free authority projection and fail-closed `unknown` diagnostics for rejected parse-invalid HTTP(S) userinfo without changing URI handoff.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: link malformed-userinfo diagnostics to 0044, state exact URI handoff, and record issue #87's closed accepted-risk reopen gate.

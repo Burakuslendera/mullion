@@ -82,10 +82,13 @@ func URL(raw string) string {
 	reduced, ok := reduceHTTPURL(head, hasQuery, hasFragment)
 	if !ok {
 		// A failed parse cannot distinguish credentials from a host once raw
-		// userinfo is present. Refuse the whole untrusted authority rather than
-		// handing credentials to the plain fallback; retain only the bounded
-		// unknown value and query/fragment presence.
-		if rawHTTPAuthorityHasUserinfo(head) {
+		// userinfo is present. ASCII control whitespace inside an authority is
+		// equally unsafe: WebView deletes TAB, LF, and CR before parsing, while
+		// VT and FF are conservative diagnostic boundaries. The bytes on either
+		// side cannot be reported as separate trustworthy authorities. Refuse
+		// the whole authority rather than handing it to the plain fallback;
+		// retain only the bounded unknown value and query/fragment presence.
+		if rawHTTPAuthorityIsUnsafe(head) {
 			return reduceURLFallback("", false, hasQuery, hasFragment)
 		}
 		// Other fallbacks still have to avoid cutting a host into a believable
@@ -95,18 +98,19 @@ func URL(raw string) string {
 	return reduced
 }
 
-// rawHTTPAuthorityHasUserinfo reports literal userinfo evidence without parsing
-// or copying raw. URL already established a literal http(s) prefix. The raw
-// authority ends at either path separator or at a query/fragment marker; the
-// latter two are normally absent because splitURLMarks has already removed them.
-func rawHTTPAuthorityHasUserinfo(raw string) bool {
+// rawHTTPAuthorityIsUnsafe reports literal userinfo or ASCII control whitespace
+// without parsing or copying raw. URL already established a literal http(s)
+// prefix. The raw authority ends at either path separator or at a query/fragment
+// marker; the latter two are normally absent because splitURLMarks has already
+// removed them.
+func rawHTTPAuthorityIsUnsafe(raw string) bool {
 	schemeEnd := len("http://")
 	if len(raw) >= len("https://") && strings.EqualFold(raw[:len("https://")], "https://") {
 		schemeEnd = len("https://")
 	}
 	for index := schemeEnd; index < len(raw); index++ {
 		switch raw[index] {
-		case '@':
+		case '@', '\t', '\n', '\r', '\v', '\f':
 			return true
 		case '/', '\\', '?', '#':
 			return false

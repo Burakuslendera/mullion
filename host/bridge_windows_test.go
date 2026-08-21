@@ -391,3 +391,26 @@ func TestBridgeTrustedDiagnosticReceiptIsBoundedAndKeepsLateURL(t *testing.T) {
 		t.Fatalf("bounded Go receipt retained query data or the raw detail:\n%s", logText)
 	}
 }
+
+func TestProductionCallbackSanitizesTrustedWindowDiagnosticMalformedUserinfo(t *testing.T) {
+	host, logger := newTestHost(t, Config{StartHidden: true})
+	const detail = "error 'https://alice:bad%zz@evil.example'\nstack"
+	raw := `{"id":"diagnostic","method":"` + methodDiagnostic +
+		`","args":["error",` + strconv.Quote(detail) + `]}`
+
+	host.newWebViewBrowser().MessageCallback(webview2.WebMessageObservation{
+		Source:  host.source.origin.text + "/app",
+		Message: raw,
+	}, nil)
+
+	logText := logger.String()
+	const want = "level=ERROR msg=mullion: frontend diagnostic error, message=error 'unknown"
+	if !strings.Contains(logText, want) {
+		t.Fatalf("trusted WindowDiagnostic log missing sanitized output %q:\n%s", want, logText)
+	}
+	for _, forbidden := range []string{"alice", "bad", "evil.example", "%zz"} {
+		if strings.Contains(logText, forbidden) {
+			t.Fatalf("trusted WindowDiagnostic log retained %q:\n%s", forbidden, logText)
+		}
+	}
+}

@@ -232,6 +232,15 @@ func TestURLMalformedAuthorityUserinfoFailsClosed(t *testing.T) {
 	}
 }
 
+func TestURLBackslashEndsRawAuthorityBeforePathAtSign(t *testing.T) {
+	// WebView/WHATWG special-URL parsing treats reverse solidus as a path
+	// separator. The later @ is therefore path data, not raw-authority userinfo.
+	const malformedPath = `https://evil.example\50%zz@path?token=s3cr3t#private-fragment`
+	if got, want := URL(malformedPath), "http50%zz@path?#"; got != want {
+		t.Fatalf("URL(%q) = %q, want the existing fallback %q", malformedPath, got, want)
+	}
+}
+
 func TestURLFallbackKeepsMarkersAndRejectsCutHosts(t *testing.T) {
 	invalid := "https://" + strings.Repeat("a", 150) + ".mullion.local.evil.example/50%off/p?token=secret#tail"
 	got := URL(invalid)

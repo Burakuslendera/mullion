@@ -315,6 +315,9 @@ func messagePlain(message string) string {
 	return reducePlain(message)
 }
 
+// StripControl solely owns CR/LF folding together with every other C0/C1
+// control. Do not pre-replace CR or LF here: one shared pass keeps the terminal
+// safety boundary and its allocation behavior consistent for every caller.
 func normaliseMessage(message string) string {
 	message = StripControl(message)
 	return strings.TrimSpace(message)
@@ -391,10 +394,12 @@ func reduceAroundURLs(message string) string {
 			continue
 		}
 		end := urlRunEnd(message, index)
+		run := message[index:end]
+		terminator := terminatorAt(message, end)
 		plain := message[plainStart:index]
 		reduced := reducePlainSegment(plain)
 		write(reduced, true)
-		write(reduceRun(message[index:end], terminatorAt(message, end)),
+		write(reduceRun(run, terminator),
 			plain != "" && (endsWithASCIISpace(plain) || reduced == ""))
 		plainStart = end
 		index = end
@@ -428,10 +433,12 @@ func reduceAroundURLs(message string) string {
 // The refusal only applies while the authority is still open. Once a path, query
 // or fragment has started the host is complete, and a cut after that shortens
 // the path, not the host - which keeps a URL inside a multi-line stack trace
-// readable, the shape this whole change exists for.
+// readable, the shape this whole change exists for. An open authority cut by
+// unsafe whitespace is different: bytes after the cut can change its meaning,
+// so no part of that authority is safe to print.
 func reduceRun(run string, terminator byte) string {
 	if terminator != 0 && terminator != ' ' && !hasCompleteAuthority(run) {
-		return messagePlain(run)
+		return "unknown"
 	}
 	return URL(run)
 }
@@ -454,7 +461,7 @@ func hasCompleteAuthority(run string) bool {
 	if index < 0 {
 		return false
 	}
-	return strings.ContainsAny(run[index+len(authority):], "/?#")
+	return strings.ContainsAny(run[index+len(authority):], `/\?#`)
 }
 
 // reducePlainSegment is the plain reduction applied to one part of a message.
@@ -465,11 +472,21 @@ func reducePlainSegment(part string) string {
 	return reducePlain(normaliseMessage(part))
 }
 
-// urlRunEnd finds where a URL run stops: the next ASCII whitespace byte, or the
-// end of the message. See reduceAroundURLs for why nothing else may end one.
+// urlRunEnd finds where a URL run stops. Literal space always ends a run. While
+// the raw authority is open, TAB, LF, CR, VT, and FF stay inside so a later `@`
+// remains visible to the raw-userinfo guard. Once `/`, `\`, `?`, or `#`
+// completes the authority, any ASCII whitespace ends the run and preserves
+// following multiline prose.
 func urlRunEnd(message string, start int) int {
+	const authority = "://"
+	authorityStart := start + strings.Index(message[start:], authority) + len(authority)
+	authorityComplete := false
 	for index := start; index < len(message); index++ {
-		if isASCIISpace(message[index]) {
+		value := message[index]
+		if index >= authorityStart && strings.ContainsRune(`/\?#`, rune(value)) {
+			authorityComplete = true
+		}
+		if value == ' ' || (authorityComplete && isASCIISpace(value)) {
 			return index
 		}
 	}

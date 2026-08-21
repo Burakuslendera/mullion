@@ -220,12 +220,16 @@ dropped, with only a bare `?` or `#` recording their presence. The
 scheme/host/path projection has a 160-byte budget; a cut path gets a visible
 `...`, followed by any query/fragment presence markers. `blob:` and
 `filesystem:` wrappers preserve a valid inner HTTP(S)
-origin while bounding the suffix. Parse-invalid HTTP(S) raw-authority userinfo becomes
-`unknown` plus bare `?`/`#`. Other schemes and remaining non-parseable, authority-less,
-or unsafe-host forms use bounded `Message` fallback, so their origin is not promised.
+origin while bounding the suffix. Parse-invalid HTTP(S) raw-authority userinfo
+becomes `unknown` plus bare `?`/`#`; [decision
+0044](docs/decisions/0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md)
+owns the diagnostic-output guarantee. Other schemes and remaining non-parseable,
+authority-less, or unsafe-host forms use bounded `Message` fallback, so their
+origin is not promised.
 
 An arbitrary message is not treated as one URL. Recognised HTTP(S) runs inside
-it are reduced by the same URL rule, while the surrounding text follows the
+it are reduced by the same URL rule, while malformed userinfo and unsafe
+control-split authorities emit only `unknown`; surrounding text follows the
 message and filesystem-path rules
 ([decisions/0028](docs/decisions/0028-message-keeps-the-urls-inside-it.md)).
 A local path inside an HTTP(S) URL's own path — such as a dev server's `/@fs/`
@@ -397,4 +401,3 @@ MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 The only dependency is `golang.org/x/sys` (BSD 3-Clause). Nothing else is
 vendored, embedded or redistributed — including the WebView2 Runtime, which is a
 system component that mullion locates and calls into.
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: document conditional new-window suppression/routing and URI-only OS activation with concurrency-not-rate, diagnostic gesture classification, and no request/profile/session preservation.

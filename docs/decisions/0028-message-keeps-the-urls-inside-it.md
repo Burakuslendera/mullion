@@ -1,6 +1,6 @@
 # 0028. A message keeps the http(s) URLs inside it
 
-**Status:** Accepted
+**Status:** Accepted; malformed-userinfo and unsafe open-authority control output refined by [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) without superseding this decision
 
 ## Context
 
@@ -246,4 +246,4 @@ the query's value - `token=s3cr3t` in the thrown string - is gone. That is the
 line issue #80 was opened about, which before this change read `httpmain.js`;
 both halves of the trade this record makes are visible in one line.
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: preserve wrapped HTTP origins and file-name tails when bounding non-http URL fallbacks.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: add the forward link to 0044 for malformed-userinfo and unsafe open-authority control output; historical decision text is unchanged.

@@ -1,6 +1,6 @@
 # 0035. Frontend-controlled diagnostics are bounded before reduction and retention
 
-**Status:** Accepted
+**Status:** Accepted; malformed-userinfo diagnostic output refined by [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) without superseding this decision
 
 ## Context
 
@@ -147,4 +147,4 @@ WebView2 151.0.4129.59 run delivered 100,000 punctuation bytes through
 complete `https://mullion.localhost/app/main.js?` target without its query
 value, shut down cleanly, and exited 0.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: consolidate accumulated edit signatures into the single current footer required by agents/notes.md; Git retains the earlier history.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: add the forward link to 0044 for malformed-userinfo diagnostic output; historical decision text is unchanged.

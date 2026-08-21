@@ -111,6 +111,33 @@ func TestProductionNewWindowRejectsMalformedUserinfoWithoutDiagnosticDisclosure(
 	}
 }
 
+func TestProductionCancelRouteRejectsMalformedUserinfoWithoutDiagnosticDisclosure(t *testing.T) {
+	const target = "https://alice:bad%zz@evil.example?token=s3cr3t#private-fragment"
+	host, logger := newTestHost(t, Config{
+		StartHidden:           true,
+		PinNavigationToOrigin: true,
+	})
+	var opened []string
+	host.openExternal = func(uri string) { opened = append(opened, uri) }
+
+	if !cancelNavigation(host, target, 75, true) {
+		t.Fatal("pin route did not accept cancellation for the off-origin malformed target")
+	}
+	if len(opened) != 0 {
+		t.Fatalf("malformed cancelled target reached the system-browser hand-off: %v", opened)
+	}
+	logged := logger.String()
+	if !strings.Contains(logged,
+		"navigation cancelled off origin, unsupported scheme, uri=unknown?#\n") {
+		t.Fatalf("malformed cancelled-target diagnostic was not reduced as expected:\n%s", logged)
+	}
+	for _, forbidden := range []string{"alice", "bad", "evil.example", "token", "s3cr3t", "private-fragment"} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("malformed cancelled-target diagnostic leaked %q:\n%s", forbidden, logged)
+		}
+	}
+}
+
 // cancelNavigation drives the pair of callbacks the runtime drives for one
 // NavigationStarting the gate wants cancelled: the decision, and - only if the
 // runtime's put_Cancel succeeded - the commit. Between them sits the call this
