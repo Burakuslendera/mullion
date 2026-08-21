@@ -53,7 +53,7 @@ These files are that record.
 | [0030](./0030-guard-exempts-the-virtual-host-name.md) | The no-port guard exempts one virtual host name, not a file | Accepted |
 | [0031](./0031-the-bytes-never-decide-the-content-type.md) | The bytes never decide the content type, and the boundary decides the name | Accepted; reparse-point consequence answered by 0033 |
 | [0032](./0032-the-supported-go-floor-is-1-22.md) | The supported Go floor is 1.22, and it is a promise rather than a default | Superseded by 0033 |
-| [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) | The Go floor is 1.24, so that an asset directory can be an `os.Root` | Accepted |
+| [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) | The Go floor is 1.24, so that an asset directory can be an `os.Root` | Superseded by [0042](./0042-go-1-24-remains-the-released-consumer-floor.md) |
 | [0034](./0034-webview2-hosting-is-windows-amd64-only.md) | WebView2 hosting is supported only on Windows/amd64 | Accepted |
 | [0035](./0035-frontend-diagnostics-are-bounded.md) | Frontend-controlled diagnostics are bounded before reduction and retention | Accepted |
 | [0036](./0036-one-source-plan-defines-origin.md) | One source plan defines the frontend origin | Accepted |
@@ -62,6 +62,7 @@ These files are that record.
 | [0039](./0039-public-run-preflight-stays-headless.md) | Public Run preflight stays headless | Accepted; supersedes [0006](./0006-tests-stay-headless.md) |
 | [0040](./0040-public-preflight-errors-belong-to-callers.md) | Public preflight errors belong to callers | Accepted; refines [0038](./0038-terminal-policy-owns-error-reporting.md) |
 | [0041](./0041-wm-nchittest-reader-gates.md) | WM_NCHITTEST computes auxiliary geometry only for readers | Accepted |
+| [0042](./0042-go-1-24-remains-the-released-consumer-floor.md) | Go 1.24 remains the released consumer floor | Accepted; supersedes [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) |
 
 ## When to write one
 
@@ -103,4 +104,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: index decision 0041 for issue #113 reader-gated hit-test costs.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: index accepted decision 0042 as the authority for the Go 1.24 consumer floor and mark stale-premise decision 0033 superseded.

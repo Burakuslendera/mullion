@@ -13,7 +13,7 @@ points back here for the mechanics.
   the supported floor and an invariant, not an accident: nothing here may use a
   standard-library symbol or language feature newer than it, whatever you have
   installed. It is 1.24 because that is where `os.OpenRoot` arrives.
-  [decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md).
+  [decisions/0042](docs/decisions/0042-go-1-24-remains-the-released-consumer-floor.md).
 - The WebView2 Runtime is optional for the default suite, but required to run the
   demo and the two opt-in machine tests selected by
   `MULLION_REQUIRE_WEBVIEW2=1`. Both Windows CI lanes set that requirement.
@@ -185,4 +185,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: reconcile optional WebView2 and CGo-free build prerequisites with the opt-in runtime and local race-toolchain gates.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: point the active Go 1.24 floor contract to its authoritative superseding decision.

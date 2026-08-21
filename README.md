@@ -56,7 +56,7 @@ where `os.OpenRoot` arrives, and serving assets from a directory through an
 `os.Root` is what keeps a *junction or symlink* inside that directory from
 reaching outside it. It is not a general containment: a hard link is not a
 reparse point and is not refused.
-[decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)
+[decisions/0042](docs/decisions/0042-go-1-24-remains-the-released-consumer-floor.md)
 has the reasoning and what would move it.
 
 [runtime]: https://developer.microsoft.com/microsoft-edge/webview2/
@@ -341,7 +341,7 @@ was taken that way, on the same flat ground.
   mullion cannot tell which it was handed. Neither refuses a *hard link*, which
   needs no elevation to create. Serve from an `embed.FS`, or from a directory
   nothing else writes to
-  ([decisions/0033](docs/decisions/0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md)).
+  ([decisions/0042](docs/decisions/0042-go-1-24-remains-the-released-consumer-floor.md)).
 - **Overriding `VirtualHost` can put two seconds back into every navigation.** The
   WebView2 runtime resolves the virtual host name even though
   `WebResourceRequested` answers every request in process and nothing needs the

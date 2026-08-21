@@ -1,6 +1,6 @@
 # 0033. The Go floor is 1.24, so that an asset directory can be an `os.Root`
 
-**Status:** Accepted, supersedes [0032](./0032-the-supported-go-floor-is-1-22.md)
+**Status:** Superseded by [0042](./0042-go-1-24-remains-the-released-consumer-floor.md)
 
 ## Context
 
@@ -191,4 +191,4 @@ an assumption, which 0032 called for and did not apply.
   on the audit machine. Junctions and hard links need none, which is why they are
   the two that could be established here.
 
-> Last updated: 2026-07-30 | Editor: Claude (Opus 5) | Change: new record, superseding 0032 one day after it. The floor moves to 1.24 so os.OpenRoot(dir).FS() can be the documented way to serve a directory, which closes the reparse-point half of issue #103 for callers who take it. Measured: os.DirFS reads through an mklink /J junction, os.Root answers "path escapes from parent", and (*os.Root).FS() is in api/go1.24.txt rather than 1.25. Also records that 0032's "moving to 1.24 is the only thing that would close it" was wrong - a hardened fs.FS over GetFileAttributes was built and measured working on go1.22.12 - and rejects that alternative on API surface, on the TOCTOU race it leaves open, and on maintenance, rather than on capability.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: mark the record superseded by 0042 after release tags disproved its never-released premise; preserve the historical reasoning unchanged.

@@ -100,9 +100,11 @@ the two standard ones differ. Measured on go1.24.6 and go1.26.5 against the same
 legitimate assets normally.
 
 That is why the module's Go floor is 1.24 and why `Config.Assets` recommends
-`os.OpenRoot(dir).FS()` for a directory (decisions/0033). It is a recommendation
-and not an enforcement: `Config.Assets` is an `fs.FS`, mullion cannot tell which
-one it was handed, and a caller who passes `os.DirFS` keeps the old behaviour.
+`os.OpenRoot(dir).FS()` for a directory
+([decisions/0042](./decisions/0042-go-1-24-remains-the-released-consumer-floor.md)).
+It is a recommendation and not an enforcement: `Config.Assets` is an `fs.FS`,
+mullion cannot tell which one it was handed, and a caller who passes `os.DirFS`
+keeps the old behaviour.
 
 Two limits, both measured, because "`os.Root` keeps you inside the directory" is
 the sentence a reader would carry away and it is wrong in both directions.
@@ -383,4 +385,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: make the immutable credential-free source summary and invalid-VirtualHost pre-native boundary canonical and name their focused tests.
+> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: point the canonical Go 1.24 asset-root rationale to its authoritative superseding decision.
