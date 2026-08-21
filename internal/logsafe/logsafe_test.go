@@ -20,6 +20,17 @@ func TestReasonSanitizesWindowsPathWithSpaces(t *testing.T) {
 	}
 }
 
+func TestMessageSanitizesRelativePathToken(t *testing.T) {
+	got := Message("read relative/path.txt")
+	want := "read path.txt"
+	if got != want {
+		t.Fatalf("Message() = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "relative") {
+		t.Fatalf("Message() retained private path prefix in %q", got)
+	}
+}
+
 func TestReasonSanitizesQuotedWindowsPathWithSpaces(t *testing.T) {
 	got := Message(`open "C:\Users\Example User\AppData\Roaming\Acme\logs\latest.log": access denied`)
 	if !strings.Contains(got, "latest.log") {
@@ -134,6 +145,14 @@ func TestReasonAndMessagePreserveEmptyAndApostropheBehavior(t *testing.T) {
 	}
 }
 
+func TestFileNameUnknownInputs(t *testing.T) {
+	for _, input := range []string{"", "."} {
+		if got := FileName(input); got != "unknown" {
+			t.Errorf("FileName(%q) = %q, want %q", input, got, "unknown")
+		}
+	}
+}
+
 // TestMessageStripsControlBytes locks the escape-sequence half of the log-safety
 // contract. CRLF forging was already blocked; a frontend-controlled string must
 // also not carry an ANSI/OSC terminal escape, a NUL, or a provenance-erasing
@@ -141,7 +160,6 @@ func TestReasonAndMessagePreserveEmptyAndApostropheBehavior(t *testing.T) {
 // unbounded from the frontend (a bridge method name, a WindowDiagnostic detail),
 // so the sanitizer is the boundary that must neutralise them.
 func TestMessageStripsControlBytes(t *testing.T) {
-	isControl := func(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) }
 	cases := []struct {
 		name string
 		in   string
@@ -155,7 +173,7 @@ func TestMessageStripsControlBytes(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			got := Message(c.in)
 			for _, r := range got {
-				if isControl(r) {
+				if IsControl(r) {
 					t.Fatalf("Message(%q) = %q still carries control rune %#x", c.in, got, r)
 				}
 			}
@@ -169,6 +187,26 @@ func TestMessageStripsControlBytes(t *testing.T) {
 	// FileName sits on the same boundary and must strip too.
 	if got := FileName("\x1b[2Jname.log"); strings.ContainsRune(got, 0x1b) {
 		t.Fatalf("FileName leaked ESC: %q", got)
+	}
+}
+
+func TestMessageNormalisesControlSpacing(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"carriage return", "left\rright", "left right"},
+		{"line feed", "left\nright", "left right"},
+		{"carriage return and line feed", "left\r\nright", "left right"},
+		{"C1 next line", "left\u0085right", "left right"},
+		{"invalid UTF-8 and CRLF", "left\xff\r\nright", "left? right"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Message(c.in); got != c.want {
+				t.Fatalf("Message(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
 	}
 }
 

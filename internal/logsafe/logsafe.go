@@ -316,8 +316,6 @@ func messagePlain(message string) string {
 }
 
 func normaliseMessage(message string) string {
-	message = strings.ReplaceAll(message, "\r", " ")
-	message = strings.ReplaceAll(message, "\n", " ")
 	message = StripControl(message)
 	return strings.TrimSpace(message)
 }

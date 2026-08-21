@@ -246,6 +246,22 @@ func TestURLNonHTTPFallbackMarksBoundedOutput(t *testing.T) {
 	}
 }
 
+func TestURLNoSchemeFallbackHasExactBoundedOutput(t *testing.T) {
+	raw := strings.Repeat("x", URLLimit*2)
+	want := strings.Repeat("x", URLLimit-len(truncationMarker)) + truncationMarker
+	if got := URL(raw); got != want {
+		t.Fatalf("URL() = %q, want %q", got, want)
+	}
+}
+
+func TestURLFallbackRetainsCompleteURLBeforeWhitespaceBoundary(t *testing.T) {
+	const completeURL = "https://example.com/x"
+	raw := "value " + completeURL + " " + strings.Repeat("x", URLLimit*2)
+	if got := URL(raw); !strings.Contains(got, completeURL) {
+		t.Fatalf("URL() = %q, want complete embedded URL %q retained", got, completeURL)
+	}
+}
+
 var reducedURLSink string
 
 func TestURLPathAllocationBytesAreInputSizeIndependent(t *testing.T) {
