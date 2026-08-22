@@ -13,6 +13,7 @@ other document answers one narrower question below.
 | Question | Document |
 | --- | --- |
 | How does the host work, end to end? | [architecture.md](./architecture.md) |
+| Bridge messages, source admission, fallback/frame authority, external WebView routes | [bridge.md](./bridge.md) |
 | How do startup show gates and the render watchdog work? | [startup-gates-and-watchdog.md](./startup-gates-and-watchdog.md) |
 | How does the host talk to WebView2? | [webview2-and-assets.md](./webview2-and-assets.md) |
 | How do WebView2 zoom and native hit-testing stay aligned? | [webview2-zoom-and-native-hit-testing.md](./webview2-zoom-and-native-hit-testing.md) |
@@ -49,4 +50,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: complete the documentation index with guard, startup, Snap-testing and WebView2 zoom continuations.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: consolidate Bridge protocol and origin-boundary routing to its canonical reference.

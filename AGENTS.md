@@ -17,6 +17,7 @@ pull-request mechanics. The rules below are additional, not alternative.
 | --- | --- |
 | How does the host work, end to end? | [docs/architecture.md](./docs/architecture.md) |
 | How do startup show gates and the render watchdog work? | [docs/startup-gates-and-watchdog.md](./docs/startup-gates-and-watchdog.md) |
+| Bridge messages, source admission, fallback/frame authority, external WebView routes | [docs/bridge.md](./docs/bridge.md) |
 | How does the host talk to WebView2? | [docs/webview2-and-assets.md](./docs/webview2-and-assets.md) |
 | How do WebView2 zoom and native hit-testing stay aligned? | [docs/webview2-zoom-and-native-hit-testing.md](./docs/webview2-zoom-and-native-hit-testing.md) |
 | How are assets served without a port? | [docs/assets.md](./docs/assets.md) |
@@ -188,4 +189,4 @@ Replace that footer when editing; never append another footer or adopt another
 editor's name. Git history preserves earlier signatures.
 
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: route extracted subsystem references and move rule-maintenance details to their authorized continuation.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: consolidate Bridge protocol and origin-boundary routing to its canonical reference.

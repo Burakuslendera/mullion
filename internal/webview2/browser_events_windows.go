@@ -35,6 +35,8 @@ func (browser *Browser) registerEvents() error {
 		return errors.New("webview2: core webview unavailable")
 	}
 
+	// A future frame-specific WebMessageReceived registration must default-reject
+	// frames from the top-level empty-source fallback predicate.
 	if err := addEvent(NewWebMessageReceivedHandler(browser.handleWebMessageReceived), core.AddWebMessageReceived); err != nil {
 		return err
 	}

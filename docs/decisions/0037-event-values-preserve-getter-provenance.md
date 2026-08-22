@@ -1,6 +1,10 @@
 # 0037. Event values preserve getter provenance before granting fallback authority
 
-**Status:** Accepted; owns current fallback claim authority, separately from [0043](./0043-external-routes-are-uri-only-os-activations.md)'s external-routing contract
+**Status:** Accepted
+
+**Current implementation (not part of this historical decision):** Historical uses
+of “current” below describe state at decision time; the [Issue #116 current
+disposition](../bridge.md#issue-116-current-disposition) wins now.
 
 ## Context
 
@@ -94,4 +98,4 @@ the claim is a conditional P2 tripwire.
 - `host/bridge_windows_test.go`: failed source never dispatches and a claimed
   fallback remains outside trusted-origin admission with exactly seven controls.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: correct the current exact-or-successful-empty claim-before-pin authority, seven-method restriction, fail-closed cases, and conditional P2 tripwire.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: remove 0037's accidental present-tense root/frame limitation; its current implementation record remains issue #116's disposition.

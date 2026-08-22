@@ -172,7 +172,7 @@ An ordinary reporter/user need only run the relevant checks on their existing di
       scripted `window.open`): it opens in the default browser and **no second
       window appears** — a detached, chrome-less WebView2 popup is the failure.
       A non-http(s) scheme (`window.open('mailto:…')`) does nothing, and the log
-      says `new window dropped, unsupported scheme` (decisions/0022).
+      says `new window dropped, target not admitted` (decisions/0022).
 - [ ] **The window still answers while the browser starts** (issue #74,
       decisions/0029). The user-visible half of that change; the timing half was
       measured with a probe and is in 0029's Evidence (230 ms on a launch that
@@ -397,4 +397,4 @@ The dated records now live in the linked continuation
 focused evidence and explicit live/headless boundary. Keep this document's
 acceptance rules and checklist here; append command results and observations to
 the continuation rather than growing this file past its 400-line limit.
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: distinguish ordinary reporter DPI coverage from maintainer-owned mixed-DPI release acceptance while preserving the full live checklist.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: align the live new-window rejection check with the target-not-admitted diagnostic.

@@ -123,7 +123,8 @@ and a bridge round-trip printed into the page.
 
 | Document                                                             | What it covers                                                                   |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| [architecture.md](docs/architecture.md)                               | Bootstrap order, threading model, message routing, the bridge                     |
+| [architecture.md](docs/architecture.md)                               | Bootstrap order, threading model, and message routing                              |
+| [bridge.md](docs/bridge.md)                                           | Bridge messages, source admission, fallback authority, frame receipt, and external routes |
 | [webview2-and-assets.md](docs/webview2-and-assets.md)                 | The in-house WebView2 COM binding                                                  |
 | [assets.md](docs/assets.md)                                         | In-process asset serving, its boundary, and COM stream lifetime                    |
 | [frame-and-dpi.md](docs/frame-and-dpi.md)                             | `WM_NCCALCSIZE`, hit-testing, per-monitor DPI, restore flicker                    |

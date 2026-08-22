@@ -1,6 +1,6 @@
 # 0027. A navigation cancel is committed only after the runtime has performed it
 
-**Status:** Accepted; getter provenance and exact restoration after confirmed cancel are refined by [0037](./0037-event-values-preserve-getter-provenance.md), and [0043](./0043-external-routes-are-uri-only-os-activations.md) owns the current URI-only external-routing consequences
+**Status:** Accepted; getter provenance and exact restoration after confirmed cancel are refined by [0037](./0037-event-values-preserve-getter-provenance.md). [0043](./0043-external-routes-are-uri-only-os-activations.md) records the historical URI-only external-routing rationale. Current implementation: [Issue #116 bridge disposition](../bridge.md#issue-116-current-disposition).
 
 ## Contents
 
@@ -275,4 +275,4 @@ What could not be exercised live is the failure this record is mostly about:
 `put_Cancel` returning an error has never been observed and cannot be provoked
 from outside.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point the historical cancel-ordering decision to 0043 for the current external-routing contract.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: distinguish 0043's historical external-routing rationale from the bridge current-implementation pointer.

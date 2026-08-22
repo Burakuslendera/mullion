@@ -34,22 +34,22 @@ These files are that record.
 | [0011](./0011-host-owns-rasterization-scale.md) | The host owns the WebView2 rasterization scale | Accepted |
 | [0012](./0012-config-url-loopback.md) | Config.URL lets a caller serve the frontend itself; mullion still opens no socket | Accepted, guard exemption extended by 0030 |
 | [0013](./0013-backdrop-is-a-mullion-command.md) | The screenshot backdrop is a mullion command | Accepted |
-| [0014](./0014-bridge-origin-at-dispatch.md) | The injected bridge acts only on messages from the trusted origin | Accepted, follow-up landed as 0022 + 0023; fallback authority refined by 0037 |
+| [0014](./0014-bridge-origin-at-dispatch.md) | The injected bridge acts only on messages from the trusted origin | Accepted; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0015](./0015-maximize-insets-for-autohide-taskbar.md) | Maximized geometry insets 1px on an auto-hide taskbar edge | Accepted, narrowed by 0019 |
 | [0016](./0016-single-flight-embed.md) | The WebView2 embed is single-flight, and a destroyed window cancels it | Accepted |
 | [0017](./0017-error-surface-by-navigation-state.md) | The error surface is identified by navigation state, not by its source | Accepted, extended by 0020, orderings replaced by 0021, provenance refined by 0037 |
 | [0018](./0018-initial-placement-centered-on-primary.md) | The first window is centered on the primary monitor's work area, DPI-scaled | Accepted |
 | [0019](./0019-maximized-hittest-stays-in-process.md) | The maximized hit-test never queries the shell | Accepted |
 | [0020](./0020-absorb-failures-while-surface-loads.md) | Failure completions are absorbed while the error surface loads | Superseded by 0021, log level set by 0026 |
-| [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted; historical attribution refined by 0037; external routing separated into 0043 |
-| [0022](./0022-new-windows-to-system-browser.md) | New windows are routed to the system browser, never opened in the host | Accepted, launch thread by 0029; current routing contract by 0043 |
-| [0023](./0023-navigation-cancel-gate.md) | A top-level navigation off the trusted origin is cancelled, opt-in | Accepted, ordering by 0027; current routing contract by 0043 |
+| [0021](./0021-error-surface-navigation-identity.md) | Error-surface completions are attributed by navigation id | Accepted; historical attribution refined by 0037 and external-routing rationale in 0043; [current implementation](../bridge.md#issue-116-current-disposition) |
+| [0022](./0022-new-windows-to-system-browser.md) | New windows are routed to the system browser, never opened in the host | Accepted, launch thread by 0029; 0043 records historical routing rationale; [current implementation](../bridge.md#issue-116-current-disposition) |
+| [0023](./0023-navigation-cancel-gate.md) | A top-level navigation off the trusted origin is cancelled, opt-in | Accepted, ordering by 0027; 0043 records historical routing rationale; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0024](./0024-benign-abort-in-process.md) | An aborted navigation is not a load failure when mullion serves the assets | Accepted; [closed issue #87](https://github.com/Burakuslendera/mullion/issues/87) records the exact reopen tripwire |
 | [0025](./0025-urls-are-logged-as-urls.md) | A URL reaching a log line is reduced as a URL, not as a filesystem path | Accepted; trip-wire fired by 0028; malformed-userinfo output policy refined by [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) |
 | [0026](./0026-navigation-failure-level-follows-classification.md) | A failed navigation is logged at the level the host's own classification gives it | Accepted |
-| [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md) | A navigation cancel is committed only after the runtime has performed it | Accepted, provenance by 0037; current routing contract by 0043 |
+| [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md) | A navigation cancel is committed only after the runtime has performed it | Accepted, provenance by 0037; 0043 records historical routing rationale; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0028](./0028-message-keeps-the-urls-inside-it.md) | A message keeps the http(s) URLs inside it | Accepted; malformed-userinfo and unsafe open-authority control output refined by [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) without superseding 0028 |
-| [0029](./0029-system-browser-launch-off-the-ui-thread.md) | The system-browser launch runs off the UI thread, bounded | Accepted; concurrency-not-rate and current routing contract by 0043 |
+| [0029](./0029-system-browser-launch-off-the-ui-thread.md) | The system-browser launch runs off the UI thread, bounded | Accepted; 0043 records historical concurrency and routing rationale; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0030](./0030-guard-exempts-the-virtual-host-name.md) | The no-port guard exempts one virtual host name, not a file | Accepted |
 | [0031](./0031-the-bytes-never-decide-the-content-type.md) | The bytes never decide the content type, and the boundary decides the name | Accepted; reparse-point consequence answered by 0033 |
 | [0032](./0032-the-supported-go-floor-is-1-22.md) | The supported Go floor is 1.22, and it is a promise rather than a default | Superseded by 0033 |
@@ -57,13 +57,13 @@ These files are that record.
 | [0034](./0034-webview2-hosting-is-windows-amd64-only.md) | WebView2 hosting is supported only on Windows/amd64 | Accepted |
 | [0035](./0035-frontend-diagnostics-are-bounded.md) | Frontend-controlled diagnostics are bounded before reduction and retention | Accepted; malformed-userinfo diagnostic output refined by [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) without superseding 0035 |
 | [0036](./0036-one-source-plan-defines-origin.md) | One source plan defines the frontend origin | Accepted |
-| [0037](./0037-event-values-preserve-getter-provenance.md) | Event values preserve getter provenance before granting fallback authority | Accepted; current fallback authority, separate from 0043 routing |
+| [0037](./0037-event-values-preserve-getter-provenance.md) | Event values preserve getter provenance before granting fallback authority | Accepted; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0038](./0038-terminal-policy-owns-error-reporting.md) | Terminal policy owns each error report | Accepted, public pre-inner boundary refined by [0040](./0040-public-preflight-errors-belong-to-callers.md) |
 | [0039](./0039-public-run-preflight-stays-headless.md) | Public Run preflight stays headless | Accepted; supersedes [0006](./0006-tests-stay-headless.md) |
 | [0040](./0040-public-preflight-errors-belong-to-callers.md) | Public preflight errors belong to callers | Accepted; refines [0038](./0038-terminal-policy-owns-error-reporting.md) |
 | [0041](./0041-wm-nchittest-reader-gates.md) | WM_NCHITTEST computes auxiliary geometry only for readers | Accepted |
 | [0042](./0042-go-1-24-remains-the-released-consumer-floor.md) | Go 1.24 remains the released consumer floor | Accepted; supersedes [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) |
-| [0043](./0043-external-routes-are-uri-only-os-activations.md) | External routes are URI-only OS activations | Accepted; owns issue #75 routing items 1, 2, and 4 |
+| [0043](./0043-external-routes-are-uri-only-os-activations.md) | External routes are URI-only OS activations | Accepted; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) | Malformed HTTP userinfo is never emitted by diagnostics | Accepted; refines 0025 direct URL fallback, 0028 `Message` unsafe open-authority control output, and 0035 frontend `Diagnostic` output without superseding them |
 
 ## When to write one
@@ -106,4 +106,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: record 0044's current refinement links for 0025, 0028, and 0035, and record closed issue #87 as 0024's exact reopen tripwire.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point current-implementation entries to bridge, retaining decision records as historical rationale.

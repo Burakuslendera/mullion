@@ -154,15 +154,18 @@ when violated. `NewWindowRequested` is where a single-window host attempts to
 take `window.open` / `target=_blank` over from the runtime. It first calls
 `PutHandled(true)`; only success suppresses the runtime popup. The URI and
 `IsUserInitiated` getters must then both succeed before the host routes the
-HTTP(S) URI unchanged. Getter failure produces no host launch after suppression;
-`PutHandled` failure produces no host launch and leaves runtime behavior
-unspecified. The opt-in `PinNavigationToOrigin` route performs the same handoff
-only after WebView2 accepts cancellation. Each handoff is a fresh OS URL
+admitted HTTP(S) URI unchanged. Getter failure produces no host launch after
+suppression; `PutHandled` failure produces no host launch and leaves runtime
+behavior unspecified. The opt-in `PinNavigationToOrigin` route performs the same
+handoff only after WebView2 accepts cancellation. Each handoff is a fresh OS URL
 activation, not preservation of method, body, headers, referrer, opener, WebView
 profile, or session. The handler decides userinfo/query/fragment and
 profile/session behavior. Eight workers bound concurrency, not lifetime rate;
-`IsUserInitiated` is diagnostic rather than physical-input authority
-([decision 0043](./decisions/0043-external-routes-are-uri-only-os-activations.md)).
+`IsUserInitiated` is diagnostic rather than physical-input authority. The current
+receipt, reply, and external-admission contract is the [Issue #116
+disposition](./bridge.md#issue-116-current-disposition); [decision
+0043](./decisions/0043-external-routes-are-uri-only-os-activations.md) remains
+its historical rationale.
 
 - **Build vtables once, lazily after the architecture gate.** `windows.NewCallback`
   allocates from a small, fixed table and never frees an entry. A callback allocated
@@ -287,4 +290,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: define conditional NewWindowRequested handling and exact-URI fresh OS activation without request/profile/session preservation.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point WebView2 receipt, reply, and external admission to the canonical issue #116 disposition.

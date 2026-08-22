@@ -35,15 +35,15 @@ const externalOpenLimit = 8
 // GetIsUserInitiated all succeed in the WebView2 adapter. PutHandled
 // failure may leave runtime popup behavior in effect; either getter failure
 // leaves the popup suppressed but produces no host launch. Given all three
-// successes, this default-on route hands the observed HTTP(S) URI unchanged to
-// the system-browser activation and drops unsafe schemes (decisions/0022 and
-// 0043).
+// successes, this default-on route hands the successfully observed and admitted
+// HTTP(S) URI unchanged to the system-browser activation and drops targets
+// rejected by the shared gate (decisions/0022 and 0043).
 //
 // isUserInitiated is WebView2's diagnostic classification. It is logged but
 // never gates routing and is not treated as physical-input authority.
 func (host *Host) routeNewWindow(uri string, isUserInitiated bool) {
 	if !isExternalBrowserSafe(uri) {
-		host.log.Debug("mullion: new window dropped, unsupported scheme, uri=" + logsafe.Field(logsafe.URL(uri)))
+		host.log.Debug("mullion: new window dropped, target not admitted, uri=" + logsafe.Field(logsafe.URL(uri)))
 		return
 	}
 	host.log.Debug("mullion: new window routed to system browser, user_initiated=" +
@@ -64,9 +64,10 @@ func (host *Host) shouldCancelNavigation(uri string) bool {
 
 // noteNavigationCancelled records a cancel request accepted by PutCancel. It
 // enters the navigation in the cancelled ledger so an expected failed/cancelled
-// completion is cleanup, and hands a successfully observed HTTP(S) URI unchanged
-// to the same system-browser activation as the default-on new-window route.
-// Every other scheme is dropped (decisions/0027 and 0043).
+// completion is cleanup, and hands a successfully observed and admitted HTTP(S)
+// URI unchanged to the same system-browser activation as the default-on
+// new-window route. Targets rejected by the shared gate are dropped (decisions/0027
+// and 0043).
 //
 // PutCancel success accepts the request but does not prove abandonment. A later
 // successful completion means the navigation committed anyway and returns to
@@ -102,18 +103,27 @@ func (host *Host) noteNavigationCancelledObserved(
 			strconv.FormatBool(isUserInitiated) + ", uri=" + logsafe.Field(logsafe.URL(uri)))
 		host.openInSystemBrowser(uri)
 	default:
-		host.log.Debug("mullion: navigation cancelled off origin, unsupported scheme, uri=" +
+		host.log.Debug("mullion: navigation cancelled off origin, target not admitted, uri=" +
 			logsafe.Field(logsafe.URL(uri)))
 	}
 }
 
 // isExternalBrowserSafe reports whether uri may be handed unchanged to the
-// system browser. Only HTTP and HTTPS are allowed: ShellExecute launches the
+// system browser. Before parsing, literal double quotes, ASCII spaces, and C0,
+// DEL, or C1 controls are refused at the ShellExecute argument boundary. This
+// is an argument-boundary rejection, not URI normalization or proof of browser
+// behavior. Only HTTP and HTTPS are allowed: ShellExecute launches the
 // registered handler, so foreign content must not be able to name file: or an
 // arbitrary custom protocol. This gate deliberately does not rewrite userinfo,
 // query, or fragment; diagnostics redact them separately (decision 0043).
 // url.Parse normalises scheme case, and an unparseable URL is refused.
 func isExternalBrowserSafe(uri string) bool {
+	for _, r := range uri {
+		if r == '"' || r == ' ' || logsafe.IsControl(r) {
+			return false
+		}
+	}
+
 	parsed, err := url.Parse(uri)
 	if err != nil {
 		return false

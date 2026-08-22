@@ -1,6 +1,6 @@
 # 0029. The system-browser launch runs off the UI thread, bounded
 
-**Status:** Accepted; [0043](./0043-external-routes-are-uri-only-os-activations.md) clarifies that the eight-worker bound is concurrency only and owns the current URI-only external-routing contract
+**Status:** Accepted; [0043](./0043-external-routes-are-uri-only-os-activations.md) records the historical URI-only routing and concurrency rationale, including that the eight-worker bound is concurrency only. Current implementation: [Issue #116 bridge disposition](../bridge.md#issue-116-current-disposition).
 
 ## Context
 
@@ -184,4 +184,4 @@ ran it on this branch and it passed (run 30171063722) — the first race-detecto
 run over the new goroutine. What it touches is `host.log` (already atomic, and
 now documented for concurrent use) and a buffered channel.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point the historical worker-bound decision to 0043 for the current concurrency-not-rate and URI-only routing contract.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: distinguish 0043's historical concurrency and routing rationale from the bridge current-implementation pointer.

@@ -1,6 +1,19 @@
 # 0043. External routes are URI-only OS activations
 
-**Status:** Accepted; owns issue #75 items 1, 2 and 4 for both external routes
+**Status:** Accepted
+
+**Current implementation (not part of this historical decision):** Historical uses
+of “current” below describe state at decision time; the [Issue #116 current
+disposition](../bridge.md#issue-116-current-disposition) wins now.
+
+## Contents
+
+- [Context](#context)
+- [Decision](#decision)
+- [Alternatives rejected](#alternatives-rejected)
+- [Consequences](#consequences)
+- [What would change our mind](#what-would-change-our-mind)
+- [Evidence](#evidence)
 
 ## Context
 
@@ -193,7 +206,6 @@ handling/cancellation.
   maintained-consumer risk, with loopback and compatibility costs accounted for,
   would reopen HTTPS-only admission. Preference for HTTPS alone does not.
 
-
 ## Evidence
 
 - Microsoft's
@@ -247,4 +259,4 @@ handling/cancellation.
   owns the original consequence inventory and historical corrections; this
   decision, not the tracker text, owns the accepted current routing contract.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: link malformed-userinfo diagnostics to 0044, state exact URI handoff, and record issue #87's closed accepted-risk reopen gate.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: restore 0043's historical evidence, add its required contents, and point current implementation to the issue #116 disposition.

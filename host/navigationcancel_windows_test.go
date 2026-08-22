@@ -128,9 +128,9 @@ func TestIdlessCancelDoesNotSwallowAnOrdinaryFailure(t *testing.T) {
 // A navigation the gate cancels whose URI could not be read is cancelled anyway
 // - a gate that lets through what it cannot identify is not a gate - but that is
 // a legitimate in-origin navigation as far as anyone downstream can tell, so it
-// is reported rather than dropped as an "unsupported scheme", which is what the
-// empty string used to be mistaken for. It is never routed: handing the empty
-// string to the system browser would be nonsense.
+// is reported rather than dropped as "target not admitted", which is how an
+// unreadable target must not be classified. It is never routed: handing the
+// empty string to the system browser would be nonsense.
 func TestUnreadableTargetIsCancelledLoudlyAndNeverRouted(t *testing.T) {
 	host, logger := newTestHost(t, Config{StartHidden: true, PinNavigationToOrigin: true})
 	var opened []string
@@ -147,7 +147,7 @@ func TestUnreadableTargetIsCancelledLoudlyAndNeverRouted(t *testing.T) {
 	if !strings.Contains(logged, "level=WARN msg=mullion: navigation cancelled off origin, target unreadable, id=9") {
 		t.Fatalf("an unreadable target was not reported:\n%s", logged)
 	}
-	if strings.Contains(logged, "unsupported scheme") {
-		t.Fatalf("an unreadable target was reported as an unsupported scheme:\n%s", logged)
+	if strings.Contains(logged, "target not admitted") {
+		t.Fatalf("an unreadable target was reported as target not admitted:\n%s", logged)
 	}
 }

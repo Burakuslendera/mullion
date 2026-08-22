@@ -10,16 +10,21 @@ import (
 )
 
 // isExternalBrowserSafe is the gate on what a foreign document's window.open can
-// make the host launch through ShellExecute. Only http/https may pass; every
-// other scheme - file:, a custom protocol handler, javascript:, data:, about:,
-// or a URL that does not parse - must be refused, so off-origin content cannot
-// name a dangerous handler and have the host open it (issue #6).
+// make the host launch through ShellExecute. Literal double quotes, ASCII spaces,
+// and C0, DEL, or C1 controls are refused at the ShellExecute argument boundary;
+// this is not URI normalization or proof of browser behavior. Only http/https
+// may pass; every other scheme - file:, a custom protocol handler, javascript:,
+// data:, about:, or a URL that does not parse - must be refused, so off-origin
+// content cannot name a dangerous handler and have the host open it (issue #6).
 func TestIsExternalBrowserSafe(t *testing.T) {
 	for _, uri := range []string{
 		"http://example.com/",
 		"https://example.com/path?q=1",
 		"HTTPS://EXAMPLE.COM",  // scheme is matched case-insensitively
 		"https://[::1]:8443/x", // an ipv6 loopback target is still http(s)
+		"https://example.com/%22",
+		"https://example.com/%20",
+		"https://example.com/%1F",
 	} {
 		if !isExternalBrowserSafe(uri) {
 			t.Errorf("isExternalBrowserSafe(%q) = false, want true", uri)
@@ -37,6 +42,11 @@ func TestIsExternalBrowserSafe(t *testing.T) {
 		"about:blank",
 		"://noscheme", // does not parse
 		"ftp://host/file",
+		`https://example.com/"`,
+		"https://example.com/a b",
+		"https://example.com/\x1f",
+		"https://example.com/\x7f",
+		"https://example.com/\u0085", // url.Parse alone accepts this C1 control
 		"",
 	} {
 		if isExternalBrowserSafe(uri) {
@@ -101,7 +111,7 @@ func TestProductionNewWindowRejectsMalformedUserinfoWithoutDiagnosticDisclosure(
 		t.Fatalf("malformed target reached the system-browser hand-off: %v", opened)
 	}
 	logged := logger.String()
-	if !strings.Contains(logged, "new window dropped, unsupported scheme, uri=unknown?#\n") {
+	if !strings.Contains(logged, "new window dropped, target not admitted, uri=unknown?#\n") {
 		t.Fatalf("malformed target diagnostic was not reduced as expected:\n%s", logged)
 	}
 	for _, forbidden := range []string{"alice", "bad", "evil.example", "token", "s3cr3t", "private-fragment"} {
@@ -128,7 +138,7 @@ func TestProductionCancelRouteRejectsMalformedUserinfoWithoutDiagnosticDisclosur
 	}
 	logged := logger.String()
 	if !strings.Contains(logged,
-		"navigation cancelled off origin, unsupported scheme, uri=unknown?#\n") {
+		"navigation cancelled off origin, target not admitted, uri=unknown?#\n") {
 		t.Fatalf("malformed cancelled-target diagnostic was not reduced as expected:\n%s", logged)
 	}
 	for _, forbidden := range []string{"alice", "bad", "evil.example", "token", "s3cr3t", "private-fragment"} {
@@ -178,12 +188,13 @@ func TestShouldCancelNavigation(t *testing.T) {
 	if cancelNavigation(on, on.source.origin.text+"/app", 1, true) {
 		t.Error("gate on: cancelled an on-origin navigation")
 	}
-	// An off-origin non-http(s) target is cancelled and dropped, never routed.
+	// An off-origin target rejected by the shared gate is cancelled and dropped,
+	// never routed.
 	if !cancelNavigation(on, "blob:https://evil.example/uuid", 2, false) {
 		t.Error("gate on: did not cancel an off-origin blob: navigation")
 	}
-	if !strings.Contains(logger.String(), "navigation cancelled off origin, unsupported scheme") {
-		t.Fatalf("off-origin blob: was not dropped as unsupported:\n%s", logger.String())
+	if !strings.Contains(logger.String(), "navigation cancelled off origin, target not admitted") {
+		t.Fatalf("off-origin blob: was not dropped as not admitted:\n%s", logger.String())
 	}
 	if strings.Contains(logger.String(), "routed to system browser") {
 		t.Fatalf("a non-http(s) navigation reached the system-browser route:\n%s", logger.String())

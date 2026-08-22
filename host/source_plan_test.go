@@ -44,6 +44,21 @@ func TestEmbeddedSourcePlanCanonicalizesEveryConsumer(t *testing.T) {
 	}
 }
 
+func TestSourcePlanConsumersRejectUnicodeCaseFoldConfusables(t *testing.T) {
+	plan, err := buildSourcePlan(Config{VirtualHost: "Desktop.Kit"}.normalise())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{
+		"https://de\u017fktop.kit/app",
+		"https://desktop.\u212ait/app",
+	} {
+		if plan.origin.matches(source) || plan.messageSourceAllowed(source) || plan.messageSourceTrusted(source) || !plan.navigationOffOrigin(source, true) {
+			t.Errorf("consumer disagreement for rejected confusable %q", source)
+		}
+	}
+}
+
 func TestVirtualHostGrammarAcceptsUnderscoresAndIP(t *testing.T) {
 	tests := []struct {
 		raw    string

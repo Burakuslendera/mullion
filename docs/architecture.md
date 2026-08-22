@@ -185,13 +185,16 @@ cancellation. The default-on `NewWindowRequested` attempt first requires
 `GetUri` and `GetIsUserInitiated` must then both succeed before the host routes.
 A getter failure produces no host launch after suppression; a `PutHandled`
 failure produces no host launch and leaves runtime popup behavior unspecified.
-Both routes pass the successfully observed HTTP(S) URI unchanged to
+Both routes pass the successfully observed and admitted HTTP(S) URI unchanged to
 `ShellExecuteW` as a fresh OS URL activation, not request replay: method, body,
 headers, referrer, opener, WebView profile, and session are not preserved.
 Windows and the handler decide process, tab, profile/session, stored-credential,
 userinfo, query, fragment, and network behavior. `IsUserInitiated` remains
-diagnostic classification, never physical-input authority
-([decision 0043](./decisions/0043-external-routes-are-uri-only-os-activations.md)).
+diagnostic classification, never physical-input authority. The current external
+admission and bridge receipt/reply contract is the
+[Issue #116 disposition](./bridge.md#issue-116-current-disposition);
+[decision 0043](./decisions/0043-external-routes-are-uri-only-os-activations.md)
+remains its historical rationale.
 
 That worker is why `Config.Logger` carries a concurrency contract: an
 implementation must be safe to call from more than one goroutine. The launch
@@ -278,81 +281,8 @@ transfer and COM stream lifetime are in [assets.md](./assets.md).
 
 ## Bridge protocol
 
-The frontend calls into Go over the WebView's web-message channel with one JSON
-envelope, wrapped by the injected shim as a promise API:
-
-```js
-// request                      // response
-{ id, method, args }            { id, ok: true,  result }
-                                { id, ok: false, error }
-
-window.mullion.invoke(method, ...args) // -> Promise<result>
-```
-
-A monotonic sequence supplies `id`, and a pending map keyed by `id` settles the matching
-promise when the response arrives. That map and the message listener live on a single
-object on `window`, so multiple injected scripts and frontend modules share one channel
-instead of each installing a listener of its own.
-
-Go-side dispatch splits the method namespace. A reserved set is answered by the library
-and never reaches the application:
-
-```
-WindowShow   WindowHide   WindowClose   WindowMinimise   WindowToggleMaximise
-WindowIsMaximised   WindowFrameState   WindowStartDrag   WindowStartResize
-WindowShellReady   WindowReady   WindowPhase   WindowDiagnostic
-```
-
-The first nine are the window controls. The last four are the signals the injected
-scripts send back: the show gate (`shellReady`), the render watchdog (`ready`), and
-the frontend diagnostics (`phase`, `diagnostic`).
-
-Everything else is handed to `Config.Bridge` as the raw request JSON; it returns
-the raw response JSON, or `""` to stay silent. `Bridge` may be nil — trusted-origin
-window controls still work before the application implements a bridge method.
-The event adapter preserves each COM getter's value and HRESULT separately; a
-failed source getter is reported and stops before any dispatcher. Source-plan
-origin matching gates `Config.Bridge`
-([decisions/0014](./decisions/0014-bridge-origin-at-dispatch.md)).
-
-The fallback is a separate generation-bound capability, never a `data:` origin
-allow-list ([decision 0037](./decisions/0037-event-values-preserve-getter-provenance.md)).
-A failure makes one generation pending. Before origin pinning, only a successful
-URI getter reporting the exact generated URL or a successfully read empty URI
-claims it active. The empty NavigationStarting form is tolerated but unverified;
-live fallback starts reported the full URL. Failed getters, arbitrary `data:`
-URIs, and all other values fail closed. The next start suspends controls
-immediately; only a matching
-confirmed cancel or benign abort restores the still-visible page, and
-unclassifiable completion state fails closed.
-Benign-abort attribution deliberately retains only the exact last navigation
-start; an older status-9 completion therefore arms the fallback and may replace
-a live document. [Decision 0024](./decisions/0024-benign-abort-in-process.md)
-owns that availability cost. Issue #87's two bounded live probes did not
-reproduce the required ordering; see the
-[dated verification record](./verification-records.md#2026-08-records).
-That active fallback receives exactly seven reserved methods:
-`WindowStartDrag`, `WindowStartResize`, `WindowMinimise`,
-`WindowToggleMaximise`, `WindowIsMaximised`, `WindowFrameState`, and
-`WindowClose`; never readiness, diagnostics, or `Config.Bridge`. Rejected
-messages receive no reply to correlate.
-An unknown trusted-origin method with a bridge configured is the application's to
-answer; with none, it yields `ok: false`. A malformed request is logged and
-dropped, never a panic.
-
-Frontend-controlled method names, phases, diagnostic kinds/details and asset
-labels are a separate projection of that raw protocol. Before the host logs or
-retains one, it selects bounded input and emits at most 2,000 bytes. Selection
-rejects over-budget, malformed-authority, malformed-userinfo, and parser-invalid
-path candidates — including control bytes or bad escapes beyond the retained
-projection — then continues to the first http(s) candidate the production
-reducer can emit with its authority whole. Valid userinfo is stripped to the
-credential-free host without input-sized allocation, and a fully validated path
-is streamed into fixed output storage without splitting escapes or encoded
-runes. Retained file names and reduced strings are detached from the request's
-backing storage. This diagnostic boundary does **not** rewrite the raw request
-passed to `Config.Bridge`
-([decision 0035](./decisions/0035-frontend-diagnostics-are-bounded.md)).
+The bridge protocol and origin-boundary contract moved verbatim to
+[bridge.md](./bridge.md).
 
 ## Startup gates and watchdog
 
@@ -378,4 +308,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: define conditional new-window handling, exact-URI OS activation, concurrency-not-rate, and the current nine-control dispatcher/seven-control fallback subset.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point the external-route overview to the canonical issue #116 disposition and retain 0043 as rationale.

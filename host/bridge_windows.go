@@ -29,10 +29,11 @@ type bridgeRequest struct {
 // close.
 //
 // allowBridge gates application methods plus reserved readiness and diagnostics.
-// A restricted source is mullion's claimed data: error surface. It receives
-// exactly WindowStartDrag, WindowStartResize, WindowMinimise,
-// WindowToggleMaximise, WindowIsMaximised, WindowFrameState, and WindowClose;
-// never readiness, diagnostics, or Config.Bridge (decisions/0014 and 0037).
+// Currently, a restricted source is mullion's positively claimed top-level
+// fallback; its WebMessage source may be empty. It receives exactly
+// WindowStartDrag, WindowStartResize, WindowMinimise, WindowToggleMaximise,
+// WindowIsMaximised, WindowFrameState, and WindowClose; never readiness,
+// diagnostics, or Config.Bridge (decisions/0014 and 0037).
 func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 	var request bridgeRequest
 	if err := json.Unmarshal([]byte(raw), &request); err != nil {
@@ -46,9 +47,8 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 		return ""
 	}
 	if !allowBridge && !errorSurfaceMethodAllowed(request.Method) {
-		// The fallback surface never awaits replies. Withholding one also keeps
-		// the restricted admission non-correlatable if frame message receipt is
-		// added in the future and a hostile data: iframe reaches this dispatch.
+		// Admitted requests with a non-empty ID receive protocol replies;
+		// rejected restricted calls stay silent.
 		host.log.Warn("mullion: bridge method rejected from a restricted source, method=" + logsafe.Field(request.Method))
 		return ""
 	}
@@ -79,9 +79,9 @@ func (host *Host) handleWebMessage(raw string, allowBridge bool) string {
 // claimed fallback needs caption controls, old-runtime drag, resize overlay,
 // maximised-state query, and atomic frame state. Its injected diagnostics and
 // readiness helpers must not overwrite the failed application's watchdog
-// evidence, and Config.Bridge stays trusted-origin-only. Keep the closed list at
-// this dispatch boundary if frame message receipt is ever added, because a
-// hostile data: frame must not inherit fallback authority.
+// evidence, and Config.Bridge stays trusted-origin-only. If frame-specific
+// WebMessageReceived is added, exclude frames from the top-level empty-source
+// fallback predicate by default.
 func errorSurfaceMethodAllowed(method string) bool {
 	switch method {
 	case methodStartDrag,

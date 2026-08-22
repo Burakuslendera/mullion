@@ -1,12 +1,10 @@
 # 0014. The injected bridge acts only on messages from the trusted origin
 
-**Status:** Accepted; both halves of the follow-up landed - new-window routing as [0022](./0022-new-windows-to-system-browser.md), the opt-in navigation-cancel gate as [0023](./0023-navigation-cancel-gate.md); fallback source authority is refined by [0037](./0037-event-values-preserve-getter-provenance.md)
+**Status:** Accepted
 
-**Current refinement — read before the historical body:** the six-method
-fallback list below records what 0014 accepted at the time. It is not the
-current allow-list. [Decision 0037](./0037-event-values-preserve-getter-provenance.md)
-and current code own seven restricted methods, including `WindowFrameState`.
-The historical sections remain unchanged.
+**Current implementation (not part of this historical decision):** Historical uses
+of “current” below describe state at decision time; the [Issue #116 current
+disposition](../bridge.md#issue-116-current-disposition) wins now.
 
 ## Context
 
@@ -33,7 +31,7 @@ the document that posted a message. It was read and discarded.
 ## Decision
 
 The host enforces the source origin at message dispatch. The current
-`CoreWebView2.WebMessageReceived` handler receives messages from the top-level
+`ICoreWebView2::WebMessageReceived` handler receives messages from the top-level
 document only; it threads `args.GetSource()` into `MessageCallback`, and
 `messageSourceAllowed` is an **allow-list**. A message passes only when its source
 is the same http/https origin as the trusted one — the virtual host
@@ -92,9 +90,9 @@ cannot change readiness or overwrite the failed application's retained render-
 watchdog evidence.
 
 That statement is deliberately top-level-only. The bridge script may be
-injected into child frames, but the `CoreWebView2.WebMessageReceived` event used
-today does not receive their posts; frame messages require the separate
-`CoreWebView2Frame.WebMessageReceived` path. If mullion wires frame receipt in
+injected into child frames, but the `ICoreWebView2::WebMessageReceived` event
+used today does not receive their posts; frame messages require the separate
+`ICoreWebView2Frame2::WebMessageReceived` path. If mullion wires frame receipt in
 the future, a script-created hostile `data:` iframe becomes reachable. The
 separate trusted-origin check and narrow error-surface method set must remain at
 that new dispatch boundary rather than treating every `data:` frame as mullion's
@@ -121,4 +119,4 @@ Node's built-in `vm` and locks complete diagnostic forwarding. Issue #6 carries
 the original origin-gate analysis and reproduction reasoning; issue #88 carries
 the fallback evidence-retention follow-up.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point prominently to 0037's current seven-method fallback authority while preserving 0014's historical body.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: exact decision-time evidence restored.

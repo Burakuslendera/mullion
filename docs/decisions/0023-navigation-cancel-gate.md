@@ -1,6 +1,6 @@
 # 0023. A top-level navigation off the trusted origin is cancelled, opt-in
 
-**Status:** Accepted. Corrected by [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md): this record's gate commits to the cancel before `put_Cancel`, while the current implementation commits only after that call succeeds. The gate's policy is unchanged. The launch moved off the UI thread by [0029](./0029-system-browser-launch-off-the-ui-thread.md); [0043](./0043-external-routes-are-uri-only-os-activations.md) owns the current URI-only external-routing consequences.
+**Status:** Accepted. Corrected by [0027](./0027-cancel-is-committed-after-the-runtime-performs-it.md): this record's gate commits to the cancel before `put_Cancel`, while the current implementation commits only after that call succeeds. The gate's policy is unchanged. The launch moved off the UI thread by [0029](./0029-system-browser-launch-off-the-ui-thread.md); [0043](./0043-external-routes-are-uri-only-os-activations.md) records the historical URI-only external-routing rationale. Current implementation: [Issue #116 bridge disposition](../bridge.md#issue-116-current-disposition).
 
 ## Context
 
@@ -104,4 +104,4 @@ COM args.
   (including a redirect), that `put_Cancel` actually abandons it, and that
   `ShellExecute` opens the routed target are `unverified` pending the live probe.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point the historical opt-in cancel gate to 0043 for the current external-routing contract.
+> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: distinguish 0043's historical external-routing rationale from the bridge current-implementation pointer.
