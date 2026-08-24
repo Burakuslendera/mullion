@@ -41,8 +41,8 @@ $binaryExtensions = @(".png")
 # to unrelated text cannot satisfy the allowance. History allowances are inactive
 # unless their source anchor is tracked. Counts make changed fixtures loud; deleting
 # an ordinary path retires its unreachable allowance instead of a stale carve-out.
-$checkoutPin = "11d5960a326750d58380" + "78e36cf38b85af677262"
-$setupGoPin = "40f1582b2485089dde7a" + "bd97c1529aa768e1baff"
+$checkoutPin = "3d3c42e5aac5ba805825" + "da76410c181273ba90b1"
+$setupGoPin = "b7ad1dad31e06c5925ef" + "5d2fc7ad053ef454303e"
 $allowances = @(
     [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($checkoutPin) + "$"); Action = "actions/checkout"; Expected = 3; Consumed = 0 }
     [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($setupGoPin) + "$"); Action = "actions/setup-go"; Expected = 3; Consumed = 0 }

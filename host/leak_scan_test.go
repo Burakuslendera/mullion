@@ -319,8 +319,8 @@ func TestLeakScanRejectsRewrittenHistory(t *testing.T) {
 }
 
 func TestLeakScanHashAllowancesBindExactPins(t *testing.T) {
-	checkout := "11d5960a326750d58380" + "78e36cf38b85af677262"
-	setupGo := "40f1582b2485089dde7a" + "bd97c1529aa768e1baff"
+	checkout := "3d3c42e5aac5ba805825" + "da76410c181273ba90b1"
+	setupGo := "b7ad1dad31e06c5925ef" + "5d2fc7ad053ef454303e"
 	clean := strings.Join([]string{
 		"\"jobs\":",
 		"  \"first\":",
@@ -483,8 +483,8 @@ func TestLeakScanWorkflowKeepsFullHistoryGate(t *testing.T) {
 	if workflowJobHasKey(windows, "if") || workflowJobHasKey(windows, "continue-on-error") {
 		t.Fatal("Windows job is conditional or non-fatal")
 	}
-	checkoutPin := "11d5960a326750d58380" + "78e36cf38b85af677262"
-	setupGoPin := "40f1582b2485089dde7a" + "bd97c1529aa768e1baff"
+	checkoutPin := "3d3c42e5aac5ba805825" + "da76410c181273ba90b1"
+	setupGoPin := "b7ad1dad31e06c5925ef" + "5d2fc7ad053ef454303e"
 	var checkouts, setups, scans []int
 	steps := workflowStepBlocks(windows)
 	for index, step := range steps {
@@ -556,8 +556,8 @@ func TestCIWorkflowKeepsExplicitWindowsX64Lane(t *testing.T) {
 		}
 	}
 
-	checkoutPin := "11d5960a326750d58380" + "78e36cf38b85af677262"
-	setupGoPin := "40f1582b2485089dde7a" + "bd97c1529aa768e1baff"
+	checkoutPin := "3d3c42e5aac5ba805825" + "da76410c181273ba90b1"
+	setupGoPin := "b7ad1dad31e06c5925ef" + "5d2fc7ad053ef454303e"
 	var checkouts, setups, builds, tests []string
 	for _, step := range workflowStepBlocks(x64) {
 		switch {
