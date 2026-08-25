@@ -32,6 +32,7 @@ other document answers one narrower question below.
 | How do I prove a change actually works? | [verification.md](./verification.md) |
 | What makes scripted GUI verification lie? | [gui-verification-traps.md](./gui-verification-traps.md) |
 | What does a bug report have to contain? | [bug-reports.md](./bug-reports.md) |
+| What is known and still unverified about Windows 10 x64 support? | [windows-10-compatibility.md](./windows-10-compatibility.md) |
 
 ## Why the decision records matter
 
@@ -50,4 +51,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: consolidate Bridge protocol and origin-boundary routing to its canonical reference.
+> Last updated: 2026-08-25 | Editor: OpenAI (GPT-5.6) | Change: index the pending Windows 10 x64 compatibility research record.

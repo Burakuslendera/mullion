@@ -106,7 +106,7 @@ type Config struct {
 	// already stops a foreign origin from acting through the bridge, so this is
 	// defense-in-depth. Turn it on only if your frontend never navigates its top
 	// frame off-origin on purpose - an app that runs an OAuth flow in the top frame
-	// would have it cancelled. window.open / target=_blank route to the system
+	// would have it canceled. window.open / target=_blank route to the system
 	// browser regardless of this setting (docs/decisions/0022 and 0023).
 	PinNavigationToOrigin bool
 
