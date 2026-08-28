@@ -148,6 +148,70 @@ acceptance rules and checklist in the parent document.
   claimed. The valid-target live route recorded on 2026-08-21 remains separate
   evidence and does not prove this rejected-target diagnostic branch.
 
+- **2026-08-25 — Windows 10 x64 VirtualBox live smoke / observed:** A VirtualBox
+  guest reported Windows 10 Pro 22H2 (build 19045.3803), `amd64`, one
+  1024x768 monitor at 100% (96 DPI), and Microsoft Basic Display Adapter (driver
+  `10.0.19041.3636`). `mullion doctor` observed WebView2 Evergreen
+  `151.0.4129.107` through the 32-bit HKLM EdgeUpdate view and reported the
+  required `CreateWebViewEnvironmentWithOptionsInternal` export. The Mullion
+  identity was `devel`; no usable source-commit stamp was captured. In that guest,
+  `go run -buildvcs=true ./examples/basic` visibly rendered the first document and
+  custom frame. The operator then observed the Ask Go for the time action, title-bar
+  drag, maximize/restore, resize, title-bar system menu, and `Win`+Left Snap all
+  working.
+
+- **2026-08-25 — Windows 10 x64 VirtualBox smoke boundary / `unverified`:** This
+  was a guest-built `go run` result, not an unchanged executable built on Windows
+  11 and then run on Windows 10; it does not prove same-artifact Win11-to-Win10
+  compatibility or release provenance. The Basic Display Adapter is not a real GPU
+  driver result. There was no mixed-DPI transition, 3D-acceleration equivalence,
+  actual multi-monitor coverage, Fixed Version Runtime coverage, or clean
+  no-developer-artifact baseline. The observed single-monitor controls do not prove
+  pixel parity, general Snap parity, or the full live checklist.
+
+- **2026-08-27 — Windows 11-built x64 basic executable on the recorded Win10 VM /
+  observed:** On a Windows 11 x64 host (build 26200), the basic example was built
+  from clean detached commit `2a20cffb0dfdd4dc6b3af028eed5f63e4955b1af` with
+  `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`, and `GOAMD64=v1`. The transferred
+  source artifact was
+  `mullion-basic-win11-2a20cff-go1.26.5-windows-amd64v1.exe`, with SHA-256
+  `5A9B807B7B809F666B2B3AD11D8518B896B079EC3B5515317046B0796A424F00`. A screenshot
+  of the recorded Windows 10 Pro 22H2 (19045.3803) VirtualBox guest's
+  `Get-FileHash` output observed the same SHA-256 for that transferred executable.
+  The operator reported that directly running it in the guest succeeded.
+
+- **2026-08-27 — Windows 11-built executable evidence boundary / `unverified`:**
+  The matching guest hash proves that the observed transferred file was the recorded
+  Windows 11-built artifact; together with the operator-reported direct launch, it
+  is same-artifact Win11-to-Win10 startup evidence for this exact host/guest/runtime
+  combination. The screenshot does not independently record the running window or
+  its interactions, and no video was inspected. The earlier guest-built smoke's
+  Ask-Go-for-the-time, drag, maximize/restore, resize, system-menu, and `Win`+Left
+  Snap observations remain separate: they do not prove those controls were rerun
+  with the transferred executable. This result does not establish mixed-DPI,
+  real-GPU or 3D-acceleration behavior, multi-monitor coverage, Fixed Version
+  Runtime coverage, pixel parity, a clean no-developer-artifact baseline, or full
+  release parity.
+
+- **2026-08-27 — Win10-built x64 basic executable transfer / observed:** The
+  Windows 10 guest built the basic example as a CGo-free `windows/amd64` artifact
+  with `GOAMD64=v1`. On the Windows 11 host, the received executable had SHA-256
+  `A6B15AD5DAE3D2BFDD0B5FC0D2952A02234636AC71FA552CBAE379BD39B51860` and metadata
+  reporting Go `go1.26.7`, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`, and
+  `GOAMD64=v1`; the metadata recorded clean VCS revision `8807ede`. The operator
+  reported the same SHA-256 on the Windows 10 guest and that directly launching
+  this unchanged executable on the Windows 11 host succeeded.
+
+- **2026-08-27 — Win10-built executable evidence boundary / `unverified`:** The
+  matching hashes establish the identity of the guest-built file across transfer;
+  together with the operator-reported direct host launch, this is same-artifact
+  Win10-to-Win11 startup evidence for this exact guest/host/runtime combination.
+  The host execution was not independently captured in a screenshot or video, so
+  no rendered-window, bridge-result, or individual frame-interaction result is
+  claimed for this executable. It does not establish mixed-DPI, real-GPU or
+  3D-acceleration behavior, multi-monitor coverage, Fixed Version Runtime
+  coverage, pixel parity, a clean no-developer-artifact baseline, or full parity.
+
 ## Issue #113
 
 - **Automated, repo-local Windows host focus:** `go test -count=1 ./host -run '^(Test(NativeCaption|ShouldUseDWMCaption|DWMCaption|NativeHitTestDiagnostic|WindowProc)|TestTitlebarDragHitTestDiagnostic|TestFormatNativeHitTest)'` passed with repository-local `GOTMPDIR` and `GOCACHE`. It covers the policy matrix, lazy candidate composition, zero unread candidate calls, one call per real reader, unchanged decision precedence, latched diagnostic switches, the diagnostic formatter gate and zero allocations on disabled pure paths.
@@ -159,4 +223,4 @@ acceptance rules and checklist in the parent document.
 
 The pure tests do not measure live `LazyProc.Call`, `GetWindowRect`, DPI/monitor queries, DWM results, logger implementation cost, or actual mouse-message frequency. A live Windows run with a real window remains required for those costs and for tooltip/caption visual behavior. No test creates a window.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: rename 0044 for its output guarantee and record embedded control-split and trusted WindowDiagnostic malformed-userinfo evidence.
+> Last updated: 2026-08-27 | Editor: OpenAI (GPT-5.6) | Change: record operator-reported Windows 10-built artifact launch on Windows 11 with its evidence boundary.

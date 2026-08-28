@@ -7,6 +7,15 @@ native calls from the narrower release promise proposed for support. It does not
 claim that a Windows 11 development machine, a cross-build, or a headless test
 has proved that a release works on Windows 10.
 
+## Contents
+
+- [Recommendation pending issue #132](#recommendation-pending-issue-132)
+- [Observed repository boundary](#observed-repository-boundary)
+- [Win11-built executable on Windows 10](#win11-built-executable-on-windows-10)
+- [WebView2 Runtime deployment and capabilities](#webview2-runtime-deployment-and-capabilities)
+- [DWM and Windows 11-only presentation](#dwm-and-windows-11-only-presentation)
+- [Current limitations and release conditions](#current-limitations-and-release-conditions)
+
 ## Recommendation pending issue #132
 
 **Recommend the compatibility-test baseline as Windows 10 22H2, build family
@@ -92,30 +101,72 @@ that environment/controller creation, window creation, or rendering will work;
 see [the doctor contract](../README.md#diagnostics). The last two conditions need
 a live window.
 
-### Release provenance and CPU baseline
+### Build modes, release provenance, and CPU baseline
+
+#### Ordinary native development
+
+On an x64 Windows development machine, a consumer building or running Mullion
+from an IDE normally needs no target environment assignments. Go's native
+defaults already select the host target, so ordinary development can use the
+IDE's normal build/run command or, from PowerShell:
+
+```powershell
+go build .\examples\basic
+go run .\examples\basic
+```
+
+Those defaults make development convenient; they are not a release provenance
+record. In particular, an IDE build does not by itself document the selected Go
+toolchain, CGo setting, CPU baseline, source revision, or artifact hash. Do not
+ask consumers to persist release settings with `go env -w`: that changes later,
+unrelated Go commands in the user's environment and is not part of Mullion's
+library contract.
+
+#### Controlled release or compatibility artifact
 
 Build one release candidate on Windows 11 and carry that exact artifact into the
 clean Windows 10 VM. The intended x64 command must explicitly keep the CGo-free
-and broad CPU baseline:
+and broad CPU baseline. Run the following from the intended clean checkout in a
+new PowerShell session; the assignments affect only that PowerShell process:
 
 ```powershell
+$status = git status --short
+if ($status) { throw 'release build requires a clean checkout' }
+git rev-parse HEAD
+go version
+
+New-Item -ItemType Directory -Force .\dist | Out-Null
 $env:CGO_ENABLED = '0'
 $env:GOOS = 'windows'
 $env:GOARCH = 'amd64'
 $env:GOAMD64 = 'v1'
-go build -trimpath -buildvcs=true -o .\dist\app.exe .\cmd\your-app
+
+$out = Join-Path (Get-Location) 'dist\app.exe'
+go build -trimpath -buildvcs=true -o $out .\cmd\your-app
+Get-FileHash $out -Algorithm SHA256
+go version -m $out
+
 Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH, Env:GOAMD64
 ```
 
 Replace `./cmd/your-app` with the actual consumer entry point; the important
 provenance contract is that the Win10 VM receives the resulting `app.exe`, not a
-binary rebuilt inside the VM. Before transfer, record `go version`, `go version
--m .\dist\app.exe`, `Get-FileHash .\dist\app.exe -Algorithm SHA256`, and a PE
-inspection of the file's machine type and import table (for example, `dumpbin
-/headers /imports .\dist\app.exe`). On Win10, re-read the SHA-256 and inspect the
-same artifact before running it. The PE import report is evidence of what the
-loader must resolve; it is not evidence that delayed `LazyProc` calls, WebView2,
-or rendering work.
+binary rebuilt inside the VM. Record the `git rev-parse HEAD` result, `go version`,
+`go version -m .\dist\app.exe`, and the SHA-256 above. `-trimpath` avoids embedding
+the local source path; `-buildvcs=true` embeds usable source-control metadata when
+the checkout and Go toolchain can provide it. Exact hashes still require the same
+source, Go version, flags, and other build inputs, so a matching hash is transfer
+evidence rather than a general reproducibility guarantee.
+
+The explicit `CGO_ENABLED=0` makes the published artifact independent of a local
+C compiler, matching Mullion's CGo-free design. It does not make Windows race
+tests CGo-free: `go test -race` still needs mingw-w64 `gcc`. The explicit
+`GOOS`/`GOARCH` prevent a release from silently inheriting an unintended target.
+After transfer, run `Get-FileHash` against the received file on Windows 10 and
+compare it to the recorded value before executing it. Also inspect the PE machine
+type and import table where available (for example, `dumpbin /headers /imports
+.\dist\app.exe`). The PE import report is evidence of what the loader must resolve;
+it is not evidence that delayed `LazyProc` calls, WebView2, or rendering work.
 
 [`GOAMD64=v1` is Go's default amd64 baseline](https://go.dev/wiki/MinimumRequirements)
 and generates instructions all 64-bit x86 processors can execute. `v2` adds
@@ -223,4 +274,4 @@ Issue #132 should convert this draft into either an accepted compatibility
 decision with a maintained test matrix, or a narrower statement that does not
 promise unverified Win10 behaviour.
 
-> Last updated: 2026-08-25 | Editor: OpenAI (GPT-5.6) | Change: distinguish Win10 lifecycle from WebView2 updates and add same-artifact CPU/provenance proof.
+> Last updated: 2026-08-27 | Editor: OpenAI (GPT-5.6) | Change: document ordinary versus controlled Windows x64 builds and their artifact-evidence boundary.
