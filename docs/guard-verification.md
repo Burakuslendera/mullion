@@ -231,6 +231,7 @@ sequences and copied hashes cannot consume them.
 
 The scanner source assembles its dangerous tokens rather than exempting itself.
 There is no generic workflow-hash or file allowance.
+[Publication evidence](./publication-evidence.md) describes the narrow allowance and proof procedure for documented values that intentionally match a detector.
 
 ### Traversal and history truthfulness
 
@@ -396,4 +397,4 @@ foreign profiles, aliases, encoded paths or unrelated secrets; headless tests do
 
 These ceilings are not follow-up bugs; stronger claims require stronger proof first.
 
-> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: add the six exact late-closure mutations and mapped-loopback correction to the review-proven assigned/generic loader, browser endpoint, backtick UNC, array inventory, strict scanner and portable production locks.
+> Last updated: 2026-08-28 | Editor: OpenAI (GPT-5.6) | Change: link detector-matching publication evidence to its exact-allowance procedure.

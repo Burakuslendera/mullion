@@ -68,6 +68,34 @@ func TestLeakScanKeepsPathControlsClean(t *testing.T) {
 	}
 }
 
+func TestLeakScanAcceptsEquivalentWindowsRootSpellings(t *testing.T) {
+	root := newLeakScanRepository(t, map[string][]byte{"clean.txt": []byte("clean\n")})
+	top := strings.TrimSpace(gitOutput(t, root, "rev-parse", "--show-toplevel"))
+	if strings.EqualFold(filepath.Clean(root), filepath.Clean(top)) {
+		t.Skip("filesystem did not expose distinct equivalent path spellings")
+	}
+	result := runLeakScan(t, root)
+	if result.exitCode != 0 || !strings.Contains(result.output, "clean within configured scope") {
+		t.Fatalf("equivalent filesystem roots did not receive a clean verdict (exit %d):\n%s", result.exitCode, result.output)
+	}
+}
+
+func TestLeakScanRejectsDifferentGitTopLevel(t *testing.T) {
+	top := t.TempDir()
+	root := filepath.Join(top, "nested")
+	copyLeakScanScript(t, root)
+	writeLeakScanFiles(t, root, map[string][]byte{"clean.txt": []byte("clean\n")})
+	gitInit(t, top)
+	gitRun(t, top, "add", "-A")
+	gitRun(t, top, "commit", "-q", "-m", "clean fixture")
+
+	result := runLeakScan(t, root)
+	assertLeakScanFailed(t, result)
+	if !strings.Contains(result.output, "does not match scanner root") {
+		t.Fatalf("different Git top level did not fail at the root-identity boundary:\n%s", result.output)
+	}
+}
+
 func TestLeakScanHasNoBasenameOrFilenameEscape(t *testing.T) {
 	marker := "C:" + `\` + "Users" + `\` + "example" + `\secret`
 	name := string(rune(0x00e9)) + "name.go"
@@ -243,6 +271,26 @@ func TestLeakScanAllowancesBindExactComponents(t *testing.T) {
 		}, false},
 		{"over consumed", map[string][]byte{
 			"host/webview_windows_test.go": []byte(drive("jane") + "\n" + drive("jane") + "\n" + unc("jane", "share")),
+		}, false},
+		{"exact Windows compatibility evidence", map[string][]byte{
+			"docs/verification-records.md": []byte(strings.Join([]string{
+				"2a20cffb0dfdd4dc6b3af" + "028eed5f63e4955b1af",
+				"5A9B807B7B809F666B2B3AD11D851" + "8B896B079EC3B5515317046B0796A424F00",
+				"A6B15AD5DAE3D2BFDD0B5FC0D295" + "2A02234636AC71FA552CBAE379BD39B51860",
+				"amd64v1" + ".exe",
+			}, "\n")),
+			"docs/windows-10-compatibility.md": []byte(strings.Repeat("app"+".exe\n", 4)),
+		}, true},
+		{"Windows compatibility evidence must match its exact capture", map[string][]byte{
+			"docs/verification-records.md": []byte(strings.Join([]string{
+				"5A9B807B7B809F666B2B3AD11D851" + "8B896B079EC3B5515317046B0796A424F01",
+			}, "\n")),
+		}, false},
+		{"Windows compatibility executable capture is under counted", map[string][]byte{
+			"docs/windows-10-compatibility.md": []byte(strings.Repeat("app"+".exe\n", 3)),
+		}, false},
+		{"Windows compatibility executable capture is over counted", map[string][]byte{
+			"docs/windows-10-compatibility.md": []byte(strings.Repeat("app"+".exe\n", 5)),
 		}, false},
 	}
 	for _, testCase := range cases {

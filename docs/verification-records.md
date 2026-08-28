@@ -212,6 +212,23 @@ acceptance rules and checklist in the parent document.
   3D-acceleration behavior, multi-monitor coverage, Fixed Version Runtime
   coverage, pixel parity, a clean no-developer-artifact baseline, or full parity.
 
+- **2026-08-28 — Windows CI publication-evidence failure / observed:** GitHub
+  Actions run [`33167361118`](https://github.com/Burakuslendera/mullion/actions/runs/33167361118)
+  on commit `ca7b67d` failed in both `windows` matrix jobs at `leak-scan` before
+  build, vet, tests, runtime checks, doctor, race, or diagnostic-tag steps began.
+  The scanner reported eight findings in the Windows compatibility evidence added
+  on the preceding day: three artifact-identity values and five artifact-name
+  values. The separate `windows x64` job and both portable jobs completed
+  successfully; this record does not infer any Windows GUI result from them.
+
+- **2026-08-28 — recurrence control / observed policy:** The scan's fail-closed
+  result was correct: the evidence matched detector families without exact
+  path/rule/value/count allowances. The correction must retain the evidence and
+  add only those narrow allowances with a real-script exact-value and near-miss
+  regression. [Publication evidence](./publication-evidence.md) records the
+  procedure; a clean scan after that correction proves configured publication
+  scope only, not artifact execution or GUI behaviour.
+
 ## Issue #113
 
 - **Automated, repo-local Windows host focus:** `go test -count=1 ./host -run '^(Test(NativeCaption|ShouldUseDWMCaption|DWMCaption|NativeHitTestDiagnostic|WindowProc)|TestTitlebarDragHitTestDiagnostic|TestFormatNativeHitTest)'` passed with repository-local `GOTMPDIR` and `GOCACHE`. It covers the policy matrix, lazy candidate composition, zero unread candidate calls, one call per real reader, unchanged decision precedence, latched diagnostic switches, the diagnostic formatter gate and zero allocations on disabled pure paths.
@@ -223,4 +240,4 @@ acceptance rules and checklist in the parent document.
 
 The pure tests do not measure live `LazyProc.Call`, `GetWindowRect`, DPI/monitor queries, DWM results, logger implementation cost, or actual mouse-message frequency. A live Windows run with a real window remains required for those costs and for tooltip/caption visual behavior. No test creates a window.
 
-> Last updated: 2026-08-27 | Editor: OpenAI (GPT-5.6) | Change: record operator-reported Windows 10-built artifact launch on Windows 11 with its evidence boundary.
+> Last updated: 2026-08-28 | Editor: OpenAI (GPT-5.6) | Change: record and constrain the Windows CI failure caused by documented compatibility evidence.

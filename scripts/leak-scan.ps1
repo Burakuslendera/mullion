@@ -43,9 +43,21 @@ $binaryExtensions = @(".png")
 # an ordinary path retires its unreachable allowance instead of a stale carve-out.
 $checkoutPin = "3d3c42e5aac5ba805825" + "da76410c181273ba90b1"
 $setupGoPin = "b7ad1dad31e06c5925ef" + "5d2fc7ad053ef454303e"
+$windows10EvidenceCommit = "2a20cffb0dfdd4dc6b3af" + "028eed5f63e4955b1af"
+$win11ToWin10ArtifactHash = "5A9B807B7B809F666B2B3AD11D851" + "8B896B079EC3B5515317046B0796A424F00"
+$win10ToWin11ArtifactHash = "A6B15AD5DAE3D2BFDD0B5FC0D295" + "2A02234636AC71FA552CBAE379BD39B51860"
+$windowsArtifactSuffix = "amd64v1" + ".exe"
+$consumerArtifactName = "app" + ".exe"
 $allowances = @(
     [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($checkoutPin) + "$"); Action = "actions/checkout"; Expected = 3; Consumed = 0 }
     [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($setupGoPin) + "$"); Action = "actions/setup-go"; Expected = 3; Consumed = 0 }
+    # These recorded compatibility identifiers are public evidence, not an
+    # exclusion: each allowance is confined to one documented capture and count.
+    [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($windows10EvidenceCommit) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($win11ToWin10ArtifactHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($win10ToWin11ArtifactHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($windowsArtifactSuffix) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/windows-10-compatibility.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($consumerArtifactName) + "$"); Expected = 4; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/decisions/0025-urls-are-logged-as-urls.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/decisions/0028-message-keeps-the-urls-inside-it.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 3; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/guard-authority-details.md"; Rule = "UNC host"; Group = "host"; Value = '(?i)BUILD-NAS'; Expected = 1; Consumed = 0 }
@@ -282,6 +294,62 @@ function Add-Matches([System.Collections.ArrayList]$Findings, [string]$File, [st
     }
 }
 
+# Git can report a Windows worktree through its long Unicode spelling while
+# PowerShell reaches the same directory through an 8.3 component. Textual
+# normalization is not identity: resolve both existing paths through handles on
+# Windows, and keep any lookup failure fatal before the clean verdict.
+function Get-CanonicalFilesystemPath([string]$Path) {
+    $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd([char[]]"\\/")
+    if (-not $IsWindows) {
+        return $fullPath
+    }
+
+    if ($null -eq ("MullionLeakScanPathIdentity" -as [type])) {
+        Add-Type @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+public static class MullionLeakScanPathIdentity {
+    const uint FileReadAttributes = 0x80;
+    const uint FileShareRead = 0x1;
+    const uint FileShareWrite = 0x2;
+    const uint FileShareDelete = 0x4;
+    const uint OpenExisting = 3;
+    const uint FileFlagBackupSemantics = 0x02000000;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern SafeFileHandle CreateFileW(string name, uint access, uint share,
+        IntPtr securityAttributes, uint creation, uint flags, IntPtr templateFile);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern uint GetFinalPathNameByHandleW(SafeFileHandle handle,
+        StringBuilder path, uint capacity, uint flags);
+
+    public static string Get(string path) {
+        using (SafeFileHandle handle = CreateFileW(path, FileReadAttributes,
+            FileShareRead | FileShareWrite | FileShareDelete, IntPtr.Zero,
+            OpenExisting, FileFlagBackupSemantics, IntPtr.Zero)) {
+            if (handle.IsInvalid) {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            StringBuilder result = new StringBuilder(32768);
+            uint length = GetFinalPathNameByHandleW(handle, result,
+                (uint)result.Capacity, 0);
+            if (length == 0 || length >= result.Capacity) {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            return result.ToString();
+        }
+    }
+}
+'@
+    }
+    return [MullionLeakScanPathIdentity]::Get($fullPath).TrimEnd([char[]]"\\/")
+}
+
 # The only successful path is the final branch below. Every scope decision before
 # it throws on ambiguity: repository discovery, tracked-file enumeration, strict
 # decoding, HEAD validity, shallow history, commit enumeration and stale
@@ -308,15 +376,15 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "not a Git repository" }
     $top = (git rev-parse --show-toplevel) -join ""
     if ($LASTEXITCODE -ne 0) { throw "cannot identify Git top level (exit $LASTEXITCODE)" }
-    $rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd([char[]]"\/")
-    $topFull = [System.IO.Path]::GetFullPath($top).TrimEnd([char[]]"\/")
+    $rootFull = Get-CanonicalFilesystemPath $root
+    $topFull = Get-CanonicalFilesystemPath $top
     if (-not [string]::Equals($rootFull, $topFull, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Git top level '$topFull' does not match scanner root '$rootFull'"
     }
     $index = (git rev-parse --git-path index) -join ""
     if ($LASTEXITCODE -ne 0) { throw "cannot identify Git index (exit $LASTEXITCODE)" }
     if (-not [System.IO.Path]::IsPathRooted($index)) { $index = Join-Path $root $index }
-    $indexFull = [System.IO.Path]::GetFullPath($index)
+    $indexFull = Get-CanonicalFilesystemPath $index
     $rootPrefix = $rootFull + [System.IO.Path]::DirectorySeparatorChar
     if (-not $indexFull.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Git index '$indexFull' is outside scanner root '$rootFull'"
