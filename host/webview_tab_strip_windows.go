@@ -23,20 +23,22 @@ package host
 // while QueryInterface answers the actual question.
 
 import (
+	"errors"
+
 	"github.com/Burakuslendera/mullion/internal/logsafe"
 	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
-// applyTabStripStartup runs between Embed and the first Navigate.
-func (host *Host) applyTabStripStartup(browser *webview2.Browser) {
-	if browser == nil {
-		host.log.Warn("mullion: tab strip startup skipped, browser unavailable")
-		return
+// applyTabStripStartup runs between the required script barrier and the first
+// Navigate. Capability failures remain advisory; a destroyed/replaced Browser
+// is lifecycle failure and must keep later readiness and navigation closed.
+func (host *Host) applyTabStripStartup(browser *webview2.Browser) error {
+	if err := host.requireCurrentBrowser(browser); err != nil {
+		return err
 	}
 	settings, err := browser.Settings()
 	if err != nil {
-		host.log.Warn("mullion: tab strip disabled, settings unavailable, reason=" + logsafe.Reason(err))
-		return
+		return host.warnTabStripCapability(browser, "mullion: tab strip disabled, settings unavailable, reason=", err)
 	}
 	// Settings returns an owned reference; held for this configuration pass only.
 	defer settings.Release()
@@ -44,17 +46,40 @@ func (host *Host) applyTabStripStartup(browser *webview2.Browser) {
 
 	settings9, err := settings.QuerySettings9()
 	if err != nil {
-		host.log.Warn("mullion: tab strip disabled, fallback=classic_titlebar, reason=" + logsafe.Reason(err))
-		return
+		return host.warnTabStripCapability(browser, "mullion: tab strip disabled, fallback=classic_titlebar, reason=", err)
 	}
 	defer settings9.Release()
 
 	if err := settings9.PutIsNonClientRegionSupportEnabled(true); err != nil {
-		host.log.Warn("mullion: tab strip disabled, fallback=classic_titlebar, reason=" + logsafe.Reason(err))
-		return
+		return host.warnTabStripCapability(browser, "mullion: tab strip disabled, fallback=classic_titlebar, reason=", err)
 	}
-	host.warnIf("tab strip flag", browser.Init(host.js.tabFlag))
-	host.log.Debug("mullion: tab strip startup applied, effect=first_navigation")
+	if err := browser.Init(host.js.tabFlag); err != nil {
+		if lifecycleErr := host.requireCurrentBrowser(browser); lifecycleErr != nil {
+			return lifecycleErr
+		}
+		host.warnIf("tab strip flag", err)
+		return nil
+	}
+	if err := host.requireCurrentBrowser(browser); err != nil {
+		return err
+	}
+	host.log.Debug("mullion: tab strip startup registration requested, effect=first_navigation")
+	return nil
+}
+
+func (host *Host) requireCurrentBrowser(browser *webview2.Browser) error {
+	if browser == nil || host.windowDestroyed || host.browser != browser || browser.IsShuttingDown() {
+		return errors.New("window destroyed during webview startup")
+	}
+	return nil
+}
+
+func (host *Host) warnTabStripCapability(browser *webview2.Browser, prefix string, err error) error {
+	if lifecycleErr := host.requireCurrentBrowser(browser); lifecycleErr != nil {
+		return lifecycleErr
+	}
+	host.log.Warn(prefix + logsafe.Reason(err))
+	return nil
 }
 
 // disableChromiumZoom removes every user zoom path (Ctrl+scroll, Ctrl+-, pinch).

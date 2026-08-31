@@ -55,7 +55,8 @@ func TestUnsupportedArchitectureProductionEntriesPrecedeCOMCallbacks(t *testing.
 		t.Fatalf("unsupported production entries allocated %d COM callbacks, want 0", allocations)
 	}
 	if iunknownVtbl != (IUnknownVtbl{}) || eventHandlerVtable != (eventHandlerVtbl{}) ||
-		completedVtable != (completionVtbl{}) || environmentOptionsVtable != (environmentOptionsVtbl{}) {
+		completedVtable != (completionVtbl{}) || scriptCompletionVtable != (scriptCompletionVtbl{}) ||
+		environmentOptionsVtable != (environmentOptionsVtbl{}) {
 		t.Fatal("unsupported production entry initialized a COM vtable")
 	}
 }

@@ -229,6 +229,152 @@ acceptance rules and checklist in the parent document.
   procedure; a clean scan after that correction proves configured publication
   scope only, not artifact execution or GUI behaviour.
 
+### 2026-08-30 — [Issue #135](https://github.com/Burakuslendera/mullion/issues/135) required first-document registration
+
+- **Implementation / contract:** [Decision 0045](./decisions/0045-required-document-created-script-registration-barrier.md)
+  requires successful documented completions for bridge, diagnostics, drag, and
+  resize before first `Navigate` or re-entrant Browser availability; optional
+  tab-strip registration remains nonblocking with the classic fallback. This is
+  the contract exercised by the Issue #135
+  [verification checklist](./verification.md#3-manual-acceptance-checklist).
+
+- **Automatic, local Windows evidence:** `gofmt -l .` printed nothing;
+  `go build ./...` and `go vet ./...` passed. `go test -count=1 -timeout 15m
+  ./internal/webview2 ./host` passed (`internal/webview2` 2.011 s, `host`
+  156.288 s), and `go test -count=1 -timeout 20m ./...` passed all packages
+  (`host` 151.176 s). `node scripts/test-bridge.mjs` printed exactly
+  `bridge, frame-state resize and drag vm behavior: ok`.
+  `go run ./cmd/mullion doctor` succeeded on Windows 11/amd64 with WebView2
+  `151.0.4129.107`, the required export present, and two 1920x1080 displays at
+  125% and 100%; `MULLION_REQUIRE_WEBVIEW2=1 go test -count=1
+  ./internal/webview2` passed.
+
+- **Automatic matrix and publication evidence:** both `go build -tags
+  mullion_dwm_caption_diag ./...; go test -count=1 -tags
+  mullion_dwm_caption_diag ./...` and the corresponding
+  `mullion_caption_passthrough_diag` build/test matrix passed.
+  `GOOS=linux GOARCH=amd64 go build ./...`, `GOOS=windows GOARCH=amd64 go
+  build ./...`, `GOOS=windows GOARCH=386 go test -count=1
+  ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture'`,
+  and `GOOS=windows GOARCH=arm64 go build ./...` passed. `pwsh
+  scripts/leak-scan.ps1` was clean across 305 tracked text files and 258
+  commits with 0 inspection errors. The default `go test -count=1 -race ./...`
+  reports that race requires CGo; with `CGO_ENABLED=1`, race compilation stops
+  because `gcc` is absent. That is unavailable toolchain coverage, not a code
+  test pass or failure.
+
+- **2026-08-31 serialized refinement / automatic, uncommitted:** Against the
+  current `fix/issue-135-script-registration-barrier` tree, focused
+  `internal/webview2` completion/precedence/registration tests passed (2.391 s)
+  and focused host barrier/startup/mutation tests passed (4.990 s).
+  `gofmt -l .` printed nothing; `go build ./...`, `go vet ./...`, and
+  `go test -count=1 -timeout 20m ./...` passed (`host` 207.359 s;
+  `internal/webview2` 3.848 s). Both diagnostic-tag builds and full tagged test
+  suites passed (`mullion_dwm_caption_diag` host 205.374 s;
+  `mullion_caption_passthrough_diag` host 202.807 s). Linux/amd64 and Windows
+  amd64/ARM64 builds plus the Windows/386 unsupported-architecture tests passed.
+  `node scripts/test-bridge.mjs` printed its expected success line;
+  `scripts/leak-scan.ps1` was clean across 305 tracked text files and 258
+  commits with 0 inspection errors. A writable temporary `GOCACHE` was used;
+  successful builds still emitted a non-fatal sandbox warning when Go attempted
+  to update the read-only module stat cache. `gcc` is unavailable, so the race
+  gate was not run.
+
+- **2026-08-31 tagged marker isolation / automatic, uncommitted:** After the
+  bounded marker dispatcher and explicit frontend-ready rejection were added,
+  focused default completion/counter/mutation tests passed (`internal/webview2`
+  1.143 s; `host` 2.155 s), as did all tagged coordinator tests (1.423 s) and
+  the diagnostic-command package test (2.168 s). The adversarial tag tests hold
+  the observer callback indefinitely while proving both fail-safe and Close
+  still publish the genuine completion, the dispatcher terminates after its
+  bounded observer timeout, post-close enqueue is counted rather than stranded,
+  and a fresh coordinator can start. Default build, vet, and uncached full tests
+  passed (`host` 174.691 s; `internal/webview2` 3.054 s). The new tag's build,
+  vet, and uncached full tests passed (`host` 199.355 s; `internal/webview2`
+  3.572 s; diagnostic command 2.590 s). A tagged
+  command binary built successfully outside the tree; the same command without
+  the tag failed as expected because build constraints exclude all Go files.
+  Writable external `GOCACHE`/`GOTMPDIR` were used; Go's read-only module stat
+  cache still emitted the known non-fatal warning. These automatic results were
+  not either half of the later supported-Runtime protocol.
+
+- **2026-08-31 final paired live acceptance:** The separately hashed untagged
+  first-document run and `mullion_script_completion_delay_diag` run used one
+  frozen source identity on WebView2 151.0.4129.107 / Windows 11 and complete
+  the Issue #135 paired checklist item. The tagged command's sole 4.155-second
+  attempt exited zero after its real-callback Show/Quit sequence. Artifact,
+  source, log and manifest hashes, chronology, owned diagnostic counts and all
+  nonclaims are canonical in the
+  [paired live record](./issue-135-paired-live-verification.md).
+
+- **Live Runtime observation:** Against the then-current uncommitted tree,
+  `go run .` in `examples/basic` exited 0 with WebView2 `151.0.4129.107`. Logs
+  recorded aggregate required-script
+  registration before `Navigate`; the first document then emitted
+  document-created/DOM diagnostics, installed the resize cursor, completed
+  bridge `Ping`, reached shell-ready, navigation-completed, and frontend-ready,
+  and quit/shut down/exited its message loop cleanly. The visible capture showed
+  `Pong from Go`, the native non-client titlebar path, and a restored window.
+  Three fresh visible runs of that exact then-current tree likewise showed
+  first-document `Ping`/pong, the
+  native app-region path, diagnostics, and resize readiness, with no visible
+  missing-script manifestation.
+
+- **Live slow-start lifecycle:** The then-current uncommitted branch contents were copied
+  to a temporary workspace; only that copy carried non-production
+  instrumentation: a five-second sleep inside each
+  `AddScriptToExecuteOnDocumentCreated` completion callback; final repository
+  source was unchanged. On WebView2 `151.0.4129.107`, `examples/basic` reached
+  the delayed required-registration phase; a private `wmNativeShow` request
+  carrying the current first-run token was posted to the hidden Mullion `HWND`,
+  then `WM_CLOSE`. At 2026-08-30 02:00:53, logs
+  recorded `show applying`; `show failed, reason=webview embed already in
+  flight`; `close requested`; `visible=false`; `close allowed`; `destroy
+  requested`; `webview2 shutdown requested`; and teardown outside the loop.
+  The one `Run` pre-start terminal failure, `quit while waiting for
+  document-created script registration`, exited 1 as expected. After `webview2
+  embedded`, no `asset serving ready`, `injected scripts registered`, `navigate
+  requested`, `initial show gated`, `native host ready`, frontend-ready, or
+  visible-window success appeared; no half-ready window surfaced. This directly
+  exercises the Issue #135 slow-start Show/close boundary and complements, not
+  replaces, deterministic tests; it does not establish the Runtime's real
+  callback scheduling or ownership.
+
+- **Video audit and anomaly disposition:** a user-supplied 99.6-second,
+  30-fps recording decoded to exactly 2,988 consecutive frames. The preserved
+  150 contact sheets include every frame; 25 disjoint read-only audits inspected
+  every assigned cell, covering F1–F2988 without a gap or overlap. The user
+  reported that the first click-hold-drag sometimes had no move until
+  release/retry. Its strongest visible no-effect interval is F1597–F1633
+  (00:53.200–00:54.400), but the recording has no mouse-button state and the
+  estimated press origin is about 5–7 px below the outer top, plausibly inside
+  the documented 8-px resize band. Treat it as a separate P1 candidate with an
+  unverified mechanism, not Issue #135 and not a code-fix claim. F2822's
+  disabled-to-enabled resize-cursor pair is expected focus/resize resynchrony
+  (`resize.js` hides then refreshes zones); F91–F134 is the normal fixed-size
+  native move trajectory with expected `WM_ENTERSIZEMOVE`/zone-disable logs.
+  Each of five `Chrome_WidgetWin_0 Error=1411` onsets coincided with IDE
+  Stop/Ctrl+C forced termination; source and documentation identify that as
+  Chromium/WebView2 forced-stop noise, absent on graceful close, rather than
+  Mullion class ownership or Issue #135. Task View, visibility transitions,
+  rerun dialogs, console selection/scrolling, and paint blanks were normal
+  user/tooling states. Raw video evidence remains local and is not published
+  here.
+
+- **Still not covered / `unverified`:** The tagged artifact is neither a claim
+  about ordinary Runtime scheduling nor byte-equivalent to the untagged artifact.
+  The manual untagged X interaction lacks an exit code and owned teardown, its
+  exact visual Pong payload was not preserved, and its manual resize gestures
+  were bottom-right rather than pure-right. The identical-artifact raw log
+  independently supplies right-edge evidence; its one prepared, no-retry
+  Computer Use attribution comes from the live session record. No serialized
+  action receipt was retained, so the attribution is not independently
+  reconstructable offline.
+  Local race remains
+  unavailable without `gcc`. The issue #129 Win10 attempt stopped at its first
+  UUID-conflicting `registervm` failure, so no guest hash or same-artifact Win10
+  execution is claimed.
+
 ## Issue #113
 
 - **Automated, repo-local Windows host focus:** `go test -count=1 ./host -run '^(Test(NativeCaption|ShouldUseDWMCaption|DWMCaption|NativeHitTestDiagnostic|WindowProc)|TestTitlebarDragHitTestDiagnostic|TestFormatNativeHitTest)'` passed with repository-local `GOTMPDIR` and `GOCACHE`. It covers the policy matrix, lazy candidate composition, zero unread candidate calls, one call per real reader, unchanged decision precedence, latched diagnostic switches, the diagnostic formatter gate and zero allocations on disabled pure paths.
@@ -240,4 +386,4 @@ acceptance rules and checklist in the parent document.
 
 The pure tests do not measure live `LazyProc.Call`, `GetWindowRect`, DPI/monitor queries, DWM results, logger implementation cost, or actual mouse-message frequency. A live Windows run with a real window remains required for those costs and for tooltip/caption visual behavior. No test creates a window.
 
-> Last updated: 2026-08-28 | Editor: OpenAI (GPT-5.6) | Change: record and constrain the Windows CI failure caused by documented compatibility evidence.
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: clarify final paired Issue #135 provenance and attribution boundaries.

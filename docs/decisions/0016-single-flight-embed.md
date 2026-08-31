@@ -1,6 +1,6 @@
 # 0016. The WebView2 embed is single-flight, and a destroyed window cancels it
 
-**Status:** Accepted
+**Status:** Accepted; extended by [0045](./0045-required-document-created-script-registration-barrier.md)
 
 ## Context
 
@@ -98,4 +98,4 @@ commits a live browser.)
   and timing, and stays a live-only scenario; the flags' decision logic is what
   the suite pins.
 
-> Last updated: 2026-07-18 | Editor: Claude (Fable 5) | Change: new record for the single-flight embed invariant (issue #23).
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: link the required-script readiness extension without discarding the single-flight decision.

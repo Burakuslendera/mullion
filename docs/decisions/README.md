@@ -36,7 +36,7 @@ These files are that record.
 | [0013](./0013-backdrop-is-a-mullion-command.md) | The screenshot backdrop is a mullion command | Accepted |
 | [0014](./0014-bridge-origin-at-dispatch.md) | The injected bridge acts only on messages from the trusted origin | Accepted; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0015](./0015-maximize-insets-for-autohide-taskbar.md) | Maximized geometry insets 1px on an auto-hide taskbar edge | Accepted, narrowed by 0019 |
-| [0016](./0016-single-flight-embed.md) | The WebView2 embed is single-flight, and a destroyed window cancels it | Accepted |
+| [0016](./0016-single-flight-embed.md) | The WebView2 embed is single-flight, and a destroyed window cancels it | Accepted; extended by [0045](./0045-required-document-created-script-registration-barrier.md) |
 | [0017](./0017-error-surface-by-navigation-state.md) | The error surface is identified by navigation state, not by its source | Accepted, extended by 0020, orderings replaced by 0021, provenance refined by 0037 |
 | [0018](./0018-initial-placement-centered-on-primary.md) | The first window is centered on the primary monitor's work area, DPI-scaled | Accepted |
 | [0019](./0019-maximized-hittest-stays-in-process.md) | The maximized hit-test never queries the shell | Accepted |
@@ -65,6 +65,7 @@ These files are that record.
 | [0042](./0042-go-1-24-remains-the-released-consumer-floor.md) | Go 1.24 remains the released consumer floor | Accepted; supersedes [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) |
 | [0043](./0043-external-routes-are-uri-only-os-activations.md) | External routes are URI-only OS activations | Accepted; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) | Malformed HTTP userinfo is never emitted by diagnostics | Accepted; refines 0025 direct URL fallback, 0028 `Message` unsafe open-authority control output, and 0035 frontend `Diagnostic` output without superseding them |
+| [0045](./0045-required-document-created-script-registration-barrier.md) | Required document-created scripts complete before first navigation and availability | Accepted; extends [0016](./0016-single-flight-embed.md) |
 
 ## When to write one
 
@@ -106,4 +107,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point current-implementation entries to bridge, retaining decision records as historical rationale.
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: index 0045 as the required-script readiness extension of 0016.

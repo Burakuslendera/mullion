@@ -24,7 +24,10 @@ func (host *Host) ensureWebView(source string) error {
 // process and all (issue #23, decision 0016). A destroyed window refuses too:
 // there is nothing left to embed into.
 func (host *Host) ensureWebViewWith(source string, create func() error) error {
-	if host.browser != nil {
+	// A committed Browser is usable only after create returns. Required script
+	// completion pumps the STA queue after commit, so a re-entrant Show must stay
+	// behind webViewEmbedding instead of exposing a half-configured controller.
+	if host.browser != nil && !host.webViewEmbedding {
 		return nil
 	}
 	// Returned errors are not reported here: the Run or Show path that can
@@ -223,19 +226,74 @@ func (host *Host) createWebView() error {
 	host.syncRasterizationScale("embed", dpiForWindow(host.window()))
 	host.syncWebViewBounds("embed")
 
-	// The bridge script installs the namespace the other three scripts use, so
-	// it must be injected first.
-	host.warnIf("bridge script", browser.Init(host.js.bridge))
-	host.warnIf("diagnostics script", browser.Init(host.js.diagnostics))
-	host.warnIf("drag script", browser.Init(host.js.drag))
-	host.warnIf("resize script", browser.Init(host.js.resize))
-	host.log.Debug("mullion: injected scripts registered")
+	return host.startWebViewFirstNavigation(
+		browser,
+		browser.RegisterDocumentCreatedScripts,
+		host.applyTabStripStartup,
+		host.startRenderWatchdog,
+		func() error { return browser.Navigate(host.source.startURL) },
+	)
+}
 
-	host.applyTabStripStartup(browser)
+// startWebViewFirstNavigation is the production post-Embed startup seam. Its
+// collaborators are effects already owned by createWebView; retaining them as
+// arguments lets headless tests execute the same failure and ordering path
+// without a Runtime, HWND, or native message pump.
+func (host *Host) startWebViewFirstNavigation(
+	browser *webview2.Browser,
+	register func(...string) error,
+	applyTabStrip func(*webview2.Browser) error,
+	startWatchdog func(),
+	navigate func() error,
+) error {
+	if err := host.registerRequiredDocumentCreatedScripts(browser, register); err != nil {
+		return err
+	}
+
+	if err := host.committedBrowserStepOrTearDown(func() error {
+		return applyTabStrip(browser)
+	}); err != nil {
+		return err
+	}
+	if err := host.committedBrowserStepOrTearDown(func() error {
+		return host.requireCurrentBrowser(browser)
+	}); err != nil {
+		return err
+	}
+	if host.source.embedded {
+		host.log.Debug("mullion: asset serving ready, source=embedded-fs")
+		if err := host.committedBrowserStepOrTearDown(func() error {
+			return host.requireCurrentBrowser(browser)
+		}); err != nil {
+			return err
+		}
+	}
+	host.log.Debug("mullion: injected scripts registered")
+	if err := host.committedBrowserStepOrTearDown(func() error {
+		return host.requireCurrentBrowser(browser)
+	}); err != nil {
+		return err
+	}
+	startWatchdog()
+	if err := host.committedBrowserStepOrTearDown(func() error {
+		return host.requireCurrentBrowser(browser)
+	}); err != nil {
+		return err
+	}
+	if err := host.committedBrowserStepOrTearDown(navigate); err != nil {
+		return err
+	}
+	// Navigate may dispatch teardown before returning success. Report the
+	// request only after both the effect and its resulting lifecycle state are
+	// committed, then re-check after the user Logger callback re-enters.
+	if err := host.committedBrowserStepOrTearDown(func() error {
+		return host.requireCurrentBrowser(browser)
+	}); err != nil {
+		return err
+	}
 	host.log.Debug("mullion: navigate requested")
-	host.startRenderWatchdog()
 	return host.committedBrowserStepOrTearDown(func() error {
-		return browser.Navigate(host.source.startURL)
+		return host.requireCurrentBrowser(browser)
 	})
 }
 
@@ -316,7 +374,6 @@ func (host *Host) registerAssetFilterOrTearDown(register func(string, webview2.W
 		return errors.Join(errors.New("register web resource filter"), err)
 	}
 	host.log.Debug("mullion: webresource filter registered")
-	host.log.Debug("mullion: asset serving ready, source=embedded-fs")
 	return nil
 }
 

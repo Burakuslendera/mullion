@@ -19,6 +19,14 @@ func (browser *Browser) ShuttingDown() {
 		return
 	}
 	browser.shuttingDown = true
+	if browser.shutdown != nil {
+		close(browser.shutdown)
+	}
+	optionalHandlers := browser.optionalScriptHandlers
+	browser.optionalScriptHandlers = nil
+	for handler := range optionalHandlers {
+		handler.abandon()
+	}
 	controller := browser.controller
 	core := browser.core
 	environment := browser.environment

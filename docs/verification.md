@@ -29,6 +29,7 @@ node scripts/test-bridge.mjs                    # exact embedded bridge in a Nod
 go run ./cmd/mullion doctor                     # direct runtime/export execution
 go build -tags mullion_dwm_caption_diag ./...; go test -count=1 -tags mullion_dwm_caption_diag ./...
 go build -tags mullion_caption_passthrough_diag ./...; go test -count=1 -tags mullion_caption_passthrough_diag ./...
+go build -tags mullion_script_completion_delay_diag ./...; go test -count=1 -tags mullion_script_completion_delay_diag ./...
 $env:GOOS = 'linux';   $env:GOARCH = 'amd64'; go build ./... # stub portability
 $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; go build ./... # supported WebView2 target
 $env:GOOS = 'windows'; $env:GOARCH = '386'; go test -count=1 ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture' # WOW64 execution
@@ -121,6 +122,14 @@ synchronous `LazyProc.Call`.
 length boundary with scalar values, so its over-limit case allocates no
 multi-gigabyte slice and reaches no Win32 entry point (issue #120).
 
+Issue #135's `script_completion_windows_test.go` and
+`webview_script_registration_windows_test.go` drive the production completion
+and host barrier seams with serialized, error, duplicate, stale, cancellation,
+teardown, and retry fakes. They parse the create route to reject direct
+registration or pre-barrier `Navigate`. They require no Runtime, COM apartment,
+`HWND`, or message pump; they prove the fail-closed decision, not a real WebView2
+callback schedule.
+
 ## 2. Why "it compiles" is not acceptance
 
 In this architecture the compiler is nearly blind to the failure modes that
@@ -163,6 +172,20 @@ An ordinary reporter/user need only run the relevant checks on their existing di
 - [ ] **Normal resize: 4 edges and 4 corners.** In all eight zones, separately verify the correct cursor and an actual drag resize in that direction; cursor and sizing use different paths.
 - [ ] **Issue #124 live move-loop gate.** Before `WM_EXITSIZEMOVE`, a second frontend drag or resize gesture must remain disabled. After exit and a fresh authoritative frame-state snapshot, both gestures must recover.
       `frame_state_windows_test.go` and `scripts/test-bridge.mjs` cover deterministic seams, not live WebView2/Win32 scheduling.
+- [x] **Issue #135 exact serialized first-document registration.** With a supported WebView2
+      Runtime, first run an **untagged** artifact and verify bridge, diagnostics,
+      drag and resize/frame behaviour on its first navigation. Then build the same
+      source tree with `mullion_script_completion_delay_diag` and run only
+      `internal/cmd/mullion-issue135-diag`: its real-callback markers must show the
+      first hold → one rejected `Show` → release → second hold → one `Quit` →
+      release sequence, terminal barrier error, no registration/asset/watchdog/
+      Navigate/frontend-ready/host-ready success, zero marker drop/timeout, and
+      clean process exit. Record HEAD, dirty-tree
+      tracked/untracked SHA-256 manifest, both binary hashes and Runtime/OS. The
+      tagged artifact proves the adversarial integration only; it cannot prove
+      untagged release behaviour, so both artifacts are required. The
+      [2026-08-31 paired record](./issue-135-paired-live-verification.md) completes
+      this item on Win11 while retaining its untagged graceful-close, visual-Pong and Win10 nonclaims.
 - [ ] **Minimize** from the custom caption control, and restore from the
       taskbar.
 - [ ] **Close** from the custom caption control; the process exits and no
@@ -360,31 +383,8 @@ its 400-line limit.
 
 ## 5. Diagnostic build tags and env switches
 
-Diagnostics exist because the frame bugs in this library are *invisible* — the
-window looks right and behaves wrong. Each switch trades a little runtime cost
-or a little behaviour for a lot of visibility.
-
-| Switch | Kind | What it does | When to turn it on |
-| --- | --- | --- | --- |
-| `mullion_dwm_caption_diag` | build tag | Builds an alternative caption/DWM extension path and logs the frame decisions it makes, so the default path can be compared side by side against it. | Double title bar, missing or extra shadow, wrong rounded corners, native caption leaking during startup, maximize glyph flicker. |
-| `mullion_caption_passthrough_diag` | build tag | Builds a variant of the caption hit-test/passthrough behaviour and traces which component claims each caption-area point. | Drag works but caption buttons do not (or the reverse), snap layouts flyout does not appear on hover, hover state stuck after the pointer leaves. |
-| `MULLION_HITTEST_DIAG=1` | env | Emits one line per hit-test decision: point, region, returned code. | Any drag/resize/cursor complaint; mandatory when changing hit-test geometry. |
-| `MULLION_TOOLTIP_TRACE=1` | env | Traces caption-control tooltip show/hide/lifetime. | Tooltips that stick, never appear, or appear on the wrong control. |
-
-Rules:
-
-- A diagnostic tag is a **diagnostic**, never a release configuration. Ship the
-  default path; use tags to find out why the default path is wrong.
-- **Diagnostic builds must be compiled in CI.** `go build ./...` does not touch
-  a single file behind a build tag, so a diagnostic variant can be broken by an
-  unrelated rename and stay broken until the day you need it — which is
-  precisely the day you cannot afford to fix it first. Every tag gets a
-  `go build -tags <tag> ./...` line in the gate list above. The same holds for
-  tests: a tag that has its own test files needs
-  `go test -tags <tag> ./...` too.
-- Env switches must default to **off** and must not change behaviour when on —
-  only logging. If enabling a diagnostic makes the bug disappear, the
-  diagnostic is not read-only and is itself a bug.
+The complete diagnostic Kind/behavior table and the default-off, read-only rules
+moved verbatim to [diagnostic-builds-and-environment-switches.md](./diagnostic-builds-and-environment-switches.md).
 
 ## 6. What a good bug report contains
 
@@ -397,4 +397,4 @@ The dated records now live in the linked continuation
 focused evidence and explicit live/headless boundary. Keep this document's
 acceptance rules and checklist here; append command results and observations to
 the continuation rather than growing this file past its 400-line limit.
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: align the live new-window rejection check with the target-not-admitted diagnostic.
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: accept the paired exact-source Issue #135 Win11 evidence without broadening its proof ceiling.

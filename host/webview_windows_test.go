@@ -110,6 +110,25 @@ func TestEnsureWebViewReturnsImmediatelyWhenEmbedded(t *testing.T) {
 	}
 }
 
+func TestEnsureWebViewRejectsReentrantShowWhileCommittedSetupIsInFlight(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	host.browser = webview2.New()
+	host.webViewEmbedding = true
+
+	err := host.ensureWebViewWith("show", func() error {
+		t.Fatal("re-entrant Show must not use or replace the in-flight browser")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("re-entrant Show accepted a committed but unready browser")
+	}
+	for _, forbidden := range []string{"window visible", "navigate requested", "injected scripts registered", "frontend ready", "host ready"} {
+		if strings.Contains(logger.String(), forbidden) {
+			t.Fatalf("re-entrant Show leaked %q:\n%s", forbidden, logger.String())
+		}
+	}
+}
+
 // The in-flight flag must clear on both exits, or one failed embed would
 // refuse every retry for the life of the host.
 func TestEnsureWebViewClearsTheInFlightFlag(t *testing.T) {
@@ -333,9 +352,11 @@ func TestFilterFailureCleansUpLogsOnceAndAllowsRetry(t *testing.T) {
 		t.Fatalf("retry state = calls %d, committed %v, shutdown %v", retryCalls, host.browser == second, second.IsShuttingDown())
 	}
 	logged = logger.String()
-	if strings.Count(logged, "webresource filter registered") != 1 ||
-		strings.Count(logged, "asset serving ready, source=embedded-fs") != 1 {
-		t.Fatalf("retry did not log exactly one successful registration:\n%s", logged)
+	if strings.Count(logged, "webresource filter registered") != 1 {
+		t.Fatalf("retry did not log exactly one successful filter registration:\n%s", logged)
+	}
+	if strings.Contains(logged, "asset serving ready, source=embedded-fs") {
+		t.Fatalf("filter registration alone must not claim startup readiness:\n%s", logged)
 	}
 }
 
@@ -374,9 +395,10 @@ func TestCreateWebViewProductionWiresMandatoryAssetFilterGateInOrder(t *testing.
 		}
 	}
 	create := functions["createWebView"]
+	startup := functions["startWebViewFirstNavigation"]
 	filterGate := functions["registerAssetFilterOrTearDown"]
-	if create == nil || filterGate == nil {
-		t.Fatal("production createWebView/filter teardown gate declaration missing")
+	if create == nil || startup == nil || filterGate == nil {
+		t.Fatal("production createWebView/startup/filter teardown declaration missing")
 	}
 
 	collectCalls := func(function *ast.FuncDecl) map[string][]*ast.CallExpr {
@@ -392,28 +414,55 @@ func TestCreateWebViewProductionWiresMandatoryAssetFilterGateInOrder(t *testing.
 		return calls
 	}
 	createCalls := collectCalls(create)
-	one := func(name string) *ast.CallExpr {
-		calls := createCalls[name]
-		if len(calls) != 1 {
-			t.Fatalf("createWebView %s calls = %d, want exactly one", name, len(calls))
+	one := func(calls map[string][]*ast.CallExpr, function, name string) *ast.CallExpr {
+		found := calls[name]
+		if len(found) != 1 {
+			t.Fatalf("%s %s calls = %d, want exactly one", function, name, len(found))
 		}
-		return calls[0]
+		return found[0]
 	}
-	commit := one("host.commitEmbeddedBrowser")
-	gate := one("host.registerAssetFilterOrTearDown")
-	watchdog := one("host.startRenderWatchdog")
-	navigate := one("browser.Navigate")
-	scripts := createCalls["browser.Init"]
-	if len(scripts) == 0 {
-		t.Fatal("createWebView has no production script registration")
+	commit := one(createCalls, "createWebView", "host.commitEmbeddedBrowser")
+	gate := one(createCalls, "createWebView", "host.registerAssetFilterOrTearDown")
+	seam := one(createCalls, "createWebView", "host.startWebViewFirstNavigation")
+	if !(commit.Pos() < gate.Pos() && gate.Pos() < seam.Pos()) {
+		t.Fatalf("mandatory startup order is commit %s, filter %s, startup seam %s",
+			fset.Position(commit.Pos()), fset.Position(gate.Pos()), fset.Position(seam.Pos()))
 	}
-	if !(commit.Pos() < gate.Pos() &&
-		gate.Pos() < scripts[0].Pos() &&
-		gate.Pos() < watchdog.Pos() &&
-		gate.Pos() < navigate.Pos()) {
-		t.Fatalf("mandatory filter order is commit %s, gate %s, scripts %s, watchdog %s, navigate %s",
-			fset.Position(commit.Pos()), fset.Position(gate.Pos()), fset.Position(scripts[0].Pos()),
-			fset.Position(watchdog.Pos()), fset.Position(navigate.Pos()))
+
+	startupCalls := collectCalls(startup)
+	scriptGate := one(startupCalls, "startWebViewFirstNavigation", "host.registerRequiredDocumentCreatedScripts")
+	watchdog := one(startupCalls, "startWebViewFirstNavigation", "startWatchdog")
+	var navigate *ast.CallExpr
+	for _, step := range startupCalls["host.committedBrowserStepOrTearDown"] {
+		if len(step.Args) == 1 && webViewASTSelectorPath(step.Args[0]) == "navigate" {
+			navigate = step
+		}
+	}
+	if navigate == nil || !(scriptGate.Pos() < watchdog.Pos() && watchdog.Pos() < navigate.Pos()) {
+		t.Fatal("startup seam must keep the script barrier before watchdog and committed Navigate")
+	}
+	if len(seam.Args) != 5 {
+		t.Fatalf("startup seam arguments = %d, want five", len(seam.Args))
+	}
+	navigation, ok := seam.Args[4].(*ast.FuncLit)
+	if !ok || len(collectCalls(&ast.FuncDecl{Body: navigation.Body})["browser.Navigate"]) != 1 {
+		t.Fatal("startup seam must receive the production browser Navigate effect")
+	}
+	if got := len(createCalls["browser.Navigate"]); got != 1 {
+		t.Fatalf("createWebView browser.Navigate calls = %d, want one startup-seam effect", got)
+	}
+	if got := len(createCalls["host.startRenderWatchdog"]); got != 0 {
+		t.Fatalf("createWebView direct watchdog calls = %d, want zero", got)
+	}
+	for _, success := range []string{"asset serving ready, source=embedded-fs", "injected scripts registered", "navigate requested"} {
+		for _, call := range createCalls["host.log.Debug"] {
+			if len(call.Args) != 1 {
+				continue
+			}
+			if literal, ok := call.Args[0].(*ast.BasicLit); ok && strings.Contains(literal.Value, success) {
+				t.Fatalf("createWebView contains pre-barrier success log %q", success)
+			}
+		}
 	}
 
 	if len(gate.Args) != 1 {

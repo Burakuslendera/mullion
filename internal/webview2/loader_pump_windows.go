@@ -21,6 +21,7 @@ var (
 	procDispatchMessage           = user32.NewProc("DispatchMessageW")
 	procPostQuitMessage           = user32.NewProc("PostQuitMessage")
 	procMsgWaitForMultipleObjects = user32.NewProc("MsgWaitForMultipleObjectsEx")
+	postQuitMessage               = func(code uintptr) { _, _, _ = procPostQuitMessage.Call(code) }
 )
 
 const (
@@ -54,7 +55,9 @@ type pump struct {
 	quitCode uintptr
 }
 
-func (p *pump) step() {
+// drain dispatches pending messages without blocking. The required-script
+// barrier probes it directly before accepting its completion.
+func (p *pump) drain() {
 	var message win32Msg
 	for {
 		got, _, _ := procPeekMessage.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0, pmRemove)
@@ -72,6 +75,10 @@ func (p *pump) step() {
 		_, _, _ = procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
 		_, _, _ = procDispatchMessage.Call(uintptr(unsafe.Pointer(&message)))
 	}
+}
+
+func (p *pump) step() {
+	p.drain()
 	// Block until something arrives rather than spinning. MWMO_INPUTAVAILABLE
 	// makes the wait return at once if a message was posted between the drain
 	// above and this call - the race a bare WaitMessage would lose.
@@ -81,7 +88,7 @@ func (p *pump) step() {
 // finish re-posts a quit that arrived while we were waiting.
 func (p *pump) finish() {
 	if p.quitSeen {
-		_, _, _ = procPostQuitMessage.Call(p.quitCode)
+		postQuitMessage(p.quitCode)
 	}
 }
 

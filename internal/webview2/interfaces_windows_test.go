@@ -545,6 +545,7 @@ func TestInterfaceIDs(t *testing.T) {
 		{"ICoreWebView2EnvironmentOptions", "{2fde08a8-1e9a-4766-8c05-95a9ceb9d1c5}", iidEnvironmentOptions},
 		{"ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler", "{4e8a3389-c9d8-4bd2-b6b5-124fee6cc14d}", iidEnvironmentCompletedHandler},
 		{"ICoreWebView2CreateCoreWebView2ControllerCompletedHandler", "{6c4819f3-c9b7-4260-8127-c9f5bde7f68c}", iidControllerCompletedHandler},
+		{"ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler", "{b99369f3-9b11-47b5-bc6f-8e7895fcea17}", iidAddScriptToExecuteOnDocumentCreatedCompletedHandler},
 		{"ICoreWebView2Settings3", "{fdb5ab74-af33-4854-84f0-0a631deb5eba}", IIDICoreWebView2Settings3},
 		{"ICoreWebView2Settings5", "{183e7052-1d03-43a0-ab99-98e043b66b39}", IIDICoreWebView2Settings5},
 		{"ICoreWebView2Settings9", "{0528a73b-e92d-49f4-927a-e547dddaa37d}", IIDICoreWebView2Settings9},

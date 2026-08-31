@@ -25,13 +25,15 @@ func TestTabStripFlagMatchesFrontendContract(t *testing.T) {
 	}
 }
 
-// A nil chromium must warn and return, not panic: the caller reaches this path
-// when the WebView2 runtime is missing.
-func TestApplyTabStripStartupNilChromium(t *testing.T) {
+// A missing Browser is a lifecycle failure, not an optional capability miss:
+// treating it as advisory would let createWebView emit readiness/navigation
+// logs after teardown.
+func TestApplyTabStripStartupRejectsUnavailableBrowser(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
-	host.applyTabStripStartup(nil)
-
-	if !strings.Contains(logger.String(), "mullion: tab strip startup skipped") {
-		t.Fatalf("nil chromium was not reported:\n%s", logger.String())
+	if err := host.applyTabStripStartup(nil); err == nil {
+		t.Fatal("nil browser returned nil")
+	}
+	if strings.Contains(logger.String(), "tab strip startup registration requested") {
+		t.Fatalf("unavailable browser logged startup success:\n%s", logger.String())
 	}
 }

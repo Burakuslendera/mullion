@@ -31,6 +31,8 @@ pull-request mechanics. The rules below are additional, not alternative.
 | Which logging approaches were tried and abandoned? | [docs/logging-dead-ends.md](./docs/logging-dead-ends.md) |
 | How do I prove a change actually works? | [docs/verification.md](./docs/verification.md) |
 | Where are dated automated and live verification records? | [docs/verification-records.md](./docs/verification-records.md) |
+| Where is Issue #135's paired exact-source live acceptance? | [docs/issue-135-paired-live-verification.md](./docs/issue-135-paired-live-verification.md) |
+| Which diagnostic builds and environment switches are allowed? | [docs/diagnostic-builds-and-environment-switches.md](./docs/diagnostic-builds-and-environment-switches.md) |
 | What makes scripted GUI verification lie? | [docs/gui-verification-traps.md](./docs/gui-verification-traps.md) |
 | What does a bug report have to contain? | [docs/bug-reports.md](./docs/bug-reports.md) |
 | Build, test, style, pull-request expectations | [CONTRIBUTING.md](./CONTRIBUTING.md) |
@@ -189,4 +191,4 @@ Replace that footer when editing; never append another footer or adopt another
 editor's name. Git history preserves earlier signatures.
 
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: consolidate Bridge protocol and origin-boundary routing to its canonical reference.
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: route Issue #135 paired live evidence from the repository entry point.
