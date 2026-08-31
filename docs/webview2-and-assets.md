@@ -7,6 +7,7 @@
   - [The Go-owned ABI is explicit](#the-go-owned-abi-is-explicit)
   - [Event handlers are COM objects we implement](#event-handlers-are-com-objects-we-implement)
   - [Completion and embed lifetime](#completion-and-embed-lifetime)
+  - [Document-created script registration barrier](#document-created-script-registration-barrier)
   - [Reporting follows return ownership](#reporting-follows-return-ownership)
 
 This document describes how the host talks to WebView2 without a third-party
@@ -276,6 +277,55 @@ schedule, COM implementation, controller close behaviour, or rendering on a
 live window. Those remain **unverified** until the runtime-backed Windows
 verification path is exercised; a green headless suite is not that evidence.
 
+### Document-created script registration barrier
+
+`ICoreWebView2.AddScriptToExecuteOnDocumentCreated` is asynchronous. The
+official, pinned SDK authority is Microsoft.Web.WebView2 `1.0.4129.50`:
+`WebView2.idl` and `build/native/include/WebView2.h` declare the semantic
+`ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler` interface
+with IID `{B99369F3-9B11-47B5-BC6F-8E7895FCEA17}`. It is direct `IUnknown` plus
+`Invoke(HRESULT errorCode, LPCWSTR result)` at literal slot 3; `result` is a
+borrowed script ID, never an `IUnknown`. The official
+[method reference](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2?view=webview2-1.0.4129.50#addscripttoexecuteondocumentcreated)
+says the method is asynchronous and the completion must finish before the script
+is ready. It does not establish that a non-null handler is universally required:
+Microsoft's own [Win32 getting-started example](https://learn.microsoft.com/en-us/microsoft-edge/webview2/get-started/win32#if-code-must-be-run-in-order-use-callbacks)
+passes `nullptr`, while separately directing ordered asynchronous work to use
+callbacks. Mullion supplies a handler because required-script success, failure,
+and ordering must be observable, not because the public contract proves null is
+invalid.
+
+The host serializes its required registrations: bridge Add → bridge completion →
+diagnostics Add → diagnostics completion → drag Add → drag completion → resize
+Add → resize completion. Failure at step N prevents the Add for step N+1, and
+only then can the first `Navigate` occur
+([decision 0045](./decisions/0045-required-document-created-script-registration-barrier.md)).
+The Go-owned handler is deliberately separate from the loader completion handler:
+loader completion `result` is a borrowed COM object, while this handler neither
+`AddRef`s nor retains its borrowed `LPCWSTR`. An optional-result warning callback
+is panic-contained before control returns across COM. Synchronous failure,
+failed or invalid completion, duplicate/late completion while the barrier is
+live, timeout, Browser shutdown, or `WM_QUIT` fails closed through the existing
+returned-error owner and uncommits the browser. Every pump turn, including the
+deadline probe, uses cancellation → queued `WM_QUIT` → completion → timeout
+priority and re-posts any consumed quit. Optional tab-strip registration supplies
+the same semantic handler so its asynchronous result has an owner, but does not
+wait or pump: it is advisory and may complete after the immediate first
+`Navigate`, so the first document may use the classic titlebar fallback. Only
+the four required scripts are guaranteed before that navigation. Browser teardown
+seals its Runtime-retained optional handlers, so a late callback cannot revive
+startup.
+
+Deterministic tests drive the production post-Embed startup seam and the
+completion effect seam with fakes. They prove ABI layout/identity, initiation
+order, completion/error/abandon decisions (including a fake Runtime `AddRef`),
+prompt cancellation/quit decision and repost effect, Show gating, and that
+registration failure reaches no later navigation, readiness, or watchdog. The
+headless seam performs no real Runtime, `HWND`, or message-pump work. It does
+not prove actual Runtime ownership, callback scheduling, controller-close
+disposition, or first-document rendering. A supported Runtime still needs the
+live first-navigation bridge/frame observation in [verification.md](./verification.md).
+
 ### Reporting follows return ownership
 
 Browser operations that return an error do not also invoke `ErrorCallback`; the
@@ -290,4 +340,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point WebView2 receipt, reply, and external admission to the canonical issue #116 disposition.
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: define the official async contract, serialized registrations, terminal precedence, and proof ceiling.

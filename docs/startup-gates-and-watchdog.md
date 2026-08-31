@@ -10,17 +10,20 @@ navigation-completed successfully — and still paint nothing. That white window
 single most common field failure of this architecture, and neither the OS nor the
 runtime reports it. Two independent timers exist because of it.
 
-**Show gate.** After the embed the window is not shown immediately: the host waits for
-the frontend to call `shellReady()`, which maps to `Host.MarkFrontendShellReady()` and
-posts the tagged show message, keeping the user from seeing an empty window while the
-first document is still parsing. The wait is bounded by `Config.ShowTimeout`; when it
-expires the host shows the window anyway and logs the reason. Shell readiness may
-arrive while the embed pump is still running, before `Run` reaches the gate start.
-That readiness is latched without attempting a pre-window show post; gate start then
-arms the fallback and performs exactly one release attempt. Queue failure leaves the
-fallback armed, and a queued show whose embed/visibility application fails reopens
-and re-arms the gate. Fired and stopped timers detach immediately and retain their
-originating Run token, including across sequential runs.
+**Show gate.** On a normal (non-`StartHidden`) startup, the gate starts only
+after `ensureWebView` returns successfully: the required
+[document-created-script barrier](./webview2-and-assets.md#document-created-script-registration-barrier),
+optional tab-strip attempt, watchdog arm, and first `Navigate` request have all
+completed. A failed or cancelled required registration therefore starts neither
+the gate nor visibility. The host then waits for `shellReady()` /
+`Host.MarkFrontendShellReady()` to post the tagged show message, keeping the user
+from seeing an empty window while the first document parses. The wait is bounded
+by `Config.ShowTimeout`; expiry shows the window and logs the reason. Shell
+readiness may arrive during the embed pump before `Run` starts the gate; it is
+latched without a pre-window show post, then starts the fallback and exactly one
+release attempt. Queue failure, failed show application, and stopped/fired timer
+handling preserve the originating Run token across sequential runs. `StartHidden`
+continues to defer startup until an explicit `Show`.
 
 **Render watchdog.** Armed before `Navigate`, cancelled by `Host.MarkFrontendReady()` —
 the frontend's `ready()` call, made only after it has actually rendered. Timer
@@ -80,4 +83,4 @@ from the line itself:
   is always logged, at `WARN` for `4xx` and `ERROR` for `5xx`, whatever its type,
   so a missing font is visible even though a present one is not.
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: define watchdog evidence boundaries and replace causal diagnoses with observed-shape guidance.
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: state the exact normal-start show-gate boundary and its required-registration failure behavior.

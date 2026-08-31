@@ -115,17 +115,18 @@ func (w *ICoreWebView2) Navigate(uri string) error {
 }
 
 // AddScriptToExecuteOnDocumentCreated queues a script to run before any page
-// script on every future navigation. It only affects navigations that start
-// after it is registered, so it has to be called before the first Navigate.
-//
-// handler receives the script id. The SDK does not document nil as accepted;
-// Browser.Init nevertheless passes nil when it does not need the id, so that
-// reliance remains unverified and runtime-dependent.
+// script on every future navigation. The pinned Microsoft.Web.WebView2
+// 1.0.4129.50 IDL declares the semantic
+// ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler pointer; the
+// API reference specifies that registration is ready only after Invoke completes.
 func (w *ICoreWebView2) AddScriptToExecuteOnDocumentCreated(script string, handler unsafe.Pointer) error {
 	source, err := wstr(script)
 	if err != nil {
 		return err
 	}
+	// AddScriptToExecuteOnDocumentCreated is ICoreWebView2's absolute vtable
+	// slot 27 in the pinned SDK. Keep the handler as an opaque COM pointer: its
+	// direct-IUnknown callback ABI is defined by script_completion_windows.go.
 	hr, _, _ := w.Vtbl.AddScriptToExecuteOnDocumentCreated.Call(
 		uintptr(unsafe.Pointer(w)),
 		uintptr(unsafe.Pointer(source)),

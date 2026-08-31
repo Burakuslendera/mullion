@@ -59,6 +59,10 @@ type fakeComState struct {
 	registeredEventHandlers [61]uintptr
 	registeredEventAdds     [61]int
 	registeredEventRefs     []uintptr
+	scriptHandlers          []uintptr
+	scriptResults           []uintptr
+	scriptRuntimeRefs       []uintptr
+	scriptInline            bool
 }
 
 var (
@@ -82,6 +86,28 @@ func registerFakeCom(this uintptr, state *fakeComState) func() {
 		fakeComMu.Lock()
 		delete(fakeComStates, this)
 		fakeComMu.Unlock()
+	}
+}
+
+// completeScript models the Runtime calling the accepted handler and then
+// dropping the reference AddScript retained. It intentionally releases after
+// Invoke, so abandon is exercised while the callback's COM server is rooted.
+func (state *fakeComState) completeScript(index int, errorCode, result uintptr) uintptr {
+	handler := state.scriptHandlers[index]
+	hr := scriptCompletionInvoke(handler, errorCode, result)
+	if state.scriptRuntimeRefs[index] != 0 {
+		serverRelease(state.scriptRuntimeRefs[index])
+		state.scriptRuntimeRefs[index] = 0
+	}
+	return hr
+}
+
+func (state *fakeComState) releaseScriptRuntimeRefs() {
+	for index, handler := range state.scriptRuntimeRefs {
+		if handler != 0 {
+			serverRelease(handler)
+			state.scriptRuntimeRefs[index] = 0
+		}
 	}
 }
 
@@ -314,7 +340,21 @@ var fakeSurfaceCoreVtbl = ICoreWebView2Vtbl{
 	AddScriptToExecuteOnDocumentCreated: ComProc(windows.NewCallback(func(this, script, handler uintptr) uintptr {
 		state := fakeComStateFor(this)
 		state.operationCalls++
-		return state.operationResult
+		state.scriptHandlers = append(state.scriptHandlers, handler)
+		index := len(state.scriptHandlers) - 1
+		result := state.operationResult
+		if index < len(state.scriptResults) {
+			result = state.scriptResults[index]
+		}
+		if result != sOK {
+			return result
+		}
+		serverAddRef(handler)
+		state.scriptRuntimeRefs = append(state.scriptRuntimeRefs, handler)
+		if state.scriptInline {
+			state.completeScript(index, sOK, 1)
+		}
+		return sOK
 	})),
 	ExecuteScript: ComProc(windows.NewCallback(func(this, script, handler uintptr) uintptr {
 		state := fakeComStateFor(this)
@@ -476,6 +516,7 @@ func newFakeSurfaceCore(t *testing.T, result uintptr) (*ICoreWebView2, *fakeComS
 	core := &ICoreWebView2{Vtbl: &fakeSurfaceCoreVtbl}
 	state := &fakeComState{operationResult: result}
 	t.Cleanup(registerFakeCom(uintptr(unsafe.Pointer(core)), state))
+	t.Cleanup(state.releaseScriptRuntimeRefs)
 	return core, state
 }
 

@@ -93,18 +93,26 @@ first result even when the source is also invalid.
 
 6. **WebView2 embed.** The controller is created as a child of an `HWND` that already
    exists and is already DPI-aware. Every callback (web message, web resource requested,
-   navigation starting, navigation completed, process failed, new window requested) and
-   every injected startup script is registered
-   **before** the first `Navigate`; a callback registered after navigation begins can
-   miss the requests and messages the first document produces — a race that reproduces
-   only on fast machines, or only on slow ones, depending on where the gap lands.
+   navigation starting, navigation completed, process failed, new window requested) is
+   registered before the first `Navigate`. The required document-created scripts run a
+   serialized bridge Add → completion → diagnostics Add → completion → drag Add →
+   completion → resize Add → completion chain. A failure at step N prevents even the Add
+   call for step N+1. Only four successful WebView2 completion callbacks open first
+   navigation. A synchronous registration error, failed/invalid/duplicate completion,
+   timeout, Browser shutdown, or `WM_QUIT` fails closed: the nested wait exits promptly, re-posts its
+   consumed quit, and the returned-error owner uncommits and tears down the browser.
+   Optional tab-strip registration still supplies its documented handler but never enters
+   that wait or pumps startup; non-lifecycle optional errors remain warnings, whereas
+   lifecycle invalidation stops later readiness and navigation. A committed browser remains
+   unavailable to re-entrant `Show` until this barrier succeeds
+   ([decision 0045](./decisions/0045-required-document-created-script-registration-barrier.md)).
    The embed is **single-flight, and window destruction cancels it**: environment and
    controller creation pump the message loop while they wait, so a message dispatched
-   mid-embed can re-enter this path or destroy the window outright. A re-entrant attempt is
-   refused rather than racing a second browser for the one `host.browser` commit,
-   and a browser that completes after `WM_DESTROY` is torn down instead of being
-   committed to a window that no longer exists. See
-   [decisions/0016](./decisions/0016-single-flight-embed.md).
+   mid-embed can re-enter this path or destroy the window outright. A re-entrant attempt
+   is refused rather than racing a second browser for the one `host.browser` commit, and
+   a browser that completes after `WM_DESTROY` is torn down instead of being committed to
+   a window that no longer exists. See
+   [decision 0016](./decisions/0016-single-flight-embed.md).
 
 7. **Show.** Parent window and WebView2 controller are both made visible explicitly.
    Showing the parent alone is not enough: the controller has an independent
@@ -308,4 +316,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: point the external-route overview to the canonical issue #116 disposition and retain 0043 as rationale.
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: make the required bridge-to-resize Add/completion chain and failure stop explicit.

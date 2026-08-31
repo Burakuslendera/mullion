@@ -46,15 +46,12 @@ func (browser *Browser) Navigate(url string) error {
 	return core.Navigate(url)
 }
 
-// Init registers a script to run in every document before any page script.
-// It passes a nil completion handler; the SDK does not document nil as accepted,
-// so this path relies on unverified runtime behavior.
+// Init starts one optional script registration with a completion handler so its
+// asynchronous result has an owner. Optional startup never waits or pumps:
+// non-lifecycle failures are advisory warnings, while Browser shutdown seals the
+// retained handler and the host owns the lifecycle failure.
 func (browser *Browser) Init(script string) error {
-	core := browser.CoreWebView2()
-	if core == nil {
-		return errors.New("webview2: init before embed")
-	}
-	return core.AddScriptToExecuteOnDocumentCreated(script, nil)
+	return browser.registerOptionalDocumentCreatedScript(script)
 }
 
 // Eval runs a script in the current document.

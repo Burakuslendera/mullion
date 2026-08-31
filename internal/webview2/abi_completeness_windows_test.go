@@ -26,6 +26,7 @@ func TestCOMABIInventoryCompleteness(t *testing.T) {
 		"IUnknownVtbl":                                   "shared-base",
 		"eventHandlerVtbl":                               "go-implemented-callback",
 		"completionVtbl":                                 "go-implemented-callback",
+		"scriptCompletionVtbl":                           "go-implemented-callback",
 		"environmentOptionsVtbl":                         "go-implemented-callback",
 		"ICoreWebView2ControllerVtbl":                    "runtime-owned-interface",
 		"ICoreWebView2Controller2Vtbl":                   "runtime-owned-interface",
@@ -57,6 +58,7 @@ func TestCOMABIInventoryCompleteness(t *testing.T) {
 		"eventHandler":             "go-implemented-object",
 		"completedHandler":         "go-implemented-object",
 		"environmentOptions":       "go-implemented-object",
+		"scriptCompletionHandler":  "go-implemented-object",
 		"IUnknown":                 "runtime-owned-interface",
 		"ICoreWebView2Controller":  "runtime-owned-interface",
 		"ICoreWebView2Controller2": "runtime-owned-interface",
@@ -79,21 +81,22 @@ func TestCOMABIInventoryCompleteness(t *testing.T) {
 		"ICoreWebView2WebResourceResponse":           "runtime-owned-interface",
 	}
 	wantGUIDs := map[string]string{
-		"IIDIUnknown":                                      "shared-base",
-		"IIDICoreWebView2Controller2":                      "queried-runtime-interface",
-		"IIDICoreWebView2Controller3":                      "queried-runtime-interface",
-		"IIDICoreWebView2Settings3":                        "queried-runtime-interface",
-		"IIDICoreWebView2Settings5":                        "queried-runtime-interface",
-		"IIDICoreWebView2Settings9":                        "queried-runtime-interface",
-		"IIDICoreWebView2WebMessageReceivedEventHandler":   "go-implemented-event",
-		"IIDICoreWebView2WebResourceRequestedEventHandler": "go-implemented-event",
-		"IIDICoreWebView2NavigationStartingEventHandler":   "go-implemented-event",
-		"IIDICoreWebView2NavigationCompletedEventHandler":  "go-implemented-event",
-		"IIDICoreWebView2ProcessFailedEventHandler":        "go-implemented-event",
-		"IIDICoreWebView2NewWindowRequestedEventHandler":   "go-implemented-event",
-		"iidEnvironmentOptions":                            "go-implemented-loader",
-		"iidEnvironmentCompletedHandler":                   "go-implemented-loader",
-		"iidControllerCompletedHandler":                    "go-implemented-loader",
+		"IIDIUnknown":                                            "shared-base",
+		"IIDICoreWebView2Controller2":                            "queried-runtime-interface",
+		"IIDICoreWebView2Controller3":                            "queried-runtime-interface",
+		"IIDICoreWebView2Settings3":                              "queried-runtime-interface",
+		"IIDICoreWebView2Settings5":                              "queried-runtime-interface",
+		"IIDICoreWebView2Settings9":                              "queried-runtime-interface",
+		"IIDICoreWebView2WebMessageReceivedEventHandler":         "go-implemented-event",
+		"IIDICoreWebView2WebResourceRequestedEventHandler":       "go-implemented-event",
+		"IIDICoreWebView2NavigationStartingEventHandler":         "go-implemented-event",
+		"IIDICoreWebView2NavigationCompletedEventHandler":        "go-implemented-event",
+		"IIDICoreWebView2ProcessFailedEventHandler":              "go-implemented-event",
+		"IIDICoreWebView2NewWindowRequestedEventHandler":         "go-implemented-event",
+		"iidEnvironmentOptions":                                  "go-implemented-loader",
+		"iidEnvironmentCompletedHandler":                         "go-implemented-loader",
+		"iidControllerCompletedHandler":                          "go-implemented-loader",
+		"iidAddScriptToExecuteOnDocumentCreatedCompletedHandler": "go-implemented-script-registration",
 	}
 
 	checkABIManifest(t, "vtable declarations", gotVtables, wantVtables)
@@ -235,6 +238,8 @@ func classifyGUID(name string) string {
 	switch {
 	case name == "IIDIUnknown":
 		return "shared-base"
+	case name == "iidAddScriptToExecuteOnDocumentCreatedCompletedHandler":
+		return "go-implemented-script-registration"
 	case strings.HasPrefix(name, "iid"):
 		return "go-implemented-loader"
 	case strings.HasSuffix(name, "EventHandler"):

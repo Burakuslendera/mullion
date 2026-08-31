@@ -194,27 +194,26 @@ value**; passing a pointer means even `false` arrives as a non-zero pointer valu
 
 ## 5. Activation timing (critical)
 
-`IsNonClientRegionSupportEnabled` **takes effect on the next navigation.** That fact
-dictates exactly one correct sequence:
+`IsNonClientRegionSupportEnabled` **takes effect on the next navigation.** Enable
+it between `Embed` and the first `Navigate` and `app-region` is live on that
+first page:
 
 ```
-create window → embed WebView2 → [ enable non-client region support ]
-                                 [ inject the frontend mode flag    ] → first Navigate
+create window → embed WebView2 → [ enable non-client region support ] → first Navigate
 ```
 
-Do it **between `Embed` and the first `Navigate`** and `app-region` is live on the
-first page load. Do it *after* the first navigation and you must navigate a second time
-for it to apply — that is exactly the "the app reloads once and flashes at startup"
-pattern people mistake for a rendering bug. The same holds for any script you inject to
-tell the frontend which title bar mode it is in: register it before the first
-navigation, or the first paint uses the wrong mode.
+The tab-strip mode flag is different. Its document-created registration is an
+optional, nonblocking request: it may complete after that immediate navigation,
+so the first document can use the classic titlebar fallback even when the
+capability is available. Only the required bridge, diagnostics, drag, and resize
+scripts complete through the [document-created-script barrier](./webview2-and-assets.md#document-created-script-registration-barrier)
+before first `Navigate`. The classic JS/bridge fallback must therefore remain
+valid when optional mode registration is late or fails.
 
-**Order matters inside that window, too.** Enable *first*, and inject the "custom
-title bar is on" flag *only if the enable succeeded*. If you inject the flag
-unconditionally, then on a pre-131 runtime the frontend renders its custom title bar
-while `app-region` is dead — and because the custom bar also replaces the classic
-JS/bridge drag path, the window becomes **completely undraggable**. Failure of the
-enable call must fall back to the classic title bar, whole.
+Enable non-client support before requesting the optional custom-titlebar flag.
+On a pre-131 runtime, failure to enable leaves `app-region` dead; an unconditional
+custom flag would replace the classic JS/bridge drag path and make the window
+undraggable.
 
 ---
 
@@ -393,4 +392,4 @@ For the headless-versus-live verification boundary, see [Snap testing boundary](
 The full source list — 40 links, grouped by topic and marked `[P]` primary /
 `[F]` secondary — lives in [snap-sources.md](./snap-sources.md).
 
-> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: distinguish headless ABI/startup-order contracts from live-only WebView child, Snap, caption, and DPI behaviour.
+> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: separate the synchronous non-client setting from advisory tab-strip registration and preserve the classic first-document fallback.

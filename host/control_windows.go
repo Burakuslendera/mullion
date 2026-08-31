@@ -176,11 +176,22 @@ func (host *Host) showFromMessage() bool {
 // A create error cannot be returned through SendMessage's integer result, so this
 // UI-thread handler owns its one report; Show only returns the public error.
 func (host *Host) showFromMessageWithEnsure(ensure func(string) error) bool {
+	return host.showFromMessageWithEffects(ensure, host.applyShowAfterEnsure)
+}
+
+// showFromMessageWithEffects keeps the post-ensure HWND/controller boundary
+// explicit. A failed required-script barrier must not reach any visibility,
+// foreground, bounds, or controller effect in apply.
+func (host *Host) showFromMessageWithEffects(ensure func(string) error, apply func() bool) bool {
 	host.log.Debug("mullion: show applying")
 	if err := ensure("show"); err != nil {
 		host.log.Error("mullion: show failed, reason=" + logsafe.Reason(err))
 		return false
 	}
+	return apply()
+}
+
+func (host *Host) applyShowAfterEnsure() bool {
 	hwnd := host.window()
 	showErr := showWindow(hwnd, swShow)
 	host.warnIf("show apply", showErr)

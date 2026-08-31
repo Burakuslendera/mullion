@@ -63,6 +63,7 @@ var (
 	iunknownVtbl             IUnknownVtbl
 	eventHandlerVtable       eventHandlerVtbl
 	completedVtable          completionVtbl
+	scriptCompletionVtable   scriptCompletionVtbl
 	environmentOptionsVtable environmentOptionsVtbl
 )
 
@@ -83,6 +84,10 @@ func ensureCOMVtables() bool {
 		completedVtable = completionVtbl{
 			IUnknownVtbl: iunknownVtbl,
 			Invoke:       ComProc(newCOMCallback(invoked)),
+		}
+		scriptCompletionVtable = scriptCompletionVtbl{
+			IUnknownVtbl: iunknownVtbl,
+			Invoke:       ComProc(newCOMCallback(scriptCompletionInvoke)),
 		}
 		environmentOptionsVtable = environmentOptionsVtbl{
 			IUnknownVtbl:                              iunknownVtbl,

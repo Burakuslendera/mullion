@@ -240,6 +240,24 @@ func TestLeakScanAllowancesBindExactComponents(t *testing.T) {
 	unc := func(host, share string) string {
 		return strings.Repeat(`\`, 2) + host + `\` + share
 	}
+	issue135ManifestHash := "B5E6DA1688FAEEB5EBCE4A2B2B7FF0FF" + "8B6BC8C3050C9B0990D8B6DAFEC13C66"
+	issue135UntaggedExecutable := "untagged" + ".exe"
+	issue135TaggedExecutable := "tagged" + ".exe"
+	issue135Evidence := strings.Join([]string{
+		issue135ManifestHash,
+		"f7860ae8804b27954bf3" + "3708d16a92797b4d66f0",
+		"409586B47D3D530C7A7FA816288E1851A" + "828858E4F52E857BF4A223FEFE26332",
+		"4914E61763B02D073E7DB79771E0151B9" + "3BB6F2102C9F87C8A0CD91C130F76F9",
+		"00FD27577869D8A26D94DA65A2C2FC2A" + "FE6810EDA04A720CC1150B68F859BCFF",
+		issue135ManifestHash,
+		"D7D79A86A64124349F28D833E6AB4AD6" + "53E612F407C8E837836B7C5871197754",
+		"A0F5D1314A041DFAA5FAD2D01382F032" + "3CBEC39EA8E71FEE27D037A3C80B4769",
+		"0EBF09387CD75986FEDFF1985ED35E0BE" + "4EEE65B24B85DD8A7846D1F4E47AF72",
+		"1E7C90B35D797AC4751ED3599B7AB2DF" + "CDC23CBA88A9020BB1E564A08BF20E2A",
+		"E8EA9CA6732A4FA226EE176FF6A0CEFF" + "D58B368C0BD5E80109966C516AD5E8D4",
+		issue135UntaggedExecutable,
+		issue135TaggedExecutable,
+	}, "\n")
 	cases := []struct {
 		name      string
 		files     map[string][]byte
@@ -291,6 +309,21 @@ func TestLeakScanAllowancesBindExactComponents(t *testing.T) {
 		}, false},
 		{"Windows compatibility executable capture is over counted", map[string][]byte{
 			"docs/windows-10-compatibility.md": []byte(strings.Repeat("app"+".exe\n", 5)),
+		}, false},
+		{"exact Issue 135 evidence", map[string][]byte{
+			"docs/issue-135-paired-live-verification.md": []byte(issue135Evidence),
+		}, true},
+		{"Issue 135 manifest hash is under counted", map[string][]byte{
+			"docs/issue-135-paired-live-verification.md": []byte(strings.Replace(issue135Evidence, issue135ManifestHash+"\n", "", 1)),
+		}, false},
+		{"Issue 135 manifest hash is over counted", map[string][]byte{
+			"docs/issue-135-paired-live-verification.md": []byte(issue135Evidence + "\n" + issue135ManifestHash),
+		}, false},
+		{"Issue 135 executable capture is under counted", map[string][]byte{
+			"docs/issue-135-paired-live-verification.md": []byte(strings.Replace(issue135Evidence, issue135UntaggedExecutable+"\n", "", 1)),
+		}, false},
+		{"Issue 135 executable capture is over counted", map[string][]byte{
+			"docs/issue-135-paired-live-verification.md": []byte(issue135Evidence + "\n" + issue135TaggedExecutable),
 		}, false},
 	}
 	for _, testCase := range cases {

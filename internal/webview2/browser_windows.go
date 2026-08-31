@@ -94,15 +94,22 @@ type Browser struct {
 	// the main performance lever the runtime exposes.
 	AdditionalBrowserArguments string
 
-	mu           sync.Mutex
-	environment  *Environment
-	controller   *ICoreWebView2Controller
-	core         *ICoreWebView2
-	shuttingDown bool
+	mu                     sync.Mutex
+	environment            *Environment
+	controller             *ICoreWebView2Controller
+	core                   *ICoreWebView2
+	shuttingDown           bool
+	shutdown               chan struct{}
+	optionalScriptHandlers map[*scriptCompletionHandler]struct{}
 }
 
 // New returns an unembedded Browser.
-func New() *Browser { return &Browser{} }
+func New() *Browser {
+	return &Browser{
+		shutdown:               make(chan struct{}),
+		optionalScriptHandlers: make(map[*scriptCompletionHandler]struct{}),
+	}
+}
 
 // reportError is for terminal failures with no error return path: event adapter
 // failures and secondary teardown. A Browser method that returns an error must
