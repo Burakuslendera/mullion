@@ -48,6 +48,18 @@ $win11ToWin10ArtifactHash = "5A9B807B7B809F666B2B3AD11D851" + "8B896B079EC3B5515
 $win10ToWin11ArtifactHash = "A6B15AD5DAE3D2BFDD0B5FC0D295" + "2A02234636AC71FA552CBAE379BD39B51860"
 $windowsArtifactSuffix = "amd64v1" + ".exe"
 $consumerArtifactName = "app" + ".exe"
+$issue135EvidenceManifestHash = "B5E6DA1688FAEEB5EBCE4A2B2B7FF0FF" + "8B6BC8C3050C9B0990D8B6DAFEC13C66"
+$issue135Head = "f7860ae8804b27954bf3" + "3708d16a92797b4d66f0"
+$issue135TrackedDiffHash = "409586B47D3D530C7A7FA816288E1851A" + "828858E4F52E857BF4A223FEFE26332"
+$issue135AggregateIdentity = "4914E61763B02D073E7DB79771E0151B9" + "3BB6F2102C9F87C8A0CD91C130F76F9"
+$issue135UntrackedManifestHash = "00FD27577869D8A26D94DA65A2C2FC2A" + "FE6810EDA04A720CC1150B68F859BCFF"
+$issue135UntaggedArtifactHash = "D7D79A86A64124349F28D833E6AB4AD6" + "53E612F407C8E837836B7C5871197754"
+$issue135TaggedArtifactHash = "A0F5D1314A041DFAA5FAD2D01382F032" + "3CBEC39EA8E71FEE27D037A3C80B4769"
+$issue135ManualLogHash = "0EBF09387CD75986FEDFF1985ED35E0BE" + "4EEE65B24B85DD8A7846D1F4E47AF72"
+$issue135RightEdgeLogHash = "1E7C90B35D797AC4751ED3599B7AB2DF" + "CDC23CBA88A9020BB1E564A08BF20E2A"
+$issue135TaggedLogHash = "E8EA9CA6732A4FA226EE176FF6A0CEFF" + "D58B368C0BD5E80109966C516AD5E8D4"
+$issue135UntaggedExecutable = "untagged" + ".exe"
+$issue135TaggedExecutable = "tagged" + ".exe"
 $allowances = @(
     [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($checkoutPin) + "$"); Action = "actions/checkout"; Expected = 3; Consumed = 0 }
     [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($setupGoPin) + "$"); Action = "actions/setup-go"; Expected = 3; Consumed = 0 }
@@ -58,6 +70,18 @@ $allowances = @(
     [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($win10ToWin11ArtifactHash) + "$"); Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($windowsArtifactSuffix) + "$"); Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/windows-10-compatibility.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($consumerArtifactName) + "$"); Expected = 4; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135EvidenceManifestHash) + "$"); Expected = 2; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135Head) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135TrackedDiffHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135AggregateIdentity) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135UntrackedManifestHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135UntaggedArtifactHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135TaggedArtifactHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135ManualLogHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135RightEdgeLogHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135TaggedLogHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($issue135UntaggedExecutable) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($issue135TaggedExecutable) + "$"); Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/decisions/0025-urls-are-logged-as-urls.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/decisions/0028-message-keeps-the-urls-inside-it.md"; Rule = "sensitive Windows drive path"; Value = ("^C:/Users/" + "alice$"); Expected = 3; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/guard-authority-details.md"; Rule = "UNC host"; Group = "host"; Value = '(?i)BUILD-NAS'; Expected = 1; Consumed = 0 }
