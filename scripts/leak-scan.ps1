@@ -65,10 +65,12 @@ $allowances = @(
     [pscustomobject]@{ Path = ".github/workflows/ci.yml"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($setupGoPin) + "$"); Action = "actions/setup-go"; Expected = 3; Consumed = 0 }
     # These recorded compatibility identifiers are public evidence, not an
     # exclusion: each allowance is confined to one documented capture and count.
-    [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($windows10EvidenceCommit) + "$"); Expected = 1; Consumed = 0 }
-    [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($win11ToWin10ArtifactHash) + "$"); Expected = 1; Consumed = 0 }
-    [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($win10ToWin11ArtifactHash) + "$"); Expected = 1; Consumed = 0 }
-    [pscustomobject]@{ Path = "docs/verification-records.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($windowsArtifactSuffix) + "$"); Expected = 1; Consumed = 0 }
+    # d6b1081 moved the 2026-08 records from docs/verification-records.md into
+    # docs/verification-records/2026-08.md; the allowances follow the evidence.
+    [pscustomobject]@{ Path = "docs/verification-records/2026-08.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($windows10EvidenceCommit) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/verification-records/2026-08.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($win11ToWin10ArtifactHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/verification-records/2026-08.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($win10ToWin11ArtifactHash) + "$"); Expected = 1; Consumed = 0 }
+    [pscustomobject]@{ Path = "docs/verification-records/2026-08.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($windowsArtifactSuffix) + "$"); Expected = 1; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/windows-10-compatibility.md"; Rule = "executable name"; Value = ("^" + [regex]::Escape($consumerArtifactName) + "$"); Expected = 4; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135EvidenceManifestHash) + "$"); Expected = 2; Consumed = 0 }
     [pscustomobject]@{ Path = "docs/issue-135-paired-live-verification.md"; Rule = "artefact hash"; Value = ("^" + [regex]::Escape($issue135Head) + "$"); Expected = 1; Consumed = 0 }

@@ -291,7 +291,7 @@ func TestLeakScanAllowancesBindExactComponents(t *testing.T) {
 			"host/webview_windows_test.go": []byte(drive("jane") + "\n" + drive("jane") + "\n" + unc("jane", "share")),
 		}, false},
 		{"exact Windows compatibility evidence", map[string][]byte{
-			"docs/verification-records.md": []byte(strings.Join([]string{
+			"docs/verification-records/2026-08.md": []byte(strings.Join([]string{
 				"2a20cffb0dfdd4dc6b3af" + "028eed5f63e4955b1af",
 				"5A9B807B7B809F666B2B3AD11D851" + "8B896B079EC3B5515317046B0796A424F00",
 				"A6B15AD5DAE3D2BFDD0B5FC0D295" + "2A02234636AC71FA552CBAE379BD39B51860",
@@ -300,7 +300,7 @@ func TestLeakScanAllowancesBindExactComponents(t *testing.T) {
 			"docs/windows-10-compatibility.md": []byte(strings.Repeat("app"+".exe\n", 4)),
 		}, true},
 		{"Windows compatibility evidence must match its exact capture", map[string][]byte{
-			"docs/verification-records.md": []byte(strings.Join([]string{
+			"docs/verification-records/2026-08.md": []byte(strings.Join([]string{
 				"5A9B807B7B809F666B2B3AD11D851" + "8B896B079EC3B5515317046B0796A424F01",
 			}, "\n")),
 		}, false},
