@@ -83,4 +83,9 @@ from the line itself:
   is always logged, at `WARN` for `4xx` and `ERROR` for `5xx`, whatever its type,
   so a missing font is visible even though a present one is not.
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: state the exact normal-start show-gate boundary and its required-registration failure behavior.
+**Startup timing summary.** The cold-start summary line is snapshotted under
+`startupMu` — latching its emit-once flag — and emitted after that mutex is
+released: a re-entrant Logger callback would deadlock on the non-reentrant
+mutex (issue #140, [decision 0046](./decisions/0046-logger-never-runs-under-a-host-mutex.md)).
+
+> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: note the startup-timing summary is snapshotted under startupMu and emitted after unlock (issue #140).

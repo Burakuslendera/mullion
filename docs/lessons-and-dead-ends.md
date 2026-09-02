@@ -27,6 +27,7 @@ The dead ends about what a log line may say — a `data:` document that reports 
 - [13. Building on a third-party WebView2 binding](#13-building-on-a-third-party-webview2-binding--the-slow-squeeze)
 - [14. A flag-based probe has an unreadable null result](#14-a-flag-based-probe-has-an-unreadable-null-result)
 - [15. The short version](#15-the-short-version)
+- [16. A Logger callback re-entering the host deadlocked startup](#16-a-logger-callback-re-entering-the-host-deadlocked-startup)
 
 ---
 
@@ -318,4 +319,39 @@ does not.
 
 The four items about what a log line may say are in [logging-dead-ends.md](./logging-dead-ends.md) with the sections they summarise.
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: route the resize-overlay dead end to the canonical fallback contract instead of duplicating it.
+---
+
+## 16. A Logger callback re-entering the host deadlocked startup
+
+**Symptom.** Issue #140: with an embedder Logger that calls back into the host,
+startup died deterministically — the goroutine recording frontend readiness
+blocked forever on a mutex it already held, ending in the runtime's
+`all goroutines are asleep - deadlock!`.
+
+**Why it looked reasonable.** `logStartupTimingSummary` read the four timing
+moments and its emit-once flag under `startupMu`, so calling `host.log.Info`
+right there — state at hand, once-flag set, no window between read and emit —
+was the obvious shape. The "never log under a host lock" discipline already
+existed in the host's other re-entry paths; this one call site predated it and
+was the single violation in a full audit of every `host.log.*` site against
+every host lock.
+
+**Failed because** the Logger is embedder code, not a sink. Its `Info`
+re-entered `Host.Show` → `applyShowAfterEnsure` → `recordStartupWindowVisible`
+→ `recordStartupTiming` → `startupMu.Lock()` on the same goroutine that held
+the mutex. `sync.Mutex` is not reentrant, so the call could never return, and
+nothing in the log says why — a silent, deterministic deadlock, the worst
+failure class this project has.
+
+**Instead.** Split the emitter: `snapshotStartupTimingSummaryLocked` copies the
+timing state into an immutable struct and latches the once-flag under the lock;
+`emitStartupTimingSummary` builds and sends the byte-identical line after the
+lock is released ([decision 0046](./decisions/0046-logger-never-runs-under-a-host-mutex.md)),
+locked by a headless re-entry test that fails the unfixed code in ~2 s.
+
+**Lesson.** Adding a Logger call site is a lock-ordering event: audit it
+against every host lock before it lands, because the deadlock presents as a
+vanished startup, not an error. When lock-protected state must be logged,
+snapshot under the lock and emit after unlocking — that split is the pattern.
+
+> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: add the issue #140 Logger re-entry deadlock and the snapshot-emit pattern.

@@ -169,7 +169,13 @@ Win32 mutation, then validates command-specific payloads before their operation
 seam. An API call belongs to the Run active when the method enters.
 Entry increments a short locked admission count, then releases the mutex before
 native, WebView, caller or Logger code: re-entrant Logger/bridge calls therefore
-cannot self-deadlock. Teardown closes library-callback admission and waits for
+cannot self-deadlock. The same discipline holds at every host-owned
+non-reentrant mutex: no Logger call runs while one is held — snapshot under the
+lock, emit after unlocking
+([decision 0046](./decisions/0046-logger-never-runs-under-a-host-mutex.md)) —
+because a Logger callback re-entering a `Host` method that takes it
+self-deadlocks that goroutine (issue #140). Teardown closes library-callback
+admission and waits for
 already-entered public methods to finish their timing, log, bounds and show
 effects before poisoning the token and allowing the next Run. A new `Run`
 arriving during that drain is rejected rather than queued behind it. `SetTitle`
@@ -316,4 +322,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: make the required bridge-to-resize Add/completion chain and failure stop explicit.
+> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: add the no-Logger-under-host-mutex snapshot/emit rule to the admission contract (issue #140).

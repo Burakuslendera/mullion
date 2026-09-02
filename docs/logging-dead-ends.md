@@ -12,6 +12,10 @@ applies: a claim is only "verified" if it was observed at runtime on a real
 window. Passing tests, clean logs and plausible static analysis have each been
 wrong here.
 
+Lock discipline for Logger calls — never emitting while holding a host-owned
+non-reentrant mutex — is not a dead end but a standing rule; see
+[decision 0046](decisions/0046-logger-never-runs-under-a-host-mutex.md).
+
 ## Contents
 
 - [1. A data: document has no reportable source](#1-a-data-document-has-no-reportable-source)
@@ -182,4 +186,4 @@ ordinary URL and free-text log reduction only.
    value in a comma-separated `key=value` record must fold the delimiters before
    it is logged. (§2)
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: distinguish the source-plan startup summary from general URL/message reducers and route readers to its canonical owner.
+> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: point readers from Logger dead ends to decision 0046 for Logger lock discipline.

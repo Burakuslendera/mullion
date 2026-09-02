@@ -156,10 +156,10 @@ completions carrying no id - is unchanged.
   `TestErrorSurfaceSealsInProcessToo` (the seal scope) and
   `TestErrorSurfaceAbortLeavesAVisibleSurfaceAdmitted` (the no-op property).
 - [Issue #87](https://github.com/Burakuslendera/mullion/issues/87) and the dated
-  [verification record](../verification-records.md#2026-08-records) own the
+  [verification record](../verification-records/2026-08.md#2026-08-records) own the
   current reachability boundary. Two bounded live probes found no exact
   A-start/B-start/A-`ConnectionAborted` ordering. Those negative observations do
   not disprove the risk: the deterministic stale-ID test proves the chosen
   state-machine result, not that WebView2 currently emits the required sequence.
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: record issue #87's explicit stale-ID arming cost, no-repro boundary and exact change-mind condition.
+> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: repoint the 2026-08 verification-records link at the verification-records/ folder.

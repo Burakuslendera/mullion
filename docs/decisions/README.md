@@ -66,6 +66,7 @@ These files are that record.
 | [0043](./0043-external-routes-are-uri-only-os-activations.md) | External routes are URI-only OS activations | Accepted; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) | Malformed HTTP userinfo is never emitted by diagnostics | Accepted; refines 0025 direct URL fallback, 0028 `Message` unsafe open-authority control output, and 0035 frontend `Diagnostic` output without superseding them |
 | [0045](./0045-required-document-created-script-registration-barrier.md) | Required document-created scripts complete before first navigation and availability | Accepted; extends [0016](./0016-single-flight-embed.md) |
+| [0046](./0046-logger-never-runs-under-a-host-mutex.md) | The Logger never runs while holding a host-owned non-reentrant mutex | Accepted |
 
 ## When to write one
 
@@ -107,4 +108,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: index 0045 as the required-script readiness extension of 0016.
+> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0046 as the no-Logger-under-host-mutex invariant from issue #140.

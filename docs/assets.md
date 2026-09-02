@@ -181,7 +181,7 @@ overwrites the single recorded target, so an older abort takes the fail-closed
 path and may replace a live frontend.
 [Decision 0024](./decisions/0024-benign-abort-in-process.md) owns that cost; its
 bounded reachability evidence is in the
-[verification records](./verification-records.md#2026-08-records).
+[verification records](./verification-records/2026-08.md#2026-08-records).
 
 That last point is why `Config.URL` is pinned to **loopback** (`127.0.0.1`,
 `localhost`, `::1`) over `http`/`https`, and any other URL is rejected by `Run`:
@@ -387,4 +387,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: qualify the benign-abort classification and link issue #87's stale-ID reachability evidence.
+> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: repoint the 2026-08 verification-records link at the verification-records/ folder.
