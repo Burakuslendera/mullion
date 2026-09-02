@@ -66,24 +66,57 @@ func (host *Host) recordStartupTiming(update func(*startupTiming, time.Time)) {
 	update(host.startupTiming, time.Now())
 }
 
+// startupTimingSummary is the state the summary line is built from, copied out
+// from under startupMu so the Logger call can happen without it.
+type startupTimingSummary struct {
+	startedAt          time.Time
+	windowVisible      time.Time
+	frontendShellReady time.Time
+	frontendReady      time.Time
+	warnBase           int64
+	errorBase          int64
+}
+
 // logStartupTimingSummary emits one line, once, when the frontend reports it is
 // ready. The warning and error counts ride along because a start that took twice
 // as long usually also logged something on the way.
 func (host *Host) logStartupTimingSummary() {
 	host.startupMu.Lock()
-	defer host.startupMu.Unlock()
-	timing := host.startupTiming
-	if timing == nil || !timing.enabled || timing.logged || timing.frontendReady.IsZero() {
+	summary, emit := host.snapshotStartupTimingSummaryLocked()
+	host.startupMu.Unlock()
+	if !emit {
 		return
 	}
+	// The Logger runs without startupMu: a Logger callback can re-enter Host
+	// methods that take startupMu, which would deadlock this goroutine on the
+	// non-reentrant mutex (issue #140).
+	host.emitStartupTimingSummary(summary)
+}
+
+func (host *Host) snapshotStartupTimingSummaryLocked() (startupTimingSummary, bool) {
+	timing := host.startupTiming
+	if timing == nil || !timing.enabled || timing.logged || timing.frontendReady.IsZero() {
+		return startupTimingSummary{}, false
+	}
 	timing.logged = true
+	return startupTimingSummary{
+		startedAt:          timing.startedAt,
+		windowVisible:      timing.windowVisible,
+		frontendShellReady: timing.frontendShellReady,
+		frontendReady:      timing.frontendReady,
+		warnBase:           timing.warnBase,
+		errorBase:          timing.errorBase,
+	}, true
+}
+
+func (host *Host) emitStartupTimingSummary(summary startupTimingSummary) {
 	host.log.Info("mullion: startup timing summary" +
-		", LaunchToWindowVisibleMs=" + formatTimingMs(timing.startedAt, timing.windowVisible) +
-		", LaunchToFrontendShellReadyMs=" + formatTimingMs(timing.startedAt, timing.frontendShellReady) +
-		", LaunchToFrontendReadyMs=" + formatTimingMs(timing.startedAt, timing.frontendReady) +
-		", WindowVisibleToFrontendReadyMs=" + formatTimingMs(timing.windowVisible, timing.frontendReady) +
-		", SessionWarnCount=" + strconv.FormatInt(host.log.WarnCount()-timing.warnBase, 10) +
-		", SessionErrorCount=" + strconv.FormatInt(host.log.ErrorCount()-timing.errorBase, 10))
+		", LaunchToWindowVisibleMs=" + formatTimingMs(summary.startedAt, summary.windowVisible) +
+		", LaunchToFrontendShellReadyMs=" + formatTimingMs(summary.startedAt, summary.frontendShellReady) +
+		", LaunchToFrontendReadyMs=" + formatTimingMs(summary.startedAt, summary.frontendReady) +
+		", WindowVisibleToFrontendReadyMs=" + formatTimingMs(summary.windowVisible, summary.frontendReady) +
+		", SessionWarnCount=" + strconv.FormatInt(host.log.WarnCount()-summary.warnBase, 10) +
+		", SessionErrorCount=" + strconv.FormatInt(host.log.ErrorCount()-summary.errorBase, 10))
 }
 
 func formatTimingMs(start time.Time, end time.Time) string {
