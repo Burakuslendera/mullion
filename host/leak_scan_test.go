@@ -1,6 +1,7 @@
 package host
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -200,7 +201,17 @@ func TestLeakScanKeepsLiteralGitPathIdentity(t *testing.T) {
 	})
 	result := runLeakScan(t, root)
 	assertLeakScanFailed(t, result)
-	if !strings.Contains(result.output, `a\b.txt`) {
+	reported := false
+	for _, line := range strings.Split(result.output, "\n") {
+		var finding struct {
+			File string
+		}
+		if json.Unmarshal([]byte(line), &finding) == nil && finding.File == `a\b.txt` {
+			reported = true
+			break
+		}
+	}
+	if !reported {
 		t.Fatalf("literal-backslash Git path was not reported under its exact spelling:\n%s", result.output)
 	}
 }

@@ -1157,7 +1157,9 @@ try {
     }
     if ($found.Count -ne 0) {
         Write-Output "leak-scan: $($found.Count) finding(s); no clean verdict"
-        $found | Format-Table File,Source,Line,Rule,Match,Revision -AutoSize -Wrap
+        foreach ($finding in $found) {
+            Write-Output (($finding | Select-Object File,Source,Line,Rule,Match,Revision) | ConvertTo-Json -Compress)
+        }
         exit 1
     }
 

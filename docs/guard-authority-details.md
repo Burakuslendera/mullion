@@ -293,7 +293,8 @@ once per distinct revision and strictly decoded as BOM-aware UTF-8,
 UTF-16LE or UTF-16BE. UTF-32 BOMs, malformed text, missing objects and all
 Git/read/decode failures are terminal. Binary exclusions remain explicit and
 are reported once per logical exact path; zero selected text revisions are
-fatal.
+fatal. Failure diagnostics emit one compact JSON object per finding so exact
+path, match and revision values remain intact regardless of terminal width.
 
 Detector families inspect configured roots, drive spellings, ordinary/extended
 UNC hosts, product shapes, hashes and other named publication forms. This is a
@@ -390,4 +391,4 @@ The publication scanner covers stage-0 index blobs except precisely proved ordin
 
 Doctor redaction transforms values only against supplied known homes and UNC host syntax; it does not discover foreign profiles or filesystem aliases. Headless unit tests do not prove live Windows/WebView2 frame, snap or DPI behavior; stronger claims require stronger proof first.
 
-> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: bind publication scanning to exact raw Git paths, distinct index/worktree revisions, metadata-only HEAD classification and fail-closed deletion/allowance rules.
+> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5) | Change: make leak-scan finding diagnostics line-stable across terminal widths.
