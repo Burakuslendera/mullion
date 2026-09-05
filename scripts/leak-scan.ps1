@@ -800,7 +800,11 @@ function Add-SourceRevision([System.Collections.ArrayList]$Revisions, $Record) {
 function Get-CanonicalFilesystemPath([string]$Path, [bool]$OpenReparsePoint = $false) {
     $fullPath = [System.IO.Path]::GetFullPath($Path)
     if ($fullPath.Length -gt 1) {
-        $fullPath = $fullPath.TrimEnd([char[]]"\\/")
+        $fullPath = if ($isWindowsHost) {
+            $fullPath.TrimEnd([char[]]"\\/")
+        } else {
+            $fullPath.TrimEnd([char[]]"/")
+        }
     }
     if (-not $isWindowsHost) {
         return $fullPath
@@ -812,14 +816,24 @@ function Get-CanonicalFilesystemPath([string]$Path, [bool]$OpenReparsePoint = $f
     }
 }
 
-function Get-SafeWorktreeBytes($Entry, [System.Collections.Generic.Dictionary[string,string]]$IdentityMap) {
+function Get-SafeWorktreeBytes($Entry, [System.Collections.Generic.Dictionary[string,object]]$IdentityMap) {
     $parts = $Entry.Path.Split([char]"/")
     $current = $root
     $item = $null
+    $attributes = [System.IO.FileAttributes]0
+    $isContainer = $false
     for ($partIndex = 0; $partIndex -lt $parts.Length; $partIndex++) {
         try {
-            $current = Join-Path -Path $current -ChildPath $parts[$partIndex] -ErrorAction Stop
-            $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+            if ($isWindowsHost) {
+                $current = Join-Path -Path $current -ChildPath $parts[$partIndex] -ErrorAction Stop
+                $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+                $attributes = $item.Attributes
+                $isContainer = [bool]$item.PSIsContainer
+            } else {
+                $current = [System.IO.Path]::Combine($current, $parts[$partIndex])
+                $attributes = [System.IO.File]::GetAttributes($current)
+                $isContainer = (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0)
+            }
         } catch [System.Management.Automation.ItemNotFoundException] {
             return [pscustomobject]@{ Present = $false }
         } catch [System.IO.FileNotFoundException] {
@@ -829,12 +843,12 @@ function Get-SafeWorktreeBytes($Entry, [System.Collections.Generic.Dictionary[st
         } catch {
             throw "cannot inspect worktree path '$($Entry.Path)': $($_.Exception.Message)"
         }
-        $reparse = (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+        $reparse = (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
         if ($partIndex -lt $parts.Length - 1) {
             if ($reparse) {
                 throw "worktree path '$($Entry.Path)' has a reparse-point parent"
             }
-            if (-not $item.PSIsContainer) {
+            if (-not $isContainer) {
                 throw "worktree path '$($Entry.Path)' has a non-directory parent"
             }
             continue
@@ -842,14 +856,19 @@ function Get-SafeWorktreeBytes($Entry, [System.Collections.Generic.Dictionary[st
     }
 
     $openReparse = $false
+    $target = $null
     if ($Entry.Mode -eq "120000" -and $reparse) {
-        $linkType = [string]$item.LinkType
-        if ($linkType -ne "" -and $linkType -cne "SymbolicLink") {
-            throw "worktree symlink '$($Entry.Path)' is an unsupported reparse point"
-        }
-        $target = $item.LinkTarget
-        if ($null -eq $target) { $target = $item.Target }
-        if ($null -eq $target) {
+        if ($isWindowsHost) {
+            $linkType = [string]$item.LinkType
+            if ($linkType -ne "" -and $linkType -cne "SymbolicLink") {
+                throw "worktree symlink '$($Entry.Path)' is an unsupported reparse point"
+            }
+            $target = $item.LinkTarget
+            if ($null -eq $target) { $target = $item.Target }
+            if ($null -eq $target) {
+                try { $target = ([System.IO.FileInfo]::new($current)).LinkTarget } catch { }
+            }
+        } else {
             try { $target = ([System.IO.FileInfo]::new($current)).LinkTarget } catch { }
         }
         $targetValues = @($target)
@@ -866,7 +885,7 @@ function Get-SafeWorktreeBytes($Entry, [System.Collections.Generic.Dictionary[st
         if ($reparse) {
             throw "regular worktree path '$($Entry.Path)' is a reparse point"
         }
-        if ($item.PSIsContainer) {
+        if ($isContainer) {
             throw "worktree path '$($Entry.Path)' is not a regular file"
         }
         try {
@@ -877,10 +896,10 @@ function Get-SafeWorktreeBytes($Entry, [System.Collections.Generic.Dictionary[st
     }
 
     $identity = Get-CanonicalFilesystemPath $current $openReparse
-    if ($IdentityMap.ContainsKey($identity) -and $IdentityMap[$identity] -cne $Entry.PathKey) {
-        throw "worktree paths '$($IdentityMap[$identity])' and '$($Entry.Path)' resolve to one filesystem identity"
+    if ($IdentityMap.ContainsKey($identity) -and $IdentityMap[$identity].PathKey -cne $Entry.PathKey) {
+        throw "worktree paths '$($IdentityMap[$identity].Path)' and '$($Entry.Path)' resolve to one filesystem identity"
     }
-    $IdentityMap[$identity] = $Entry.PathKey
+    $IdentityMap[$identity] = [pscustomobject]@{ Path = $Entry.Path; PathKey = $Entry.PathKey }
     return [pscustomobject]@{ Present = $true; Bytes = $bytes }
 }
 
@@ -991,7 +1010,7 @@ try {
     } else {
         [System.StringComparer]::Ordinal
     }
-    $worktreeIdentity = [System.Collections.Generic.Dictionary[string,string]]::new($identityComparer)
+    $worktreeIdentity = [System.Collections.Generic.Dictionary[string,object]]::new($identityComparer)
     $selectedEntries = [System.Collections.ArrayList]::new()
     $worktreeBytesByPath = [System.Collections.Generic.Dictionary[string,object]]::new([System.StringComparer]::Ordinal)
     $worktreeMissingCount = 0

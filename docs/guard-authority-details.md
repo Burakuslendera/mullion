@@ -281,7 +281,8 @@ content revision, while a changed worktree is scanned separately. Tracked
 symlinks use their link-target blob and never dereference a worktree target.
 Regular-path reparse parents/leaves and Windows case/separator filesystem
 collisions are fatal. On POSIX, a literal backslash remains part of the exact
-Git path and cannot authorize its slash-spelled neighbor.
+Git path and cannot authorize its slash-spelled neighbor: worktree lookup uses
+native `System.IO` components and canonicalization trims only `/`.
 
 ### Files and decoding
 
@@ -391,4 +392,4 @@ The publication scanner covers stage-0 index blobs except precisely proved ordin
 
 Doctor redaction transforms values only against supplied known homes and UNC host syntax; it does not discover foreign profiles or filesystem aliases. Headless unit tests do not prove live Windows/WebView2 frame, snap or DPI behavior; stronger claims require stronger proof first.
 
-> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5) | Change: make leak-scan finding diagnostics line-stable across terminal widths.
+> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5) | Change: preserve literal POSIX backslashes in leak-scan worktree paths and diagnostics.

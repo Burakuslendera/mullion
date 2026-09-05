@@ -190,13 +190,16 @@ func TestLeakScanAllowanceCountsStayWithinEachRevision(t *testing.T) {
 
 }
 
-func TestLeakScanKeepsLiteralGitPathIdentity(t *testing.T) {
+func TestLeakScanKeepsLiteralPOSIXWorktreePathIdentity(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows cannot materialize distinct slash and literal-backslash names")
 	}
 	leak := "C:/Users/" + "private-user/secret\n"
 	root := newLeakScanRepository(t, map[string][]byte{
 		"a/b.txt":  []byte("clean\n"),
+		"a\\b.txt": []byte("clean\n"),
+	})
+	writeLeakScanFiles(t, root, map[string][]byte{
 		"a\\b.txt": []byte(leak),
 	})
 	result := runLeakScan(t, root)
@@ -204,9 +207,11 @@ func TestLeakScanKeepsLiteralGitPathIdentity(t *testing.T) {
 	reported := false
 	for _, line := range strings.Split(result.output, "\n") {
 		var finding struct {
-			File string
+			File   string
+			Source string
 		}
-		if json.Unmarshal([]byte(line), &finding) == nil && finding.File == `a\b.txt` {
+		if json.Unmarshal([]byte(line), &finding) == nil &&
+			finding.File == `a\b.txt` && finding.Source == "worktree" {
 			reported = true
 			break
 		}
@@ -214,6 +219,76 @@ func TestLeakScanKeepsLiteralGitPathIdentity(t *testing.T) {
 	if !reported {
 		t.Fatalf("literal-backslash Git path was not reported under its exact spelling:\n%s", result.output)
 	}
+}
+
+func TestLeakScanKeepsTrailingBackslashInPOSIXFilesystemIdentity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows treats a trailing backslash as a path separator")
+	}
+	root := newLeakScanRepository(t, map[string][]byte{
+		"tail":   []byte("clean\n"),
+		"tail\\": []byte("clean\n"),
+	})
+	result := runLeakScan(t, root)
+	if result.exitCode != 0 || !strings.Contains(result.output, "clean within configured scope") {
+		t.Fatalf("literal trailing-backslash path collided with its neighbor (exit %d):\n%s", result.exitCode, result.output)
+	}
+}
+
+func TestLeakScanRejectsPOSIXWorktreeSymlinkSubstitutions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX symlink traversal is locked on POSIX runners")
+	}
+	t.Run("tracked symlink", func(t *testing.T) {
+		root := t.TempDir()
+		copyLeakScanScript(t, root)
+		target := "C:/Users/" + "private-user/secret"
+		if err := os.Symlink(target, filepath.Join(root, "tracked-link")); err != nil {
+			t.Fatalf("create tracked symlink: %v", err)
+		}
+		gitInit(t, root)
+		gitRun(t, root, "add", "-A")
+		gitRun(t, root, "commit", "-q", "-m", "clean fixture")
+		result := runLeakScan(t, root)
+		assertLeakScanFailed(t, result)
+		if !strings.Contains(result.output, `"File":"tracked-link"`) ||
+			!strings.Contains(result.output, `"Source":"index,worktree"`) {
+			t.Fatalf("tracked symlink target bytes were not scanned without dereference:\n%s", result.output)
+		}
+	})
+
+	t.Run("parent", func(t *testing.T) {
+		root := newLeakScanRepository(t, map[string][]byte{"parent/file.txt": []byte("clean\n")})
+		if err := os.Rename(filepath.Join(root, "parent"), filepath.Join(root, "target")); err != nil {
+			t.Fatalf("move tracked parent: %v", err)
+		}
+		if err := os.Symlink("target", filepath.Join(root, "parent")); err != nil {
+			t.Fatalf("replace parent with symlink: %v", err)
+		}
+		result := runLeakScan(t, root)
+		assertLeakScanFailed(t, result)
+		if !strings.Contains(result.output, "reparse-point parent") {
+			t.Fatalf("symlink parent did not fail closed:\n%s", result.output)
+		}
+	})
+
+	t.Run("regular file", func(t *testing.T) {
+		root := newLeakScanRepository(t, map[string][]byte{"regular.txt": []byte("clean\n")})
+		if err := os.WriteFile(filepath.Join(root, "target.txt"), []byte("clean target\n"), 0o644); err != nil {
+			t.Fatalf("write symlink target: %v", err)
+		}
+		if err := os.Remove(filepath.Join(root, "regular.txt")); err != nil {
+			t.Fatalf("remove tracked regular file: %v", err)
+		}
+		if err := os.Symlink("target.txt", filepath.Join(root, "regular.txt")); err != nil {
+			t.Fatalf("replace regular file with symlink: %v", err)
+		}
+		result := runLeakScan(t, root)
+		assertLeakScanFailed(t, result)
+		if !strings.Contains(result.output, "regular worktree path 'regular.txt' is a reparse point") {
+			t.Fatalf("regular-file symlink substitution did not fail closed:\n%s", result.output)
+		}
+	})
 }
 
 func TestLeakScanPreservesLeadingBOMGitPathIdentity(t *testing.T) {
