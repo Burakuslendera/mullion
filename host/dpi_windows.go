@@ -22,21 +22,27 @@ func enablePerMonitorV2DPIAwareness() error {
 	if result != 0 {
 		return nil
 	}
-	// Awareness latches once per process, so the set call answers
-	// ERROR_ACCESS_DENIED for a second Host in the same process - or for an
-	// application that declared PMv2 itself before constructing the host - even
-	// though the process is already in exactly the state this function exists
-	// to establish. Ask the thread (it inherits the process default) and treat
-	// an already-correct context as success; a genuinely different or unknown
-	// context stays the error it always was (issue #48, found live by the
-	// second-Run check).
-	if alreadyPerMonitorV2DPIAware() {
+	success, err := classifyDPIAwarenessResult(result, alreadyPerMonitorV2DPIAware(), callErr)
+	if success {
 		return nil
 	}
-	if err := syscallError(callErr); err != nil {
+	if err != nil {
 		return err
 	}
 	return errors.New("set process dpi awareness context")
+}
+
+// classifyDPIAwarenessResult is the allocation-free, deterministic portion of
+// enablePerMonitorV2DPIAwareness. Success is separate from err so the caller
+// retains the existing generic fallback while native errors keep their identity.
+func classifyDPIAwarenessResult(result uintptr, alreadyAware bool, callErr error) (success bool, err error) {
+	if result != 0 || alreadyAware {
+		return true, nil
+	}
+	if err := syscallError(callErr); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 // alreadyPerMonitorV2DPIAware reports whether this thread - and, absent a

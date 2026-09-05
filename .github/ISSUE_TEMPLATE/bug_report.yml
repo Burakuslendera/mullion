@@ -120,7 +120,7 @@ body:
         mullion:   v0.1.0
         OS:        Windows 11 Pro 24H2 (build 26100.1234)
         Arch:      amd64
-        Go:        go1.22.5
+        Go:        go1.24.0
 
         WebView2:  131.0.2903.99 (Evergreen)
                    found via HKLM EdgeUpdate (32-bit view)

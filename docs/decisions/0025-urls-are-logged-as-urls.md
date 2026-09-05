@@ -150,8 +150,8 @@ and the credential case were each measured, and each has a mutant that reverts
 the guard and fails the corresponding test.
 
 Not verified live. This change alters only the text of log lines, and the
-`examples/basic` checklist item in [verification.md](../verification.md) that
+`examples/basic` checklist item in [verification/acceptance-checklist.md](../verification/acceptance-checklist.md#manual-acceptance-checklist) that
 reads one of them was not run for it - `observed` for the headless behaviour,
 `unverified` for the live log. The next live run against issue #77 exercises it.
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: preserve wrapped HTTP origins and file-name tails in bounded fallbacks; record shared rendering-control folding and invalid-UTF-8 bounds for issues #89 and #115.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point the live checklist reference to the canonical acceptance document.

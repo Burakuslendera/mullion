@@ -28,11 +28,11 @@ other document answers one narrower question below.
 | **Why is it done this way, and what would change that?** | [decisions/](./decisions/) |
 | What was already tried, and why was it abandoned? | [lessons-and-dead-ends.md](./lessons-and-dead-ends.md) |
 | The same question, for what a log line may say | [logging-dead-ends.md](./logging-dead-ends.md) |
-| Dated automated/live verification records | [verification-records.md](./verification-records.md) |
-| Issue #135 paired exact-source live acceptance and proof ceilings | [issue-135-paired-live-verification.md](./issue-135-paired-live-verification.md) |
+| Dated automated/live verification records | [records](./verification/records.md) |
+| Issue #135 paired exact-source live acceptance and proof ceilings | [issue-135-paired-live.md](./verification/records/issues/issue-135-paired-live.md) |
 | How do I prove a change actually works? | [verification.md](./verification.md) |
-| Which diagnostic builds and environment switches are allowed? | [diagnostic-builds-and-environment-switches.md](./diagnostic-builds-and-environment-switches.md) |
-| What makes scripted GUI verification lie? | [gui-verification-traps.md](./gui-verification-traps.md) |
+| Which diagnostic builds and environment switches are allowed? | [diagnostics.md](./verification/diagnostics.md) |
+| What makes scripted GUI verification lie? | [gui-traps.md](./verification/gui-traps.md) |
 | What does a bug report have to contain? | [bug-reports.md](./bug-reports.md) |
 | What is known and still unverified about Windows 10 x64 support? | [windows-10-compatibility.md](./windows-10-compatibility.md) |
 
@@ -53,4 +53,4 @@ The build, test and pull-request mechanics are in
 you are about to touch before you change it, and read its decision record before you
 change *why* it works that way.
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: index Issue #135's paired live acceptance record.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: update the documentation map to canonical verification child paths.

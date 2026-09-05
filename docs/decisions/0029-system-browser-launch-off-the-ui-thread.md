@@ -176,12 +176,12 @@ What the run did **not** establish is the symptom in the form a user would repor
 it. The window was dragged during a launch, but only by aiming a snap gesture
 into the interval on purpose — which is an observation about the observer rather
 than about the message loop, and is precisely why the probe was written instead.
-The checklist item in `docs/verification.md` stands for anyone who wants the
+The checklist item in
+`docs/verification/acceptance-checklist.md#manual-acceptance-checklist` stands for anyone who wants the
 user-visible version.
-
 `go test -race` does not build on the development machine (no cgo toolchain). CI
 ran it on this branch and it passed (run 30171063722) — the first race-detector
 run over the new goroutine. What it touches is `host.log` (already atomic, and
 now documented for concurrent use) and a buffered channel.
 
-> Last updated: 2026-08-22 | Editor: OpenAI (GPT-5.6) | Change: distinguish 0043's historical concurrency and routing rationale from the bridge current-implementation pointer.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: restore the user-visible checklist sentence after repairing its canonical acceptance link.

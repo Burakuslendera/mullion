@@ -6,7 +6,7 @@
 
 A published window screenshot needs a margin around the window — the DWM
 shadow and the rounded corners are exactly what a frame change breaks
-(docs/verification.md §4) — and a margin captures whatever the desktop shows
+(docs/verification/acceptance-checklist.md#manual-acceptance-checklist) — and a margin captures whatever the desktop shows
 behind the window. For a public repository that is a disclosure problem before
 it is an aesthetic one.
 
@@ -135,4 +135,4 @@ cannot.
   (`screenshot.ps1 -Backdrop`), and the maintainer's request for the same
   ground under a hand-driven capture tool.
 
-> Last updated: 2026-08-12 | Editor: OpenAI (GPT-5.6) | Change: serialize process-global backdrop state and reject obsolete destruction callbacks so timer arming and ownership remain transactional.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point the screenshot acceptance reference to the canonical checklist.

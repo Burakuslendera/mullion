@@ -1,6 +1,6 @@
 # What a good bug report contains
 
-Section 6 of [verification.md](./verification.md) - how a change to `mullion` is
+The [bug-report section](./bug-reports.md#what-a-good-bug-report-contains) - how a change to `mullion` is
 proved correct - moved here verbatim when that file reached the 400-line
 reference-doc limit. Nothing below was rewritten in the move.
 
@@ -80,4 +80,4 @@ Then include:
 A report that lets someone else reproduce the failure on the first try is worth
 more than a patch.
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: describe Go's automatic VCS stamping and clarify that buildvcs=true enforces rather than uniquely enables it.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point the provenance note to the canonical bug-report section.

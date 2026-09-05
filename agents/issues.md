@@ -146,10 +146,7 @@ in a comment that asks someone else to do it.
 **Filing.** An agent never opens a bare issue. The three axes go on at creation:
 
 ```
-gh issue create \
-  --title "Caption band is 4px short at 150% scaling" \
-  --label "P1: window defect" --label "bug" --label "area: frame" \
-  --body-file report.md
+gh issue create --title "Caption band is 4px short at 150% scaling" --label "P1: window defect" --label "bug" --label "area: frame" --body-file report.md
 ```
 
 **Triage.** An incoming issue is usually unlabelled, or labelled by instinct
@@ -158,9 +155,7 @@ that is really a silent failure). Correct it in place - adding and removing in
 one call, so the issue is never briefly in a contradictory state:
 
 ```
-gh issue edit 42 \
-  --add-label "P0: blocker" --add-label "silent-failure" --add-label "regression" \
-  --remove-label "P2: quality" --remove-label "bug"
+gh issue edit 42 --add-label "P0: blocker" --add-label "silent-failure" --add-label "regression" --remove-label "P2: quality" --remove-label "bug"
 ```
 
 Say in a comment *why* the priority moved. A reporter whose P2 silently becomes a
@@ -170,26 +165,33 @@ is the class this project treats as a blocker" learns the rule.
 **Pull requests.** Same call, `gh pr edit`. The pull request carries the priority
 of the issue it closes and the areas it touches.
 
-**Never leave an issue unlabelled.** If the priority genuinely cannot be
-determined, that is not a reason to skip the axis - it is a `needs-repro` issue
-with a stated best guess and an `unverified` label from
-[policy.md](./policy.md) on the guess. An unlabelled issue is invisible to every
-query in this file, which means it is invisible to the next session.
+**Never leave a work issue without the three axes.** If any axis genuinely
+cannot yet be determined, retain provisional priority, type and area, add
+`needs-repro`, and mark that provisional classification `unverified` in the
+issue body or a comment under [policy.md](./policy.md). Do not add an unlisted
+tracker label. An issue without the three axes is invisible to every query in
+this file, which means it is invisible to the next session.
 
 **Do not invent labels.** The set above is the set. A missing label is a rule
 change, not a convenience: propose it, with the evidence for why the existing
 axes cannot express the thing, and see the tiered authority in
 [AGENTS.md](../AGENTS.md). Taxonomy drift is how a tracker stops being queryable.
 
-**Labels are cheap; closing is not.** An agent may add, remove and re-prioritise
-labels on its own judgement. An agent does **not** close an issue without
-evidence that the behaviour is fixed - a test, a live check, or the reporter
-confirming it. "Cannot reproduce" is a `needs-repro` label and a question, not a
-close.
+**Labels are cheap; closing is not.** An agent does not close a behaviour issue
+without evidence for every changed contract. A deterministic contract requires a
+focused production-path headless regression. Only an approved irreducibly
+visual, window-manager, shell, or compositor residual may use applicable live
+evidence instead, with the full exception record in the
+[evidence boundary](../docs/verification/evidence.md). Reporter confirmation is
+evidence to record, not permission to waive a deterministic test. `Cannot
+reproduce` remains no closure reason: retain the work issue's three axes and
+`needs-repro`.
 
 ## Triage checklist
 
-1. Reproduce, or apply `needs-repro` and stop.
+1. Reproduce. If reproduction is unavailable, apply `needs-repro`, assign
+   provisional priority/type/area, mark that provisional classification
+   `unverified` in the issue body, and stop code investigation.
 2. Assign the three axes. If the priority is not obvious, read the ladder in
    AGENTS.md - not the issue title.
 3. Ask whether it fails silently. If it does, it is P0 and it gets
@@ -205,7 +207,12 @@ tracker's P0 query surfaces the fix and not only the report. It carries
 `regression` if it fixes one. It carries the areas it touches, which is what
 tells a reviewer whether they are qualified to review it.
 
-A pull request that changes behaviour without a test is not labelled - it is
-returned. See [AGENTS.md](../AGENTS.md).
+A pull request that changes behaviour must contain a focused production-path
+headless regression for every deterministic observable contract. It is returned
+when a test is missing unless the missing test is for an explicitly approved
+irreducibly visual/window-manager/shell/compositor residual whose exception
+record names the boundary, approver, sufficient live evidence, not-covered
+boundary, and uncertainty. “Hard to test” is not an exception. See [the
+evidence boundary](../docs/verification/evidence.md).
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: require deterministic contract regressions and a reviewed narrow live residual in issue closure and pull-request triage.

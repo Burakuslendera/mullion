@@ -4,46 +4,34 @@
 
 ## Contents
 
-- [Purpose](#purpose)
-- [The common false-success shape](#the-common-false-success-shape)
-- [Issue 94: no-port source authority](#issue-94-no-port-source-authority)
-- [Issue 107: public diagnostic boundary](#issue-107-public-diagnostic-boundary)
-- [Issue 108: publication scanner authority](#issue-108-publication-scanner-authority)
-- [Issue 99: production wiring locks](#issue-99-production-wiring-locks)
-- [Review history and recurrence checklist](#review-history-and-recurrence-checklist)
-- [Exact proof ceilings](#exact-proof-ceilings)
+[Purpose](#purpose) · [The common false-success shape](#the-common-false-success-shape) ·
+[Issue 94: no-port source authority](#issue-94-no-port-source-authority) · [Issue 107: public diagnostic boundary](#issue-107-public-diagnostic-boundary)
+[Issue 108: publication scanner authority](#issue-108-publication-scanner-authority) · [Issue 99: production wiring locks](#issue-99-production-wiring-locks) ·
+[Review history and recurrence checklist](#review-history-and-recurrence-checklist) · [Exact proof ceilings](#exact-proof-ceilings)
 
 ## Purpose
 
-This is the exhaustive continuation of [guard-verification.md](./guard-verification.md)
-for issues #94, #107 and #108 and their rows in #99. Read it before changing the
-network guard, doctor sanitizer, publication scanner or CI leak-scan step. The
-short document says what the authorities are; this one records the shapes that
-repeated adversarial review found after the first plausible fixes were already
-green.
+This exhaustive continuation of [guard-verification.md](./guard-verification.md)
+covers issues #94, #107, #108 and their #99 rows. Read it before changing the
+network guard, doctor sanitizer, publication scanner or CI leak-scan step; it
+records adversarial shapes found after plausible fixes were already green.
 
-The fixes do not enlarge the product promises. They make the existing promises
-fail closed, connect them to production entrypoints and state what their tests do
-not prove. A future agent should not reopen these issues merely because a source
-guard is not semantic whole-program analysis, the publication scanner is not a
-general secret scanner, or doctor cannot identify a home spelling it was never
-given. Those are named ceilings, not silent omissions.
+The fixes do not enlarge product promises: they make existing promises fail
+closed, connect them to production entrypoints and state test ceilings. Syntactic
+network analysis, configured known-shape scanning and supplied home spellings
+are explicit ceilings, not silent omissions.
 
 ## The common false-success shape
 
-All three issues had the same structure:
+All three issues had a public claim and a relevant-looking helper, but an
+input-selection, exception or presentation seam bypassed it while the command
+still printed success or tests stayed green; documentation described policy
+instead of measured proof.
 
-1. a public claim existed;
-2. a helper or scanner looked relevant;
-3. an input-selection, exception or presentation seam could bypass it;
-4. the named command still printed success or the test suite stayed green; and
-5. documentation described the intended policy rather than the measured proof.
-
-The repair rule is therefore authority-first. Identify the exact code that emits
-`PASS`, `clean` or paste-ready output; enumerate every input-selection step before
-that output; make selection/parse/read failures fatal; bind exceptions to the
-smallest repository-relative identity; and mutate the production connection once.
-A detector-only table is useful, but it is not the #99 wiring lock.
+Repair is authority-first: identify the exact `PASS`, `clean` or paste-ready
+sink; enumerate input selection; make selection/parse/read failures fatal; bind
+exceptions to the smallest repository-relative identity; and mutate the
+production connection once. A detector-only table is not the #99 wiring lock.
 
 ## Issue 94: no-port source authority
 
@@ -270,55 +258,84 @@ claim. Those limits must remain explicit in verification reports.
 
 ## Issue 108: publication scanner authority
 
+### Source plan and exact identities
+
+The script validates that its own root equals Git's canonical top level and
+that Git's index is below that root. Source-selecting Git environment variables
+are rejected. It binds one exact `HEAD` commit OID, reads a raw NUL-delimited
+`ls-tree` map for deletion classification, and reads stage-0 index entries with
+mode, object ID and stage. Unmerged/non-stage-0, sparse-directory, gitlink,
+unsupported, malformed or failed entries are fatal.
+
+The bound `HEAD` map is metadata only; its file blobs are not a second scan
+corpus. An indexed path is skipped before blob retrieval only when its worktree
+path is safely absent, `ls-files --deleted` reports that exact raw path, the
+index flag is ordinary (not skip-worktree or assume-unchanged), and its
+stage-0 mode/object ID exactly matches `HEAD`. Missing paths with any ambiguity,
+non-deleted status or index divergence fail closed.
+
+Every other stage-0 indexed regular/symlink blob is fetched by object ID through
+byte-oriented `cat-file --batch`. A safe present worktree path is read as raw
+bytes only for an indexed path; equal index/worktree bytes coalesce into one
+content revision, while a changed worktree is scanned separately. Tracked
+symlinks use their link-target blob and never dereference a worktree target.
+Regular-path reparse parents/leaves and Windows case/separator filesystem
+collisions are fatal. On POSIX, a literal backslash remains part of the exact
+Git path and cannot authorize its slash-spelled neighbor.
+
 ### Files and decoding
 
-The script validates that its own root equals Git's canonical top level and that
-Git's index is below that root. Source-selecting Git environment variables are
-rejected. Tracked names come from raw NUL-delimited `git ls-files`; glob characters
-and non-ASCII names remain data. Binary exclusions are explicit and counted. Zero
-selected text files is fatal.
+Git NUL records and object responses are parsed as bytes, not native-command
+text. Path UTF-8 decoding is strict but preserves a leading `EF BB BF` as
+literal `U+FEFF`; no slash/backslash rewrite, case fold, Unicode normalization
+or lossy replacement is used for identity or allowance lookup. Content is read
+once per distinct revision and strictly decoded as BOM-aware UTF-8,
+UTF-16LE or UTF-16BE. UTF-32 BOMs, malformed text, missing objects and all
+Git/read/decode failures are terminal. Binary exclusions remain explicit and
+are reported once per logical exact path; zero selected text revisions are
+fatal.
 
-Each file is read once and strictly decoded as BOM-aware UTF-8, UTF-16LE or
-UTF-16BE. UTF-32 BOMs and malformed text are fatal inspection errors, never
-UTF-16-looking clean input. Detector families inspect configured roots, drive
-spellings, ordinary/extended UNC hosts, product shapes, hashes and other named
-publication forms. This is a configured known-shape scan, not a general secret
-detector.
+Detector families inspect configured roots, drive spellings, ordinary/extended
+UNC hosts, product shapes, hashes and other named publication forms. This is a
+configured known-shape scan, not a general secret detector. Full `HEAD`-only
+file content after staged deletion and untracked files remain outside scope.
 
 ### Allowances
 
-There is no basename or whole-file skip. An allowance binds normalized
-case-sensitive Git path, detector family, exact full capture or named capture,
-and expected count. History allowances also require their tracked source anchor.
-Deleted anchors retire their allowance. Under-use and over-use are findings.
+There is no basename or whole-file skip. A normal allowance binds an exact raw
+Git path, detector family, exact full or named capture, and expected count.
+For each active path allowance, counts are computed independently per distinct
+path/content revision: equal index/worktree bytes consume once; no revision may
+exceed `Expected`; and at least one revision must equal it. Under-use without
+an exact expected revision is stale; an over-count is a finding.
 
-Workflow hashes require the exact value of a step-level `uses` mapping under the
-root `jobs` mapping, a job and its `steps` sequence. Quoted keys normalize and an
-inline value comment is removed. Block scalars, comments, unrelated `steps`
-mappings and copied hashes cannot consume an allowance.
+Workflow hashes require the exact value of a step-level `uses` mapping under
+the root `jobs` mapping, a job and its `steps` sequence. Quoted keys normalize
+only within that executable parser; comments, block scalars, unrelated
+`steps` mappings and copied hashes cannot consume an allowance. Commit-message
+allowances remain a separate aggregate and activate only from their exact
+stage-0 index anchor. A missing/deleted anchor retires that allowance.
 
 ### History
 
-A valid non-shallow `HEAD` is mandatory. Replacement refs and grafts are rejected;
-enumeration and message reads also disable replacement objects. Both `git log`
-commands force their output encoding to UTF-8, while Git respects a commit's own
-declared source encoding, so repository/global output settings cannot NUL-hide a
-reachable message from ASCII detectors. Invalid heads or decode errors are fatal.
-
-Unreachable commits and history absent from the clone remain outside the verdict.
-That is why CI checkout depth is part of the authority rather than a convenience.
+A valid non-shallow `HEAD` is mandatory. Replacement refs and grafts are
+rejected; enumeration and message reads disable replacement objects. Both
+`git log` commands force UTF-8 output while Git respects a commit's declared
+source encoding, so repository/global output settings cannot NUL-hide a
+reachable message. Invalid heads, malformed IDs, empty history or decode
+errors are fatal. Unreachable commits and history absent from the clone remain
+outside the verdict.
 
 ### CI wiring
 
-The Windows lock parses the actual job and `steps` sequence. It requires exactly
-one checkout/setup/scan in order, exact pins, current-source full-depth checkout,
-no source override and no job/step condition or non-fatal key. Comments do not
-end the job. `uses`, `name`, `run`, `if` and `continue-on-error` must be step-level;
+The Windows lock parses the actual job and `steps` sequence. It requires exactly one
+checkout/setup/scan in order, exact pins, current-source full-depth checkout, no
+source override and no job/step condition or non-fatal key. Comments do not end
+the job. `uses`, `name`, `run`, `if` and `continue-on-error` must be step-level;
 `fetch-depth`, `ref`, `repository` and `path` must be direct children of `with`.
 
 Scalar/comment/nested-data decoys, another job, late pins and quoted keys cannot
-spoof it. Script action authority and the Go current-workflow lock remain
-independent.
+spoof it. Script action authority and the Go current-workflow lock remain independent.
 
 ## Issue 99: production wiring locks
 
@@ -333,67 +350,44 @@ The production seams locked here are not all separate rows in #99:
 | CLI | actual `main` version branch with injected source/output | command routes around public sanitization |
 | startup | actual Windows `Host.Run` with headless seams | summary uses raw `Version()` or skips the injected source |
 
-Mutation evidence belongs in [guard-verification.md](./guard-verification.md).
-A useful mutant compiles, changes the production connection and produces the named
-red signal. A syntax error is not semantic evidence. Disposable copies must be
-removed after the result is captured.
-
+Mutation evidence belongs in [guard-verification.md](./guard-verification.md). A
+useful mutant compiles, changes the production connection and produces the named red signal; a syntax error is not semantic evidence, and disposable copies must be removed after capture.
 ### Closure boundary
 
 This change closes #94's original measured holes plus the late string-alias,
-special-scheme and mapped-wildcard forms above. It closes #107's released
-paste-ready redaction defects plus the backtick wrapper found during final review.
-It closes #108 for the two defects that issue measured: forward-slash drive paths
-and ordinary/extended UNC hosts passed the configured detector. The stricter
-selection, decoding, history and workflow behavior is adjacent recurrence
-hardening, not evidence that those already-fail-closed #108 controls were broken.
+special-scheme and mapped-wildcard forms above, and #107's released paste-ready
+redaction defects plus the final-review backtick wrapper. It closes #108 for
+the measured forward-slash drive and ordinary/extended UNC detector defects.
+Stricter selection, decoding, history and workflow behavior is adjacent
+recurrence hardening, not evidence that those already-fail-closed controls were
+broken.
 
-For #99, this work resolves the original rows **#85** (`stripExemptName`
-authority), **#12** (literal-path and unreadable scanner inputs) and **#71**
-(full-history checkout plus fatal commit-scan failures), and the later
-array-inventory recurrence gap recorded on the issue. The table above also locks
-#107's doctor/CLI/startup production connections, but those are #107 closure
-evidence rather than extra original #99 rows. Every other #99 cluster remains
-tracker work; closing #99 would contradict its own cluster plan.
+For #99, it resolves rows **#85** (`stripExemptName` authority), **#12**
+(literal-path/unreadable scanner inputs), **#71** (full-history checkout and
+fatal commit-scan failures), plus the later array-inventory recurrence gap.
+The table locks #107 doctor/CLI/startup connections as #107 evidence, not extra
+#99 rows; every other #99 cluster remains tracker work.
 
 ## Review history and recurrence checklist
 
-Repeated independent reviews found defects after focused and full suites were
-green: shadows, conversions, generic string/DLL aliases and package assignments;
-candidate-relative mixed-radix/root-dot endpoints, special-scheme separator runs,
-mapped wildcard IPv6, encoded external hosts and virtual-host disqualifiers;
-strict Git/text/YAML authority; sibling/wrapped/backtick paths, array-aware public
-field inventory, portable build tags and quadratic scanning. Preserve fixtures, not round counts.
+Repeated reviews found defects after focused/full suites were green: shadows,
+conversions, generic string/DLL aliases, package assignments, candidate-relative mixed-radix/root-dot endpoints, special-scheme runs, mapped wildcard IPv6, encoded external hosts, virtual-host disqualifiers, strict Git/text/YAML authority, sibling/wrapped/backtick paths, array-aware inventory, portable tags and quadratic scanning. Preserve fixtures, not round counts.
 
 Before editing any of these authorities:
 
-1. read this document and the applicable decision record;
-2. state the exact accepted source/runtime forms and the explicit ceiling;
-3. inspect the final green/paste-ready output branch;
-4. enumerate selection, decoding, exception and transformation steps;
-5. add an accepted fixture, a material clean control and a fatal inspection case;
-6. drive the real named test, script, CLI branch or `Host.Run` seam;
-7. apply one compiling production-disconnect mutant and record its red signal;
-8. run the full verification ladder in repository order; and
-9. report automatic, live, uncovered and uncertain evidence separately.
+1. read this document and applicable decision record; 2. state accepted source/runtime forms and the explicit ceiling; 3. inspect the final green/paste-ready branch; 4. enumerate selection, decoding, exception and transformation steps; 5. add an accepted fixture, material clean control and fatal inspection case; 6. drive the real named test, script, CLI branch or `Host.Run` seam; 7. apply one compiling production-disconnect mutant and record its red signal; 8. run the full verification ladder; 9. report automatic, live, uncovered and uncertain evidence separately.
 
 Do not "simplify" package grouping to a per-file AST walk, URL placement to a
 whole-string prefix, UNC recognition to any doubled separator, workflow parsing
-to token search, history to ordinary `git log`, or public redaction to one caller.
-Each is a measured false-success regression documented above.
+to token search, history to ordinary `git log`, or public redaction to one caller:
+each is a measured false-success regression documented above.
 
 ## Exact proof ceilings
 
-The network guard is syntactic source analysis. It does not prove the behavior of
-external dependencies, reflection, raw syscalls or run-time-assembled names.
+The network guard is syntactic source analysis; it does not prove external dependencies, reflection, raw syscalls or run-time-assembled names.
 
-The publication scanner covers only Git-tracked, successfully decoded text and
-reachable real-object messages in the validated clone, and only its configured
-patterns. It does not inspect untracked files, binary payloads, unreachable
-history, encrypted/obfuscated data or unnamed secret families.
+The publication scanner covers stage-0 index blobs except precisely proved ordinary unstaged-deletion copies skipped before fetch, safe present worktree revisions for indexed paths, reachable real-object messages in the validated clone and only its configured patterns. The bound `HEAD` tree is metadata for deletion classification, not file-content coverage. Staged-deleted `HEAD`-only blobs, untracked files, binary payloads, unreachable history, encrypted/obfuscated data and unnamed secret families are outside its verdict.
 
-Doctor redaction transforms values only against supplied known homes and UNC host
-syntax. It does not discover foreign profiles or filesystem aliases. Headless
-unit tests do not prove live Windows/WebView2 frame, snap or DPI behavior; stronger claims require stronger proof first.
+Doctor redaction transforms values only against supplied known homes and UNC host syntax; it does not discover foreign profiles or filesystem aliases. Headless unit tests do not prove live Windows/WebView2 frame, snap or DPI behavior; stronger claims require stronger proof first.
 
-> Last updated: 2026-08-10 | Editor: OpenAI (GPT-5.6) | Change: add exact late-review reproductions and mutation signals, correct Git output-encoding authority, and map #94/#107/#108 closure separately from resolved #99 rows #85/#12/#71 plus the later array gap.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: bind publication scanning to exact raw Git paths, distinct index/worktree revisions, metadata-only HEAD classification and fail-closed deletion/allowance rules.

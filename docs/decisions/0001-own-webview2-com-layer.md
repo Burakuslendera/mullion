@@ -107,7 +107,7 @@ documents as subject to change.
   repository may do that (see [0006](./0006-tests-stay-headless.md)). So this line
   is an observation, not something a reader can re-run. What *is* re-runnable is
   the rest of this list, plus the live acceptance checklist in
-  [verification.md](../verification.md), which exercises the same path through
+  [the acceptance checklist](../verification/acceptance-checklist.md#manual-acceptance-checklist), which exercises the same path through
   `examples/basic`.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: correct ABI evidence to distinguish runtime-owned and Go-owned manifests, numeric dispatch, canonical IIDs and the completeness guard.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point live acceptance evidence to the canonical checklist.

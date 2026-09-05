@@ -1,4 +1,6 @@
-## 4. Traps when scripting GUI checks
+# GUI verification traps
+
+**Status:** active
 
 Automating the manual list is possible but the environment fights back. These
 are the failure modes that produced false passes and false failures, and the
@@ -59,4 +61,4 @@ process. Find the window by **class name**, then derive the PID from the window
 own; if a window with your class is running that you did not start, abort the
 run instead of killing someone else's process.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: move the GUI scripting traps verbatim from verification.md when concurrent P0 verification additions exceeded its 400-line hard limit.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: relocate scripted GUI verification boundaries under verification routing.

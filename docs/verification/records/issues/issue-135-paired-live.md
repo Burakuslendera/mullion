@@ -1,9 +1,12 @@
 # Issue #135 paired exact-tree live verification
 
+**Status:** archived
+**Canonical:** [verification records index](../../records.md)
+
 ## Acceptance judgment
 
 The 2026-08-31 Windows 11 paired run completes only the
-[Issue #135 exact serialized first-document registration item](./verification.md#3-manual-acceptance-checklist).
+[Issue #135 exact serialized first-document registration item](../../acceptance-checklist.md#manual-acceptance-checklist).
 The untagged artifact establishes ordinary first-document behavior; the tagged
 artifact establishes the forced post-real-callback Show/Quit interleave and exits
 successfully. The limits below remain limits: this is not a general graceful-close,
@@ -144,4 +147,4 @@ cancellation-owned pre-start Run failure.
   one-attempt limit there was no retry, boot, guest hash, or artifact execution;
   no same-artifact Win10 claim exists.
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: clarify final paired Issue #135 source identity and live-attribution proof boundaries.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: relocate the archived Issue #135 paired live record under canonical routing.

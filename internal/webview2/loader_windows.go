@@ -30,6 +30,12 @@ import (
 // caller that waits forever would hang the UI thread with no diagnosis.
 const DefaultTimeout = 60 * time.Second
 
+// loaderWaiter is the completion wait effect used by the loader's native
+// calls. Production wrappers pass waitFor[completion], retaining the real
+// message pump and its completion-first policy; focused tests pass a
+// deterministic waiter so native-call ownership paths never enter the pump.
+type loaderWaiter func(<-chan completion, time.Duration, string) (completion, error)
+
 // Environment is a live ICoreWebView2Environment.
 //
 // It deliberately holds nothing but the COM pointer: the interface's methods
@@ -81,13 +87,13 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 	if err != nil {
 		return nil, err
 	}
-	return createEnvironmentWithProc(opts, found, loaded.createEnviron)
+	return createEnvironmentWithProc(opts, found, loaded.createEnviron, waitFor[completion])
 }
 
 // createEnvironmentWithProc is the native-call portion of
 // CreateEnvironmentWithOptions. Keeping discovery outside this function makes
 // the ABI boundary testable without loading an installed WebView2 runtime.
-func createEnvironmentWithProc(opts Options, found resolved, createEnviron ComProc) (*Environment, error) {
+func createEnvironmentWithProc(opts Options, found resolved, createEnviron ComProc, wait loaderWaiter) (*Environment, error) {
 	// The completion handler arrives as a window message, so the thread that
 	// dispatches it must be the thread that made the call. Locking is cheap
 	// insurance: the caller (the host's UI thread) is already locked, and
@@ -137,7 +143,7 @@ func createEnvironmentWithProc(opts Options, found resolved, createEnviron ComPr
 		return nil, fmt.Errorf("webview2: %s: %w", createEnvironmentExport, err)
 	}
 
-	result, err := waitFor(handler.done, timeoutOf(opts), "the WebView2 environment")
+	result, err := wait(handler.done, timeoutOf(opts), "the WebView2 environment")
 	if err != nil {
 		handler.abandon()
 		return nil, err
@@ -156,14 +162,14 @@ func createEnvironmentWithProc(opts Options, found resolved, createEnviron ComPr
 // Like CreateEnvironment, this pumps messages until the completion handler
 // fires, and must run on the window's own thread.
 func (e *Environment) CreateController(parent windows.Handle) (*IUnknown, error) {
-	return e.createControllerWithTimeout(parent, DefaultTimeout)
+	return e.createControllerWithTimeout(parent, DefaultTimeout, waitFor[completion])
 }
 
 // createControllerWithTimeout contains the native-call portion of
 // CreateController. Production always supplies DefaultTimeout; a shorter bound
 // lets headless tests exercise abandonment without waiting for runtime startup
 // timeouts.
-func (e *Environment) createControllerWithTimeout(parent windows.Handle, timeout time.Duration) (*IUnknown, error) {
+func (e *Environment) createControllerWithTimeout(parent windows.Handle, timeout time.Duration, wait loaderWaiter) (*IUnknown, error) {
 	if e == nil || e.unknown == nil {
 		return nil, errors.New("webview2: environment is not open")
 	}
@@ -193,7 +199,7 @@ func (e *Environment) createControllerWithTimeout(parent windows.Handle, timeout
 		return nil, fmt.Errorf("webview2: CreateCoreWebView2Controller: %w", err)
 	}
 
-	result, err := waitFor(handler.done, timeout, "the WebView2 controller")
+	result, err := wait(handler.done, timeout, "the WebView2 controller")
 	if err != nil {
 		handler.abandon()
 		return nil, err

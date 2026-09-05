@@ -3,6 +3,7 @@
 package webview2
 
 import (
+	"fmt"
 	"runtime"
 	"testing"
 	"time"
@@ -19,6 +20,19 @@ const (
 	loaderCallCompletesWithFailure
 	loaderCallSucceeds
 )
+
+// deterministicLoaderWaiter consumes a completion already published by the
+// fake native call, or returns the same timeout outcome as production waitFor.
+// It intentionally performs no message-pump work, so native-call ownership
+// tests stay in the default headless lane.
+func deterministicLoaderWaiter(done <-chan completion, timeout time.Duration, what string) (completion, error) {
+	select {
+	case value := <-done:
+		return value, nil
+	default:
+		return completion{}, fmt.Errorf("webview2: gave up after %s waiting for %s", timeout, what)
+	}
+}
 
 func packageCompletionHandler(this uintptr, iid windows.GUID) (*IUnknown, bool) {
 	server := serverFor(this)
@@ -188,7 +202,7 @@ func TestCreateEnvironmentWithOptionsNativeCallBoundary(t *testing.T) {
 			})
 			proc := ComProc(windows.NewCallback(call.invoke))
 
-			environment, err := createEnvironmentWithProc(options, found, proc)
+			environment, err := createEnvironmentWithProc(options, found, proc, deterministicLoaderWaiter)
 
 			if call.checkRunningInstance != 1 {
 				t.Errorf("checkRunningInstance = %d, want 1", call.checkRunningInstance)
@@ -384,13 +398,7 @@ func TestEnvironmentCreateControllerNativeCallBoundary(t *testing.T) {
 			call.expectedThis = uintptr(unsafe.Pointer(rawEnvironment))
 			environment := &Environment{unknown: rawEnvironment}
 
-			var controller *IUnknown
-			var err error
-			if test.mode == loaderCallTimesOut {
-				controller, err = environment.createControllerWithTimeout(parent, time.Millisecond)
-			} else {
-				controller, err = environment.CreateController(parent)
-			}
+			controller, err := environment.createControllerWithTimeout(parent, time.Millisecond, deterministicLoaderWaiter)
 
 			if call.actualThis != call.expectedThis {
 				t.Errorf("native environment this = %#x, want %#x", call.actualThis, call.expectedThis)

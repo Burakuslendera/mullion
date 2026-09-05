@@ -35,6 +35,27 @@ window whose client area has been extended over the caption.
 **Keep `WS_CAPTION` and `WS_SYSMENU` set.** The style bits mullion applies are
 `WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX`.
 
+The five-bit formula is a post-create steady-state rule, not a requirement on
+the `CreateWindowExW` request. That request may omit `WS_CAPTION` or
+`WS_SYSMENU`; creation callbacks inside it are outside the five-bit guarantee.
+On a successful normalization path, after the call returns, the hidden host
+distinguishes the **requested initial style**, **effective pre-apply style**,
+**post-apply style** and **steady state**, then synchronously establishes all
+five bits, calls `SetWindowPos(..., SWP_FRAMECHANGED, ...)`, and completes DWM
+setup. Successful normalization means those native calls succeed and the
+post-apply readback matches the active five-bit profile. After hidden steady
+state, that path publishes or uses the `HWND`, starts WebView2 work, shows the
+window, permits user interaction or runs a host-exposing callback.
+`Config.Logger` diagnostics may run during normalization; they are diagnostic
+exposure, not readiness or publication, and their existing reentrancy/failure
+behaviour is outside this timing rule. Existing style, frame-refresh and DWM
+failures and a post-apply profile mismatch are logged, and the current flow can
+still reach publication. Those fail-open paths are not supported successful
+normalization; this summary neither accepts nor hides them or changes
+production behaviour. After successful normalization, all five bits remain set
+until destruction.
+See [decision 0048](./decisions/0048-caption-bits-before-exposure.md).
+
 - **Symptom of dropping them:** minimize, maximize and restore snap between
   states with no animation; the window feels like a dialog from another era. Snap
   behaviour (edge snap, Snap Layouts, the shell's window-management affordances)
@@ -346,4 +367,4 @@ For Chromium zoom and native hit-testing alignment, see [WebView2 zoom and nativ
 | Hit regions off after `Ctrl+scroll` | Chromium zoom still enabled ([WebView2 zoom and native hit testing](./webview2-zoom-and-native-hit-testing.md)) |
 | Coverage check fails but the app looks fine | the script measures "Intermediate D3D Window" (§10) |
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: align WM_GETMINMAXINFO ownership, fallback and effective work-area rules with production.
+> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5.6) | Change: define successful caption normalization and record the existing fail-open publication paths.

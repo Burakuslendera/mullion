@@ -20,8 +20,9 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
-    # GitHub's windows-latest runner is amd64. This matrix and the dedicated
-    # x64 lane require runtime/export checks; neither hosts nor renders WebView2.
+    # GitHub's windows-latest runner is amd64. The focused machine gate below
+    # and the dedicated x64 lane require runtime/export checks; ordinary tests
+    # remain free of WebView2 machine access.
     # Both ends of the supported range, not just the floor. Until decision 0033
     # this job pinned "1.22" alone, so the "and newer" half of the promise in
     # README.md was never verified by anything. "stable" is the current release,
@@ -31,13 +32,11 @@ jobs:
       matrix:
         go: ["1.24", "stable"]
     # The windows-latest runner ships the Evergreen WebView2 runtime (measured
-    # via the doctor probe: v149.0.4022.98), so the two machine tests in
-    # internal/webview2 must run, not skip. This turns their "no runtime" skip
-    # into a failure, so a green Windows lane proves that runtime discovery and
-    # the required export were checked, not that a control hosted or rendered.
-    # See docs/decisions/0010.
+    # via the doctor probe: v149.0.4022.98), so the focused machine gate below
+    # can require all three runtime/discovery tests. The default test lane stays
+    # machine-free and still proves the package without a runtime.
     env:
-      MULLION_REQUIRE_WEBVIEW2: "1"
+      CGO_ENABLED: "0"
     steps:
       # Full history, not the default shallow clone: leak-scan below scans commit
       # messages (git log), which a fetch-depth=1 checkout truncates to the single
@@ -63,10 +62,13 @@ jobs:
       - run: go vet ./...
       - run: go test -count=1 ./...
 
-      # Execute the production runtime/export diagnostic directly as well as
-      # the machine tests. This still fails if a cached or accidentally removed
-      # test would otherwise turn the required WebView2 check green.
-      - run: go test -count=1 ./internal/webview2 -run '^(TestFindRuntimeOnThisMachine|TestRuntimeExportsTheEntryPointWeCallDirectly)$'
+      # Execute the production runtime/export checks in their explicit machine
+      # gate. The regex names exactly the three gated tests; the ordinary suite
+      # above leaves them skipped before discovery when this env is absent.
+      - name: required WebView2 runtime/export machine checks
+        env:
+          MULLION_REQUIRE_WEBVIEW2: "1"
+        run: go test -count=1 ./internal/webview2 -run '^(TestFindRuntimeOnThisMachine|TestRuntimeExportsTheEntryPointWeCallDirectly|TestDescribeRuntimeCannotBeSilentAboutTheExport)$'
       - run: go run ./cmd/mullion doctor
       - run: node scripts/test-bridge.mjs
 
@@ -80,6 +82,9 @@ jobs:
         run: |
           $env:GOARCH = '386'
           go test -count=1 ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture'
+          if ($LASTEXITCODE -ne 0) {
+            throw "unsupported Windows/386 architecture tests failed with exit code $LASTEXITCODE"
+          }
           $doctorOut = Join-Path $env:RUNNER_TEMP "mullion-doctor-$PID.out"
           $doctorErr = Join-Path $env:RUNNER_TEMP "mullion-doctor-$PID.err"
           $doctorProcess = Start-Process -FilePath go -ArgumentList @('run', './cmd/mullion', 'doctor') -Wait -PassThru -NoNewWindow -RedirectStandardOutput $doctorOut -RedirectStandardError $doctorErr
@@ -97,6 +102,8 @@ jobs:
       # The Host runs timers on their own goroutines; the race detector is not
       # ceremony here.
       - run: go test -count=1 -race ./...
+        env:
+          CGO_ENABLED: "1"
 
       # Plain `go build ./...` never compiles a tagged file. Without an explicit
       # uncached build/test pair for each tag, diagnostic builds rot silently.
@@ -107,16 +114,16 @@ jobs:
       - run: go build -tags mullion_script_completion_delay_diag ./...
       - run: go test -count=1 -tags mullion_script_completion_delay_diag ./...
 
-  # Keep the supported process ABI visible as its own singleton lane. Like the
-  # Windows matrix, it requires runtime/export checks without proving WebView2
-  # hosting or rendering; its name makes target drift explicit.
+  # Keep the supported process ABI visible as its own singleton lane. Its full
+  # suite stays machine-free; the focused step below is the explicit
+  # runtime/export gate without proving WebView2 hosting or rendering.
   windows-x64:
     name: windows x64
     runs-on: windows-latest
     env:
+      CGO_ENABLED: "0"
       GOOS: windows
       GOARCH: amd64
-      MULLION_REQUIRE_WEBVIEW2: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -126,11 +133,17 @@ jobs:
         run: go build ./...
       - name: test Windows/x64
         run: go test -count=1 ./...
+      - name: required WebView2 runtime/export machine checks
+        env:
+          MULLION_REQUIRE_WEBVIEW2: "1"
+        run: go test -count=1 ./internal/webview2 -run '^(TestFindRuntimeOnThisMachine|TestRuntimeExportsTheEntryPointWeCallDirectly|TestDescribeRuntimeCannotBeSilentAboutTheExport)$'
 
   portable:
     # Non-Windows stubs and unsupported Windows architectures stay
     # compile-portable. These builds are not runtime-support claims; the Windows
     # lanes check runtime discovery and the required export, not hosting/rendering.
+    env:
+      CGO_ENABLED: "0"
     runs-on: ubuntu-latest
     # Same two-ended range as the windows job, for the same reason (0033).
     strategy:
@@ -142,10 +155,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go }}
-
       - run: go build ./...
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -count=1 ./...
       - run: node scripts/test-bridge.mjs
       - name: build supported Windows runtime target (amd64)
         run: GOOS=windows GOARCH=amd64 go build ./...

@@ -1,10 +1,11 @@
 # Sources for the Snap and Non-Client Region field report
 
 The source list for [snap-and-nonclient-region.md](./snap-and-nonclient-region.md),
-moved out of that document verbatim — same numbering, same grouping, same markers.
+moved out of that document with the same numbering and grouping; the markers
+below define each source's status.
 
 `[P]` primary (Microsoft Learn, official repos, specs) · `[F]` secondary (issues,
-forums, community write-ups).
+forums, community write-ups) · `[O]` orientation-only (not evidence).
 
 **WebView2 non-client regions**
 
@@ -42,7 +43,7 @@ forums, community write-ups).
 
 **Custom frames done natively (Terminal / Chromium)**
 
-23. `[P]` [Windows Terminal — window features & `NonClientIslandWindow`](https://deepwiki.com/microsoft/terminal/6.2-window-features-and-customization)
+23. `[O]` [Windows Terminal — window features & `NonClientIslandWindow`](https://deepwiki.com/microsoft/terminal/6.2-window-features-and-customization)
 24. `[P]` [Chromium — `glass_browser_frame_view.cc` (caption buttons)](https://codereview.chromium.org/2348073002/diff/80001/chrome/browser/ui/views/frame/glass_browser_frame_view.cc)
 25. `[P]` [Chromium — top window border with a custom title bar](https://codereview.chromium.org/2381283003/diff/120001/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_win.cc)
 26. `[P]` [Chromium — views windowing design doc](https://www.chromium.org/developers/design-documents/views-windowing/)
@@ -70,4 +71,4 @@ forums, community write-ups).
 39. `[F]` [What is the role of XAML Islands in WinUI 3? — WindowsAppSDK discussion](https://github.com/microsoft/WindowsAppSDK/discussions/465)
 40. `[F]` [asklar/xaml-islands + CppXAML helpers](https://github.com/asklar/xaml-islands)
 
-> Last updated: 2026-07-20 | Editor: Claude (Fable 5) | Change: add the document footer this file was missing (agents/notes.md, Mechanics); its sibling snap-and-nonclient-region.md was given one in an earlier sweep and this list was skipped.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: qualify moved source-list marker provenance and classify DeepWiki as orientation-only.

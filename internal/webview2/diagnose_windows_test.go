@@ -4,17 +4,17 @@ package webview2
 
 import "testing"
 
-// DescribeRuntime runs the real discovery and really loads the DLL, so like the
-// other two machine-dependent tests in this package it skips when there is
-// nothing installed to look at.
+// DescribeRuntime performs real runtime discovery and client-DLL export lookup.
+// It shares the explicit MULLION_REQUIRE_WEBVIEW2=1 gate with the other machine
+// checks, so the default suite skips before any registry, filesystem, or DLL
+// access; a required runtime/export that is absent fails the machine lane.
 //
-// What it locks is the contract the doctor prints, not the presence of the
-// export: TestRuntimeExportsTheEntryPointWeCallDirectly already fails loudly if
-// Microsoft removes it, and a second test failing for the same reason would
-// teach nobody anything. This one locks that the *report* cannot be silent - a
-// report that names a runtime must name the binary it would load, must say how
-// it was found, and must answer the export question one way or the other.
+// What it locks is the contract the doctor prints: a report that names a
+// runtime must name the binary it would load, say how it was found, and answer
+// the export question without a silent success.
 func TestDescribeRuntimeCannotBeSilentAboutTheExport(t *testing.T) {
+	requireWebView2Machine(t)
+
 	report, err := DescribeRuntime()
 
 	// Even a failed discovery has to name the export it was going to look for.
@@ -23,7 +23,7 @@ func TestDescribeRuntimeCannotBeSilentAboutTheExport(t *testing.T) {
 		t.Fatalf("ExportName = %q, want %q even when discovery fails", report.ExportName, createEnvironmentExport)
 	}
 	if err != nil {
-		t.Skipf("no WebView2 runtime installed: %v", err)
+		t.Fatalf("%s=1 but no WebView2 runtime is available: %v", requireWebView2Env, err)
 	}
 
 	if report.Folder == "" || report.ClientDLL == "" {
@@ -38,8 +38,7 @@ func TestDescribeRuntimeCannotBeSilentAboutTheExport(t *testing.T) {
 		if report.ExportProblem == "" {
 			t.Fatal("the export was not resolved and the report says nothing about why: that is the silent failure this package exists to prevent")
 		}
-		t.Logf("this runtime does not export %s: %s", createEnvironmentExport, report.ExportProblem)
-		return
+		t.Fatalf("%s=1 but the required export is missing: %s", requireWebView2Env, report.ExportProblem)
 	}
 	if report.ExportProblem != "" {
 		t.Errorf("ExportFound is true but ExportProblem = %q; a report cannot say both", report.ExportProblem)

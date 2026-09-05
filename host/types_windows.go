@@ -103,7 +103,8 @@ const (
 	scMaximize = 0xF030
 	scRestore  = 0xF120
 
-	pmRemove = 0x0001
+	pmNoRemove = 0x0000
+	pmRemove   = 0x0001
 
 	dwmwaExtendedFrameBounds     = 9
 	dwmwaWindowCornerPreference  = 33

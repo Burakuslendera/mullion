@@ -23,7 +23,7 @@ These files are that record.
 | --- | --- | --- |
 | [0001](./0001-own-webview2-com-layer.md) | The WebView2 COM layer is written here, not taken from a third-party binding | Accepted |
 | [0002](./0002-no-local-port.md) | Assets are served over an in-process virtual host, never a local port | Accepted, guard scoped by 0012 and 0030 |
-| [0003](./0003-keep-caption-bits.md) | The frameless frame keeps `WS_CAPTION` and `WS_SYSMENU` | Accepted |
+| [0003](./0003-keep-caption-bits.md) | The frameless frame keeps `WS_CAPTION` and `WS_SYSMENU` | Superseded by [0048](./0048-caption-bits-before-exposure.md) for the creation-time/lifetime boundary; accepted for the five-bit steady-state invariant |
 | [0004](./0004-host-answers-window-controls.md) | The host answers the window control methods; `Config.Bridge` is optional | Accepted |
 | [0005](./0005-queryinterface-not-version.md) | Capability detection is `QueryInterface`, never a version compare | Accepted |
 | [0006](./0006-tests-stay-headless.md) | No test creates a window | Superseded by [0039](./0039-public-run-preflight-stays-headless.md) |
@@ -67,6 +67,8 @@ These files are that record.
 | [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) | Malformed HTTP userinfo is never emitted by diagnostics | Accepted; refines 0025 direct URL fallback, 0028 `Message` unsafe open-authority control output, and 0035 frontend `Diagnostic` output without superseding them |
 | [0045](./0045-required-document-created-script-registration-barrier.md) | Required document-created scripts complete before first navigation and availability | Accepted; extends [0016](./0016-single-flight-embed.md) |
 | [0046](./0046-logger-never-runs-under-a-host-mutex.md) | The Logger never runs while holding a host-owned non-reentrant mutex | Accepted |
+| [0047](./0047-verification-evidence-boundaries.md) | Deterministic contracts require focused headless regressions; only approved irreducible visual/window-manager/shell/compositor residuals use live evidence under a closed native-fixture boundary | Accepted |
+| [0048](./0048-caption-bits-before-exposure.md) | Successful caption normalization completes before exposure, not in the initial request | Accepted; supersedes only the creation-time/lifetime boundary in [0003](./0003-keep-caption-bits.md) |
 
 ## When to write one
 
@@ -108,4 +110,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0046 as the no-Logger-under-host-mutex invariant from issue #140.
+> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5.6) | Change: index 0048's successful-normalization contract and mark 0003's creation-time/lifetime boundary as limitedly superseded.

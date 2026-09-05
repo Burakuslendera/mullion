@@ -46,31 +46,60 @@ type client struct {
 	path          string
 }
 
-// The DLL is loaded once and never freed. Unloading it is not supported: it has
-// spawned browser processes, registered COM classes and installed hooks that
-// outlive any FreeLibrary we could call.
+// clientLoaderEffects are the process-global loader operations used by loadClient.
+// Passing the table by value keeps the production defaults explicit while letting
+// tests exercise cleanup without loading or unloading a real module.
+type clientLoaderEffects struct {
+	loadLibrary    func(string) (windows.Handle, error)
+	getProcAddress func(windows.Handle, string) (uintptr, error)
+	freeLibrary    func(windows.Handle) error
+}
+
+func loadClientLibrary(path string) (windows.Handle, error) {
+	return windows.LoadLibraryEx(path, 0, loadWithAlteredSearchPath)
+}
+
+func loadClientExport(handle windows.Handle, name string) (uintptr, error) {
+	return windows.GetProcAddress(handle, name)
+}
+
+func freeClientLibrary(handle windows.Handle) error {
+	return windows.FreeLibrary(handle)
+}
+
+// A successfully loaded DLL is loaded once and never freed. Unloading it is
+// not supported: it has spawned browser processes, registered COM classes and
+// installed hooks that outlive any FreeLibrary we could call.
 var (
 	clientsMu sync.Mutex
 	clients   = make(map[string]*client)
 )
 
 func loadClient(path string) (*client, error) {
+	return loadClientWithEffects(path, clientLoaderEffects{
+		loadLibrary:    loadClientLibrary,
+		getProcAddress: loadClientExport,
+		freeLibrary:    freeClientLibrary,
+	})
+}
+
+func loadClientWithEffects(path string, effects clientLoaderEffects) (*client, error) {
 	clientsMu.Lock()
 	defer clientsMu.Unlock()
 	if loaded, ok := clients[path]; ok {
 		return loaded, nil
 	}
 
-	handle, err := windows.LoadLibraryEx(path, 0, loadWithAlteredSearchPath)
+	handle, err := effects.loadLibrary(path)
 	if err != nil {
 		return nil, fmt.Errorf("webview2: loading %s: %w", clientDLL, err)
 	}
-	address, err := windows.GetProcAddress(handle, createEnvironmentExport)
+	address, err := effects.getProcAddress(handle, createEnvironmentExport)
 	if err != nil {
 		// The runtime is present but does not export the entry point we need.
 		// That means a runtime old enough - or repackaged oddly enough - that
 		// it cannot be driven without WebView2Loader.dll.
-		_ = windows.FreeLibrary(handle)
+		_ = effects.freeLibrary(handle)
 		return nil, fmt.Errorf("webview2: %s does not export %s: %w", clientDLL, createEnvironmentExport, err)
 	}
 	loaded := &client{handle: handle, createEnviron: ComProc(address), path: path}

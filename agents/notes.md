@@ -74,6 +74,11 @@ a trap: it reads as authoritative and there is no way to discover that it is not
   restated here: two copies of a rule is how one of them goes stale.
 - Filenames are ASCII and topic-based. No dates in filenames — a date belongs in a
   heading or a footer, where it can be corrected.
+- **Verification-record filename exception:** only under
+  `docs/verification/records/`, an immutable monthly evidence partition may use
+  the ISO `YYYY-MM.md` filename. Its observations, hashes and nonclaims are
+  append-only and are never silently rewritten; corrections are new entries.
+  No other date-named file is permitted by this exception.
 - When a file moves, update every relative link that pointed at it, then search the
   tree for the old path as a bare string. Delete the directory it left behind if it
   is now empty.
@@ -137,4 +142,4 @@ cite the evidence, and deleting a rule or touching the protected core needs a
 human. If you are not sure which tier applies, it is the highest one.
 
 
-> Last updated: 2026-08-17 | Editor: OpenAI (GPT-5.6) | Change: retarget moved file-size and tiered rule-authority links to their continuation.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: permit only immutable ISO monthly verification partitions under docs/verification/records.

@@ -136,7 +136,7 @@ The headless boundary does not prove the cost or behavior of a live `HWND`, DWM,
 monitor topology, WebView child hit routing, tooltip visuals, or shell cursor
 messages. Those remain live verification obligations in
 [`verification.md`](./verification.md) and its
-[continuation records](./verification-records.md).
+[`continuation records`](./verification/records.md).
 
 ## References
 
@@ -146,4 +146,4 @@ messages. Those remain live verification obligations in
 - [`docs/decisions/0041-wm-nchittest-reader-gates.md`](./decisions/0041-wm-nchittest-reader-gates.md)
 - [`docs/decisions/0019-maximized-hittest-stays-in-process.md`](./decisions/0019-maximized-hittest-stays-in-process.md)
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: name the frontend resize fallback test boundary and its own-key/non-consuming negative contract.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point live verification records to the canonical records index.

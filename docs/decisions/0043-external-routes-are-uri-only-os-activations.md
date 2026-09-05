@@ -253,10 +253,10 @@ handling/cancellation.
   unattributed. The probe made one route, used no remote target, and closed and
   cleaned its owned resources. It did not test POST, a rate flood, or browser
   profile/session selection.
-- [Verification records](../verification-records/2026-08.md#2026-08-records) preserve the
+- [Verification records](../verification/records/2026-08.md#2026-08-records) preserve the
   malformed-profile first run as inconclusive and the corrected run as the sole
   behavioral evidence. [Issue #75](https://github.com/Burakuslendera/mullion/issues/75)
   owns the original consequence inventory and historical corrections; this
   decision, not the tracker text, owns the accepted current routing contract.
 
-> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: repoint the 2026-08 verification-records link at the verification-records/ folder.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point August evidence to the canonical verification record.

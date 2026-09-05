@@ -30,10 +30,10 @@ pull-request mechanics. The rules below are additional, not alternative.
 | What was already tried, and why was it abandoned? | [docs/lessons-and-dead-ends.md](./docs/lessons-and-dead-ends.md) |
 | Which logging approaches were tried and abandoned? | [docs/logging-dead-ends.md](./docs/logging-dead-ends.md) |
 | How do I prove a change actually works? | [docs/verification.md](./docs/verification.md) |
-| Where are dated automated and live verification records? | [docs/verification-records.md](./docs/verification-records.md) |
-| Where is Issue #135's paired exact-source live acceptance? | [docs/issue-135-paired-live-verification.md](./docs/issue-135-paired-live-verification.md) |
-| Which diagnostic builds and environment switches are allowed? | [docs/diagnostic-builds-and-environment-switches.md](./docs/diagnostic-builds-and-environment-switches.md) |
-| What makes scripted GUI verification lie? | [docs/gui-verification-traps.md](./docs/gui-verification-traps.md) |
+| Where are dated automated and live verification records? | [docs/verification/records.md](./docs/verification/records.md) |
+| Where is Issue #135's paired exact-source live acceptance? | [docs/verification/records/issues/issue-135-paired-live.md](./docs/verification/records/issues/issue-135-paired-live.md) |
+| Which diagnostic builds and environment switches are allowed? | [docs/verification/diagnostics.md](./docs/verification/diagnostics.md) |
+| What makes scripted GUI verification lie? | [docs/verification/gui-traps.md](./docs/verification/gui-traps.md) |
 | What does a bug report have to contain? | [docs/bug-reports.md](./docs/bug-reports.md) |
 | Build, test, style, pull-request expectations | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Frame and visual acceptance rules | [agents/window.md](./agents/window.md) |
@@ -50,7 +50,7 @@ failed; re-deriving them costs a session and produces nothing.
 ## Orientation
 
 Before touching code, build a map of the repository. If you have network access,
-**start at [DeepWiki](https://deepwiki.com/Burakuslendera/mullion)** — it indexes
+**[DeepWiki](https://deepwiki.com/Burakuslendera/mullion) MAY be used for orientation** — it indexes
 this repository and answers "where does X live" and "what calls what" in seconds,
 which is faster than reading twenty files to find out that the answer was in two
 of them.
@@ -112,8 +112,11 @@ them, never a prerequisite to working here.
   rejected, a permanent cost accepted, an invariant imposed. Not for a bug fix or
   a behaviour-preserving refactor. [docs/decisions/](./docs/decisions/) has the
   template and the rule for superseding one.
-- **Every behaviour fix is locked by a test**, and the report states what was
-  tested, what passed, and — explicitly — what was left uncovered.
+- **Every behaviour fix has a focused headless regression for every
+  deterministic observable contract.** Only an approved irreducibly visual,
+  window-manager, shell, or compositor residual may substitute applicable live
+  evidence; report the partition, approval, evidence, uncovered boundary and
+  uncertainty. See [the evidence boundary](./docs/verification/evidence.md).
 - **No test creates a window.** The headless invariant in
   [CONTRIBUTING.md](./CONTRIBUTING.md) is a hard constraint on design, not a
   testing convenience.
@@ -162,12 +165,14 @@ override. If it is empty, classify your own work and proceed.
 
 ## Test and verification reporting
 
-Every session that changes behaviour ends with a report that separates four things
-and never blurs them: what was **tested automatically** (which tests, which commands
-from the verification ladder); what was **verified live** (which items of the
-checklist in [docs/verification.md](./docs/verification.md), on what display setup);
-what was **not covered**, and why; and what remains **uncertain**, with a label from
-[agents/policy.md](./agents/policy.md).
+Every session that changes behaviour reports the four evidence classes without
+blurring them: automated/headless contracts and commands; runtime/live and
+manual/human observations; scripted-GUI observations when used; exact
+not-covered boundaries; and remaining uncertainty, labelled from
+[agents/policy.md](./agents/policy.md). The
+[evidence boundary](./docs/verification/evidence.md) owns the proof ceilings and
+report schema; the applicable procedure lives in
+[docs/verification.md](./docs/verification.md).
 
 The last item is not optional politeness. A later agent who cannot see what you
 skipped will either re-derive it at cost, or trust it wrongly.
@@ -182,8 +187,8 @@ in [agents/rule-maintenance.md](./agents/rule-maintenance.md).
 Do not describe something you have not run as working. Do not smooth over a gap
 because the session is nearly over. Label what is uncertain, remove the label when
 you have verified it, and say plainly when you do not know. Constructive criticism
-of a decision — including one you were asked to implement — is expected, not
-tolerated. The full rules are in [agents/policy.md](./agents/policy.md).
+of a decision — including one you were asked to implement — is expected, not merely tolerated. The full
+rules are in [agents/policy.md](./agents/policy.md).
 
 Every Markdown document except the repository-root `README.md` ends with exactly
 one current edit footer, as defined in [agents/notes.md](./agents/notes.md).
@@ -191,4 +196,4 @@ Replace that footer when editing; never append another footer or adopt another
 editor's name. Git history preserves earlier signatures.
 
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: route Issue #135 paired live evidence from the repository entry point.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: route moved verification owners and require contract-partitioned evidence without weakening the no-window invariant.

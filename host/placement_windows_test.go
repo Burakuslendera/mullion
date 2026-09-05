@@ -12,7 +12,7 @@ import (
 // monitor's DPI, and the window is centered in the monitor's work area - not
 // its full rect, which would sit the bottom edge under the taskbar. These
 // tests pin the pure math; which monitor is asked, and what the window really
-// looks like there, is the live checklist's half (docs/verification.md).
+// looks like there, is the live checklist's half (docs/verification/acceptance-checklist.md#manual-acceptance-checklist).
 
 func TestCenteredPlacementIsIdentityAt96DPI(t *testing.T) {
 	work := rect{Left: 0, Top: 0, Right: 1920, Bottom: 1020}

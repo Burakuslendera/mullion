@@ -214,7 +214,7 @@ start B, then completion A. It does not guarantee that A completes with
 stale-ID result and availability cost belong to
 [decision 0024](./decisions/0024-benign-abort-in-process.md); issue #87's bounded
 live observations are recorded once in the
-[verification records](./verification-records/2026-08.md#2026-08-records).
+[verification records](./verification/records/2026-08.md#2026-08-records).
 
 ### Completion and embed lifetime
 
@@ -324,7 +324,8 @@ registration failure reaches no later navigation, readiness, or watchdog. The
 headless seam performs no real Runtime, `HWND`, or message-pump work. It does
 not prove actual Runtime ownership, callback scheduling, controller-close
 disposition, or first-document rendering. A supported Runtime still needs the
-live first-navigation bridge/frame observation in [verification.md](./verification.md).
+live first-navigation bridge/frame observation in
+[the acceptance checklist](./verification/acceptance-checklist.md#manual-acceptance-checklist).
 
 ### Reporting follows return ownership
 
@@ -340,4 +341,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: repoint the 2026-08 verification-records link at the verification-records/ folder.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point verification records and live acceptance to canonical child documents.

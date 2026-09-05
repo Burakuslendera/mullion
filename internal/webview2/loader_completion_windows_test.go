@@ -15,10 +15,23 @@ import (
 // Lifetime tests for the loader's completion handlers. The first is about the
 // handler's own reference count; the rest are about the result it carries:
 // invoked() AddRefs the borrowed result before parking it in the handler's
-// one-slot buffer for waitFor to consume, and each test asks who drops that
-// reference when the normal hand-off breaks. The completions are driven directly
-// - invoked is exactly what the runtime's Invoke trampoline calls - against fake
-// IUnknowns, so no WebView2 runtime and no window are involved.
+// one-slot buffer, and each test asks who drops that reference when the normal
+// hand-off breaks. The completions are driven directly - invoked is exactly
+// what the runtime's Invoke trampoline calls - against fake IUnknowns, so no
+// WebView2 runtime and no window are involved.
+
+func receiveLoaderCompletion(t *testing.T, handler *completedHandler) completion {
+	t.Helper()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case result := <-handler.done:
+		return result
+	case <-timer.C:
+		t.Fatal("completion was not published")
+		return completion{}
+	}
+}
 
 func TestCompletionVtblLayout(t *testing.T) {
 	var v completionVtbl
@@ -249,9 +262,9 @@ func TestAbandonDrainsABufferedCompletion(t *testing.T) {
 }
 
 // TestCompletionDeliveredToTheWaiterKeepsTheReference is the success-path
-// regression guard: with a live waiter the reference must survive the hand-off
-// - an over-eager release here would free the controller the caller is about
-// to use.
+// regression guard: consuming the buffered result directly must preserve the
+// hand-off reference - an over-eager release here would free the controller the
+// caller is about to use.
 func TestCompletionDeliveredToTheWaiterKeepsTheReference(t *testing.T) {
 	handler := newTestCompletedHandler(t)
 	object, state := newFakeUnknown(t)
@@ -259,12 +272,9 @@ func TestCompletionDeliveredToTheWaiterKeepsTheReference(t *testing.T) {
 	if hr := invoked(handler.this, sOK, uintptr(unsafe.Pointer(object))); hr != sOK {
 		t.Fatalf("invoked = %#x, want S_OK", hr)
 	}
-	result, err := waitFor(handler.done, time.Second, "the test completion")
-	if err != nil {
-		t.Fatalf("waitFor err = %v, want nil", err)
-	}
+	result := receiveLoaderCompletion(t, handler)
 	if got := uintptr(unsafe.Pointer(result.result)); got != uintptr(unsafe.Pointer(object)) {
-		t.Fatalf("waitFor delivered %#x, want the fake object %#x", got, uintptr(unsafe.Pointer(object)))
+		t.Fatalf("buffer delivered %#x, want the fake object %#x", got, uintptr(unsafe.Pointer(object)))
 	}
 	if state.addRefs != 1 || state.releases != 0 {
 		t.Fatalf("addRefs/releases = %d/%d, want 1/0: ownership passes to the waiter", state.addRefs, state.releases)
@@ -273,8 +283,8 @@ func TestCompletionDeliveredToTheWaiterKeepsTheReference(t *testing.T) {
 }
 
 // TestLateCompletionAfterSuccessfulWaitReleasesTheResult covers the other
-// double-fire ordering: waitFor drains the first result, then abandon seals
-// the completed handler before a forbidden late Invoke arrives.
+// double-fire ordering: the direct buffered read consumes the first result,
+// then abandon seals the completed handler before a forbidden late Invoke arrives.
 func TestLateCompletionAfterSuccessfulWaitReleasesTheResult(t *testing.T) {
 	handler := newTestCompletedHandler(t)
 	object, state := newFakeUnknown(t)
@@ -282,10 +292,7 @@ func TestLateCompletionAfterSuccessfulWaitReleasesTheResult(t *testing.T) {
 	if hr := invoked(handler.this, sOK, uintptr(unsafe.Pointer(object))); hr != sOK {
 		t.Fatalf("first invoked = %#x, want S_OK", hr)
 	}
-	result, err := waitFor(handler.done, time.Second, "the test completion")
-	if err != nil {
-		t.Fatalf("waitFor err = %v, want nil", err)
-	}
+	result := receiveLoaderCompletion(t, handler)
 	result.result.Release()
 	handler.abandon()
 

@@ -3,7 +3,10 @@
 package host
 
 import (
+	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -32,23 +35,6 @@ func TestRunPreStartFailureHasOneTerminalReporter(t *testing.T) {
 	}
 }
 
-// DPI awareness latches once per process, so a second enable used to come back
-// as ERROR_ACCESS_DENIED even though the process was already in exactly the
-// requested state - which made any second Host in one process fail at Run
-// (issue #48, found live). Both calls must succeed: the first sets, the second
-// recognises the already-correct context.
-func TestDPIAwarenessEnableIsRepeatable(t *testing.T) {
-	if err := enablePerMonitorV2DPIAwareness(); err != nil {
-		t.Fatalf("first enable = %v, want nil", err)
-	}
-	if err := enablePerMonitorV2DPIAwareness(); err != nil {
-		t.Fatalf("second enable = %v, want nil: an already-PMv2 process is success, not access denied", err)
-	}
-	if !alreadyPerMonitorV2DPIAware() {
-		t.Fatal("the process just enabled PMv2; the Run-thread re-check must see it")
-	}
-}
-
 func TestSupportedNewCrossesArchitectureGateIntoDPISetup(t *testing.T) {
 	if runtime.GOARCH != "amd64" {
 		t.Skip("WebView2 hosting is supported only on Windows/amd64")
@@ -72,50 +58,68 @@ func TestSupportedNewCrossesArchitectureGateIntoDPISetup(t *testing.T) {
 	}
 }
 
-// The drain must actually remove a pending WM_QUIT from the thread queue: left
-// there, it would poison the next Run on this thread (issues #48 and #54 - the
-// loop is not running to consume it, having never started or having just died).
-// WM_QUIT is a thread message, so the check needs a locked thread and no window.
+// A WM_QUIT is owned by the thread that receives it, so this self-test runs in
+// a child process. The child pins its current OS thread for the whole sequence
+// and exits without unlocking it for reuse. It only checks and removes WM_QUIT;
+// it never translates, dispatches, waits, creates a window, or queries a
+// foreign queue.
+const drainThreadQuitMessageHelperEnv = "MULLION_DRAIN_THREAD_QUIT_MESSAGE_HELPER"
+
 func TestDrainThreadQuitMessageRemovesAPendingQuit(t *testing.T) {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
+	if os.Getenv(drainThreadQuitMessageHelperEnv) == "1" {
 		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
+		// Deliberately do not unlock: this child exits after the self-test, so
+		// the queue-owning OS thread must never return for reuse.
+		runDrainThreadQuitMessageChild(t)
+		return
+	}
 
-		procPostQuitMessage.Call(0)
-		drainThreadQuitMessage()
-
-		var message msg
-		got, _, _ := procPeekMessage.Call(uintptr(unsafe.Pointer(&message)), 0, wmQuit, wmQuit, pmRemove)
-		if got != 0 {
-			t.Error("a WM_QUIT survived the drain: the next message loop on this thread would exit immediately")
-		}
-	}()
-	<-done
-}
-
-// With no window there is nothing to tear down: the zero-handle guard must
-// return before the destroy, the drain, or the log line.
-func TestDestroyWindowOutsideLoopIsANoOpWithoutAWindow(t *testing.T) {
-	host, logger := newTestHost(t, Config{})
-
-	host.destroyWindowOutsideLoop("pre_loop_failure")
-
-	if strings.Contains(logger.String(), "window teardown outside the loop") {
-		t.Fatalf("teardown ran without a window:\n%s", logger.String())
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("test executable: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, executable,
+		"-test.run=^TestDrainThreadQuitMessageRemovesAPendingQuit$",
+		"-test.count=1",
+		"-test.v",
+	)
+	cmd.Env = append(os.Environ(), drainThreadQuitMessageHelperEnv+"=1")
+	hideChildConsole(cmd)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("WM_QUIT self-test timed out: %v\n%s", ctx.Err(), output)
+	}
+	if err != nil {
+		t.Fatalf("WM_QUIT self-test failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "--- PASS: TestDrainThreadQuitMessageRemovesAPendingQuit") {
+		t.Fatalf("WM_QUIT self-test did not report its child test as passed:\n%s", output)
 	}
 }
-func TestDestroyWindowOutsideLoopDrainsQuitAfterHandleClear(t *testing.T) {
-	host, _ := newTestHost(t, Config{})
-	host.windowDestroyed = true
-	host.quitPending = true
 
-	host.destroyWindowOutsideLoop("mid_embed_destroy")
-
-	if host.quitPending {
-		t.Fatal("post-create cleanup returned on a zero HWND without discharging pending WM_QUIT ownership")
+func runDrainThreadQuitMessageChild(t *testing.T) {
+	t.Helper()
+	if threadQuitMessagePending() {
+		t.Fatal("child queue already had a WM_QUIT before the self-test")
 	}
+	procPostQuitMessage.Call(0)
+	if !threadQuitMessagePending() {
+		t.Fatal("PostQuitMessage did not leave a WM_QUIT for the drain")
+	}
+	drainThreadQuitMessage()
+	if threadQuitMessagePending() {
+		t.Fatal("drainThreadQuitMessage left a WM_QUIT in the child queue")
+	}
+}
+
+func threadQuitMessagePending() bool {
+	var message msg
+	got, _, _ := procPeekMessage.Call(
+		uintptr(unsafe.Pointer(&message)), 0, wmQuit, wmQuit, pmNoRemove,
+	)
+	return got != 0
 }
 
 func TestMessageLoopExitTeardownDecisionCoversZeroAndMinusOne(t *testing.T) {

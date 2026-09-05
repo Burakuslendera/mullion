@@ -321,12 +321,15 @@ in §6. Choose one.
 
 Two independent things go wrong here, and they are easy to confuse with each other.
 
+See [decision 0048](./decisions/0048-caption-bits-before-exposure.md) for the hidden timing and successful-call boundary; the local Snap/system-menu claim follows.
+
 **(a) The menu does not appear at all.** Right-clicking an `app-region: drag` region
 raises the system menu only if the window still has a system menu. If your window-style
 profile strips `WS_SYSMENU` (a very common thing to do when going frameless, since it
 also removes the caption buttons), `GetSystemMenu` has nothing to show and the
-right-click silently does nothing. **Keep `WS_SYSMENU` in the style and remove the
-caption visually via `WM_NCCALCSIZE` instead.** The same reasoning applies to
+right-click silently does nothing. **After successful normalization, keep
+`WS_SYSMENU` in the style and remove the caption visually via `WM_NCCALCSIZE`
+instead.** The same reasoning applies to
 `WS_MAXIMIZEBOX`/`WS_MINIMIZEBOX`/`WS_THICKFRAME`: those bits also gate the *enabled
 state* of the corresponding menu items, and standard `WM_SYSCOMMAND` handling depends
 on them.
@@ -389,7 +392,8 @@ For the headless-versus-live verification boundary, see [Snap testing boundary](
 
 ## 11. Sources
 
-The full source list — 40 links, grouped by topic and marked `[P]` primary /
-`[F]` secondary — lives in [snap-sources.md](./snap-sources.md).
+The full source list — grouped by topic and marked `[P]` primary /
+`[F]` secondary / `[O]` orientation-only (not evidence) — lives in
+[snap-sources.md](./snap-sources.md).
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: separate the synchronous non-client setting from advisory tab-strip registration and preserve the classic first-document fallback.
+> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5.6) | Change: defer hidden timing, successful-call, Logger and failure-path semantics to ADR 0048 while retaining the local Snap/system-menu claim.

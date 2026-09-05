@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -115,15 +116,155 @@ func TestLeakScanHasNoBasenameOrFilenameEscape(t *testing.T) {
 	}
 }
 
-func TestLeakScanFailsWhenDeclaredScopeCannotBeInspected(t *testing.T) {
-	t.Run("missing tracked file", func(t *testing.T) {
-		root := newLeakScanRepository(t, map[string][]byte{"missing.txt": []byte("clean\n")})
-		if err := os.Remove(filepath.Join(root, "missing.txt")); err != nil {
-			t.Fatalf("remove tracked file: %v", err)
+func TestLeakScanSkipsBenignUnstagedDeletedFilesAndScansPresentFiles(t *testing.T) {
+	leak := "C:/Users/" + "private-user/secret\n"
+	root := newLeakScanRepository(t, map[string][]byte{
+		"deleted.txt": []byte("clean deleted content\n"),
+		"present.txt": []byte("clean\n"),
+	})
+	if err := os.Remove(filepath.Join(root, "deleted.txt")); err != nil {
+		t.Fatalf("remove tracked file: %v", err)
+	}
+	result := runLeakScan(t, root)
+	if result.exitCode != 0 || !strings.Contains(result.output, "clean within configured scope") {
+		t.Fatalf("benign deleted tracked file prevented a clean verdict (exit %d):\n%s", result.exitCode, result.output)
+	}
+	for _, fragment := range []string{"tracked text files scanned: 2", "worktree copies skipped (ordinary deletion): 1"} {
+		if !strings.Contains(result.output, fragment) {
+			t.Fatalf("clean verdict omitted %q:\n%s", fragment, result.output)
 		}
-		assertLeakScanFailed(t, runLeakScan(t, root))
+	}
+
+	writeLeakScanFiles(t, root, map[string][]byte{
+		"present.txt": []byte(leak),
+	})
+	result = runLeakScan(t, root)
+	assertLeakScanFailed(t, result)
+	if !strings.Contains(result.output, "present.txt") {
+		t.Fatalf("present tracked finding was not reported:\n%s", result.output)
+	}
+
+	t.Run("staged secret hidden by clean worktree", func(t *testing.T) {
+		root := newLeakScanRepository(t, map[string][]byte{"index-secret.txt": []byte("clean\n")})
+		writeLeakScanFiles(t, root, map[string][]byte{"index-secret.txt": []byte(leak)})
+		gitRun(t, root, "add", "index-secret.txt")
+		writeLeakScanFiles(t, root, map[string][]byte{"index-secret.txt": []byte("clean again\n")})
+		result := runLeakScan(t, root)
+		assertLeakScanFailed(t, result)
+		if !strings.Contains(result.output, "index-secret.txt") || !strings.Contains(result.output, "index") {
+			t.Fatalf("staged index content was not identified:\n%s", result.output)
+		}
 	})
 
+	t.Run("skip-worktree missing path fails closed", func(t *testing.T) {
+		root := newLeakScanRepository(t, map[string][]byte{"sparse.txt": []byte("clean\n")})
+		gitRun(t, root, "update-index", "--skip-worktree", "sparse.txt")
+		if err := os.Remove(filepath.Join(root, "sparse.txt")); err != nil {
+			t.Fatalf("remove skip-worktree file: %v", err)
+		}
+		result := runLeakScan(t, root)
+		assertLeakScanFailed(t, result)
+		if !strings.Contains(result.output, "sparse.txt") ||
+			!strings.Contains(result.output, "skip-worktree") {
+			t.Fatalf("skip-worktree omission was not rejected as ambiguous:\n%s", result.output)
+		}
+	})
+}
+
+func TestLeakScanAllowanceCountsStayWithinEachRevision(t *testing.T) {
+	drive := "C:/Users/" + "jane/secret"
+	unc := strings.Repeat(`\`, 2) + "ja" + "ne" + `\share\secret`
+	root := newLeakScanRepository(t, map[string][]byte{
+		"host/webview_windows_test.go": []byte(drive + "\n" + unc + "\n"),
+	})
+	writeLeakScanFiles(t, root, map[string][]byte{
+		"host/webview_windows_test.go": []byte(drive + "\n" + drive + "\n" + unc + "\n"),
+	})
+	result := runLeakScan(t, root)
+	assertLeakScanFailed(t, result)
+	if !strings.Contains(result.output, "host/webview_windows_test.go") ||
+		(!strings.Contains(result.output, "allowance count") && !strings.Contains(result.output, "expected 1")) {
+		t.Fatalf("divergent revision over-consumption was not reported:\n%s", result.output)
+	}
+
+}
+
+func TestLeakScanKeepsLiteralGitPathIdentity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot materialize distinct slash and literal-backslash names")
+	}
+	leak := "C:/Users/" + "private-user/secret\n"
+	root := newLeakScanRepository(t, map[string][]byte{
+		"a/b.txt":  []byte("clean\n"),
+		"a\\b.txt": []byte(leak),
+	})
+	result := runLeakScan(t, root)
+	assertLeakScanFailed(t, result)
+	if !strings.Contains(result.output, `a\b.txt`) {
+		t.Fatalf("literal-backslash Git path was not reported under its exact spelling:\n%s", result.output)
+	}
+}
+
+func TestLeakScanPreservesLeadingBOMGitPathIdentity(t *testing.T) {
+	leak := "C:/Users/" + "private-user/secret\n"
+	prefixedName := "\uFEFFname.txt"
+	root := newLeakScanRepository(t, map[string][]byte{
+		prefixedName: []byte(leak),
+	})
+	writeLeakScanFiles(t, root, map[string][]byte{
+		"name.txt": []byte("clean untracked decoy\n"),
+	})
+	result := runLeakScan(t, root)
+	assertLeakScanFailed(t, result)
+	if !strings.Contains(result.output, prefixedName) {
+		t.Fatalf("leading-BOM Git path did not remain the reported identity:\n%s", result.output)
+	}
+}
+
+func TestLeakScanDoesNotLetBOMPathSpoofUseAllowance(t *testing.T) {
+	checkout := "3d3c42e5aac5ba805825" + "da76410c181273ba90b1"
+	workflow := strings.Join([]string{
+		"jobs:",
+		"  first:",
+		"    steps:",
+		"      - uses: actions/checkout@" + checkout,
+		"      - uses: actions/checkout@" + checkout,
+		"      - uses: actions/checkout@" + checkout,
+	}, "\n")
+	prefixedPath := "\uFEFF.github/workflows/ci.yml"
+	root := newLeakScanRepository(t, map[string][]byte{
+		prefixedPath: []byte(workflow),
+	})
+	writeLeakScanFiles(t, root, map[string][]byte{
+		".github/workflows/ci.yml": []byte("clean untracked decoy\n"),
+	})
+	result := runLeakScan(t, root)
+	assertLeakScanFailed(t, result)
+	if !strings.Contains(result.output, prefixedPath) ||
+		!strings.Contains(result.output, "artefact hash") ||
+		!strings.Contains(result.output, checkout) {
+		t.Fatalf("canonical allowance incorrectly authorized BOM-prefixed path:\n%s", result.output)
+	}
+}
+
+func TestLeakScanRejectsMissingIndexedBlob(t *testing.T) {
+	root := newLeakScanRepository(t, map[string][]byte{"indexed.txt": []byte("clean\n")})
+	oid := strings.TrimSpace(gitOutput(t, root, "rev-parse", ":indexed.txt"))
+	if len(oid) < 40 {
+		t.Fatalf("unexpected indexed blob ID %q", oid)
+	}
+	objectPath := filepath.Join(root, ".git", "objects", oid[:2], oid[2:])
+	if err := os.Remove(objectPath); err != nil {
+		t.Fatalf("remove indexed loose object: %v", err)
+	}
+	result := runLeakScan(t, root)
+	assertLeakScanFailed(t, result)
+	if !strings.Contains(result.output, "cat-file") &&
+		!strings.Contains(result.output, "blob") {
+		t.Fatalf("missing indexed object did not produce a Git/blob inspection error:\n%s", result.output)
+	}
+}
+func TestLeakScanFailsWhenDeclaredScopeCannotBeInspected(t *testing.T) {
 	t.Run("invalid BOM-less UTF-8", func(t *testing.T) {
 		root := newLeakScanRepository(t, map[string][]byte{"invalid.txt": {0xc3, 0x28}})
 		assertLeakScanFailed(t, runLeakScan(t, root))
@@ -291,7 +432,7 @@ func TestLeakScanAllowancesBindExactComponents(t *testing.T) {
 			"host/webview_windows_test.go": []byte(drive("jane") + "\n" + drive("jane") + "\n" + unc("jane", "share")),
 		}, false},
 		{"exact Windows compatibility evidence", map[string][]byte{
-			"docs/verification-records/2026-08.md": []byte(strings.Join([]string{
+			"docs/verification/records/2026-08.md": []byte(strings.Join([]string{
 				"2a20cffb0dfdd4dc6b3af" + "028eed5f63e4955b1af",
 				"5A9B807B7B809F666B2B3AD11D851" + "8B896B079EC3B5515317046B0796A424F00",
 				"A6B15AD5DAE3D2BFDD0B5FC0D295" + "2A02234636AC71FA552CBAE379BD39B51860",
@@ -300,7 +441,7 @@ func TestLeakScanAllowancesBindExactComponents(t *testing.T) {
 			"docs/windows-10-compatibility.md": []byte(strings.Repeat("app"+".exe\n", 4)),
 		}, true},
 		{"Windows compatibility evidence must match its exact capture", map[string][]byte{
-			"docs/verification-records/2026-08.md": []byte(strings.Join([]string{
+			"docs/verification/records/2026-08.md": []byte(strings.Join([]string{
 				"5A9B807B7B809F666B2B3AD11D851" + "8B896B079EC3B5515317046B0796A424F01",
 			}, "\n")),
 		}, false},
@@ -311,19 +452,19 @@ func TestLeakScanAllowancesBindExactComponents(t *testing.T) {
 			"docs/windows-10-compatibility.md": []byte(strings.Repeat("app"+".exe\n", 5)),
 		}, false},
 		{"exact Issue 135 evidence", map[string][]byte{
-			"docs/issue-135-paired-live-verification.md": []byte(issue135Evidence),
+			"docs/verification/records/issues/issue-135-paired-live.md": []byte(issue135Evidence),
 		}, true},
 		{"Issue 135 manifest hash is under counted", map[string][]byte{
-			"docs/issue-135-paired-live-verification.md": []byte(strings.Replace(issue135Evidence, issue135ManifestHash+"\n", "", 1)),
+			"docs/verification/records/issues/issue-135-paired-live.md": []byte(strings.Replace(issue135Evidence, issue135ManifestHash+"\n", "", 1)),
 		}, false},
 		{"Issue 135 manifest hash is over counted", map[string][]byte{
-			"docs/issue-135-paired-live-verification.md": []byte(issue135Evidence + "\n" + issue135ManifestHash),
+			"docs/verification/records/issues/issue-135-paired-live.md": []byte(issue135Evidence + "\n" + issue135ManifestHash),
 		}, false},
 		{"Issue 135 executable capture is under counted", map[string][]byte{
-			"docs/issue-135-paired-live-verification.md": []byte(strings.Replace(issue135Evidence, issue135UntaggedExecutable+"\n", "", 1)),
+			"docs/verification/records/issues/issue-135-paired-live.md": []byte(strings.Replace(issue135Evidence, issue135UntaggedExecutable+"\n", "", 1)),
 		}, false},
 		{"Issue 135 executable capture is over counted", map[string][]byte{
-			"docs/issue-135-paired-live-verification.md": []byte(issue135Evidence + "\n" + issue135TaggedExecutable),
+			"docs/verification/records/issues/issue-135-paired-live.md": []byte(issue135Evidence + "\n" + issue135TaggedExecutable),
 		}, false},
 	}
 	for _, testCase := range cases {
@@ -631,15 +772,18 @@ func TestCIWorkflowKeepsExplicitWindowsX64Lane(t *testing.T) {
 			t.Fatalf("Windows/x64 job lost %q", line)
 		}
 	}
-	for _, line := range []string{"GOOS: windows", "GOARCH: amd64", `MULLION_REQUIRE_WEBVIEW2: "1"`} {
+	for _, line := range []string{"CGO_ENABLED: \"0\"", "GOOS: windows", "GOARCH: amd64"} {
 		if !workflowJobHasChildLine(x64, "env", line) {
 			t.Fatalf("Windows/x64 job lost environment contract %q", line)
 		}
 	}
+	if workflowJobHasChildKey(x64, "env", "MULLION_REQUIRE_WEBVIEW2") {
+		t.Fatal("Windows/x64 generic lane must not require WebView2 machine access")
+	}
 
 	checkoutPin := "3d3c42e5aac5ba805825" + "da76410c181273ba90b1"
 	setupGoPin := "b7ad1dad31e06c5925ef" + "5d2fc7ad053ef454303e"
-	var checkouts, setups, builds, tests []string
+	var checkouts, setups, builds, tests, machineChecks []string
 	for _, step := range workflowStepBlocks(x64) {
 		switch {
 		case workflowStepHasPrefix(step, "actions/checkout@"):
@@ -650,11 +794,13 @@ func TestCIWorkflowKeepsExplicitWindowsX64Lane(t *testing.T) {
 			builds = append(builds, step)
 		case workflowStepHasLine(step, "name: test Windows/x64"):
 			tests = append(tests, step)
+		case workflowStepHasLine(step, "name: required WebView2 runtime/export machine checks"):
+			machineChecks = append(machineChecks, step)
 		}
 	}
-	if len(checkouts) != 1 || len(setups) != 1 || len(builds) != 1 || len(tests) != 1 {
-		t.Fatalf("Windows/x64 steps: checkout=%d setup=%d build=%d test=%d; want one each",
-			len(checkouts), len(setups), len(builds), len(tests))
+	if len(checkouts) != 1 || len(setups) != 1 || len(builds) != 1 || len(tests) != 1 || len(machineChecks) != 1 {
+		t.Fatalf("Windows/x64 steps: checkout=%d setup=%d build=%d test=%d machine=%d; want one each",
+			len(checkouts), len(setups), len(builds), len(tests), len(machineChecks))
 	}
 	if !workflowStepUsesAction(checkouts[0], "actions/checkout", checkoutPin) ||
 		!workflowStepUsesAction(setups[0], "actions/setup-go", setupGoPin) ||
@@ -665,7 +811,11 @@ func TestCIWorkflowKeepsExplicitWindowsX64Lane(t *testing.T) {
 		!workflowStepHasLine(tests[0], "run: go test -count=1 ./...") {
 		t.Fatal("Windows/x64 build or uncached full-suite command changed")
 	}
-	for _, step := range []string{checkouts[0], setups[0], builds[0], tests[0]} {
+	if !workflowStepHasChildLine(machineChecks[0], "env", `MULLION_REQUIRE_WEBVIEW2: "1"`) ||
+		!workflowStepHasLine(machineChecks[0], "run: go test -count=1 ./internal/webview2 -run '^(TestFindRuntimeOnThisMachine|TestRuntimeExportsTheEntryPointWeCallDirectly|TestDescribeRuntimeCannotBeSilentAboutTheExport)$'") {
+		t.Fatal("Windows/x64 machine gate must scope the requirement to exactly the three discovery tests")
+	}
+	for _, step := range []string{checkouts[0], setups[0], builds[0], tests[0], machineChecks[0]} {
 		if workflowStepHasKey(step, "if") || workflowStepHasKey(step, "continue-on-error") {
 			t.Fatal("Windows/x64 authority step became conditional or non-fatal")
 		}
@@ -751,6 +901,10 @@ func workflowJobHasChildLine(job, parent, want string) bool {
 		return false
 	}
 	return workflowChildMappingMatches(job, 4, parent, wantKey, wantValue, true)
+}
+
+func workflowJobHasChildKey(job, parent, want string) bool {
+	return workflowChildMappingMatches(job, 4, parent, want, "", false)
 }
 
 func workflowStepBlocks(job string) []string {

@@ -74,9 +74,9 @@ recording that the stub is deliberate and not an oversight to be tidied away.
 - `.github/workflows/ci.yml`: the `portable` job runs `go build`, `go vet` and
   `go test` on `ubuntu-latest`, then cross-compiles for `windows/amd64` and
   `darwin/arm64`. A stub that stopped satisfying the API would fail there.
-- `docs/verification.md`: `GOOS=linux go build ./...` is one of the automated
+  `docs/verification/automated-gates.md#automated-gates` is one of the automated
   gates, with the reason stated - "anyone who imports this package from a
   cross-platform program must be able to compile on Linux/macOS, even though the
   window cannot run there".
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point the portability gate reference to the canonical gate matrix.

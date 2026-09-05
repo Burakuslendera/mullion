@@ -82,6 +82,27 @@ first result even when the source is also invalid.
    `WM_NCDESTROY` clears the userdata and removes every association for that
    handle, preventing callback-table growth, retained `Host` graphs and
    recycled-handle misdispatch.
+   Creation callbacks that run inside `CreateWindowExW` are a pre-normalization
+   phase and are outside the five-bit caption guarantee; the request may omit
+   `WS_CAPTION` or `WS_SYSMENU`. On a successful normalization path, after the
+   call returns and while the `HWND` remains hidden, the host distinguishes the
+   requested initial, effective pre-apply, post-apply and steady-state styles,
+   synchronously establishes
+   `WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX`,
+   refreshes the frame and completes DWM setup. Successful normalization means
+   those native calls succeed and the post-apply readback matches the active
+   five-bit profile. After hidden steady state, that successful path publishes
+   or uses the `HWND` externally, passes it to WebView2, shows it or exposes it
+   through a host callback; the five bits remain until destruction.
+   `Config.Logger` diagnostics may run during these phases; they are diagnostic
+   exposure, not readiness or publication, and their existing reentrancy/failure
+   behaviour is outside this timing rule. Existing style, frame-refresh and DWM
+   failures and a post-apply profile mismatch are logged, and the current flow
+   can still reach publication. Those fail-open paths are not supported
+   successful normalization; this summary neither accepts nor hides them or
+   changes production behaviour. See
+   [decision 0048](./decisions/0048-caption-bits-before-exposure.md).
+
    The window procedure is bound at class registration, so the first
    messages the window ever receives — `WM_NCCALCSIZE` among them — already reach
    the library's routing. The frameless geometry is therefore correct on the first
@@ -99,8 +120,13 @@ first result even when the source is also invalid.
    completion → resize Add → completion chain. A failure at step N prevents even the Add
    call for step N+1. Only four successful WebView2 completion callbacks open first
    navigation. A synchronous registration error, failed/invalid/duplicate completion,
-   timeout, Browser shutdown, or `WM_QUIT` fails closed: the nested wait exits promptly, re-posts its
-   consumed quit, and the returned-error owner uncommits and tears down the browser.
+   timeout, Browser shutdown, or `WM_QUIT` fails closed in the accepted required-
+   script wait: cancellation → queued `WM_QUIT` → completion → timeout precedence
+   applies, the consumed quit is re-posted, and the returned-error owner uncommits
+   and tears down the browser. Generic WebView2 environment/controller creation is
+   the open [issue #154](https://github.com/Burakuslendera/mullion/issues/154) gap:
+   its nested wait can consume `WM_QUIT` and continue until the loader timeout
+   instead of exiting promptly.
    Optional tab-strip registration still supplies its documented handler but never enters
    that wait or pumps startup; non-lifecycle optional errors remain warnings, whereas
    lifecycle invalidation stops later readiness and navigation. A committed browser remains
@@ -168,8 +194,12 @@ compares token and HWND before the first command-specific log, browser call or
 Win32 mutation, then validates command-specific payloads before their operation
 seam. An API call belongs to the Run active when the method enters.
 Entry increments a short locked admission count, then releases the mutex before
-native, WebView, caller or Logger code: re-entrant Logger/bridge calls therefore
-cannot self-deadlock. The same discipline holds at every host-owned
+native, WebView, caller or Logger code. Re-entrant Logger/bridge calls do not
+self-deadlock in the mutex-held and active-Run cases covered by the current
+evidence; the generation-zero inactive-admission cycle in
+[issue #159](https://github.com/Burakuslendera/mullion/issues/159) remains open:
+an inactive public method's Logger callback can re-enter `Run` while that method's
+admission keeps `beginRun` waiting. The same discipline holds at every host-owned
 non-reentrant mutex: no Logger call runs while one is held — snapshot under the
 lock, emit after unlocking
 ([decision 0046](./decisions/0046-logger-never-runs-under-a-host-mutex.md)) —
@@ -322,4 +352,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: add the no-Logger-under-host-mutex snapshot/emit rule to the admission contract (issue #140).
+> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5.6) | Change: define successful caption normalization and record the existing fail-open publication paths.

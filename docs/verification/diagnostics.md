@@ -1,8 +1,10 @@
 # Diagnostic build tags and env switches
 
-This is the canonical continuation of
-[verification.md section 5](./verification.md#5-diagnostic-build-tags-and-env-switches).
-The gate list referenced below remains in that parent document.
+**Status:** active
+
+This is the canonical diagnostic reference routed by
+[the automated gate list](./automated-gates.md#automated-gates).
+The diagnostic build/test commands remain in that gate list.
 
 Diagnostics exist because the frame bugs in this library are *invisible* — the
 window looks right and behaves wrong. Each switch trades a little runtime cost
@@ -14,7 +16,7 @@ or a little behaviour for a lot of visibility.
 | `mullion_caption_passthrough_diag` | build tag | Builds a variant of the caption hit-test/passthrough behaviour and traces which component claims each caption-area point. | Drag works but caption buttons do not (or the reverse), snap layouts flyout does not appear on hover, hover state stuck after the pointer leaves. |
 | `mullion_script_completion_delay_diag` | build tag | Adds the internal Issue #135 coordinator and diagnostic command. Only after each of the first two **required** registration handlers receives a genuine Runtime `Invoke`, the callback returns promptly and a goroutine bounded to ten seconds delays publication of that captured result into the existing barrier. The ordinary build selects a compile-time-selected no-op implementation; the tag alone is inactive until the internal command starts it. | Exact-tree supported-Runtime slow-start proof: re-entrant `Show` while the first real completion is held, then `Quit`/close while the second is held. Never ship this artifact. |
 | `MULLION_HITTEST_DIAG=1` | env | Emits one line per hit-test decision: point, region, returned code. | Any drag/resize/cursor complaint; mandatory when changing hit-test geometry. |
-| `MULLION_TOOLTIP_TRACE=1` | env | Traces caption-control tooltip show/hide/lifetime. | Tooltips that stick, never appear, or appear on the wrong control. |
+| `MULLION_TOOLTIP_TRACE=1` | env | Traces caption-control tooltip show/hide/lifetime and uses `TrackMouseEvent` to observe pointer transitions. | Tooltips that stick, never appear, or appear on the wrong control. |
 
 Rules:
 
@@ -42,8 +44,11 @@ Rules:
   `go build -tags <tag> ./...` line in the gate list above. The same holds for
   tests: a tag that has its own test files needs
   `go test -tags <tag> ./...` too.
-- Env switches must default to **off** and must not change behaviour when on —
-  only logging. If enabling a diagnostic makes the bug disappear, the
-  diagnostic is not read-only and is itself a bug.
+- Environment switches must default to **off** and MUST NOT change release-path
+  decisions or outputs. Named native instrumentation and its cost are allowed,
+  but an instrumented run MUST NOT be presented as baseline/default-behavior
+  evidence. `MULLION_TOOLTIP_TRACE=1` includes `TrackMouseEvent` work; [decision
+  0041](../decisions/0041-wm-nchittest-reader-gates.md) remains the authority for
+  that accepted diagnostic cost.
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: bound Issue #135 marker observation independently from real completion publication.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: relocate diagnostic switch authority and repair its decision 0041 link.

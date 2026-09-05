@@ -135,7 +135,7 @@ first-document behavior on the same supported Runtime.
 - The tag-specific completion tests drive genuine fake-Runtime `Invoke`/release,
   bounded publication, fail-safe timeout, optional exclusion, cancellation,
   abandonment, refcounts, and coordinator single ownership without a window.
-- The [paired live record](../issue-135-paired-live-verification.md) records the
+- The [paired live record](../verification/records/issues/issue-135-paired-live.md) records the
   exact source/artifact/log identities, supported Runtime chronology, acceptance
   result and retained Win10, close, Pong, race, scheduling and byte-equivalence
   nonclaims.
@@ -154,11 +154,11 @@ Those are headless seams and source guards. They do not prove a supported
 WebView2 Runtime's callback schedule, controller-close behavior, real Win32
 queue ordering, or first-document bridge/diagnostics/drag/resize/frame
 rendering. The 2026-08-30 record predates the serialized refinement. The
-[2026-08-31 paired live record](../issue-135-paired-live-verification.md) supplies
+[2026-08-31 paired live record](../verification/records/issues/issue-135-paired-live.md) supplies
 the missing supported-Runtime evidence from one frozen source identity: ordinary
 untagged first-document behavior plus the tagged post-real-callback interleave.
 The tagged artifact remains non-release-equivalent and proves neither ordinary
 Runtime scheduling nor byte equivalence; its paired untagged artifact carries
 the ordinary behavior claim.
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: bind the accepted paired Runtime evidence to the barrier while retaining artifact proof ceilings.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point paired Runtime evidence to the canonical issue record.

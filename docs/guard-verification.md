@@ -184,87 +184,61 @@ connected.
 
 ### What was wrong
 
-The old drive rule recognized one separator spelling and three roots. There was no
-UNC-host rule. Any nested file with a skipped basename inherited a whole-file
-exemption. A failed `rev-parse` skipped history, shallow history was accepted,
-zero selected files could be called clean, and the clean line did not report what
-was excluded or whether history was complete.
-
-That was a verdict-authority bug, not just a regex omission. A wider regex would
-still have been bypassable by selection and error handling.
+The old authority selected mutable worktree names, rewrote path separators and
+treated missing files as harmless. It could therefore inspect a clean decoy
+instead of staged bytes, let a path alias inherit an allowance, or claim a
+clean result after an incomplete read. This was a verdict-authority bug, not
+just a regex omission.
 
 ### Current declared scope
 
-The scanner's clean result is intentionally bounded to:
+The scanner consumes:
 
-- every Git-tracked file not in the explicit binary-extension exclusion set;
-- every such text file decoded successfully as BOM-marked UTF-8/UTF-16 or strict
-  UTF-8;
-- every commit message reachable from a valid, non-shallow `HEAD`;
+- stage-0 index blobs, except an indexed path proved to be an ordinary
+  unstaged deletion before blob fetch;
+- safe present worktree bytes for indexed paths, only as distinct revisions;
+- safely missing paths only when Git reports deletion, flags are ordinary,
+  and stage-0 mode/object ID equals the bound `HEAD` tree map;
+- reachable commit messages from a valid, complete, non-shallow `HEAD`; and
 - the configured detector families only.
 
-Untracked build output, binary payloads, unreachable commits, foreign branches,
-encoded/obfuscated values and unknown secret classes are not covered. The output
-names those limits through counts rather than implying a general privacy proof.
+Equal index/worktree bytes coalesce. Tracked symlinks are scanned as link-target
+bytes without dereferencing. Full `HEAD` file content, staged-deleted
+`HEAD`-only blobs, untracked files, binary payloads, unreachable commits,
+foreign branches, encoded/obfuscated values and unknown secret classes are
+outside this claim.
 
-### Detector families
+### Authority summary
 
-Sensitive drive paths and ordinary/extended UNC hosts are separate rules over raw
-decoded bytes. Separator runs cover ordinary, forward, mixed and source-escaped
-spellings. A component followed by a separator accepts Windows punctuation such
-as `@`; terminal synthetic components retain a conservative source-text boundary.
-UNC retry cannot restart inside `https:////host/share`. Device prefixes and exact
-captured `<user>`/`<host>` placeholders remain clean controls.
+Git manifests and blobs use checked byte-oriented plumbing. Exact Git path bytes
+remain identity keys: no slash/backslash rewriting, case folding, Unicode
+normalization or lossy decode may choose a file or allowance. Windows
+case/separator collisions and reparse ambiguity fail closed. Strict decoding,
+object lookup, history, and worktree errors cannot reach the clean branch.
 
-The sensitive-drive rule remains bounded to the configured identifying roots. It
-is not a detector for every absolute drive path. Expanding that scope requires a
-separate false-positive review; silently broadening it inside another fix would
-change the publication contract.
-
-### Allowance model
-
-There is no whole-file skip. Placeholders apply only to exact `<user>`/`<host>`
-captures. Table allowances bind Git path, rule, capture and count; stale anchors
-retire. Workflow hashes require exact step-level `uses` beneath root `jobs`, a job
-and its `steps`. Quoted keys normalize; comments, block scalars, unrelated
-sequences and copied hashes cannot consume them.
-
-The scanner source assembles its dangerous tokens rather than exempting itself.
-There is no generic workflow-hash or file allowance.
-[Publication evidence](./publication-evidence.md) describes the narrow allowance and proof procedure for documented values that intentionally match a detector.
-
-### Traversal and history truthfulness
-
-The script rejects Git source-selecting environment variables, requires canonical
-top level/index and fails closed on tracked selection or strict decode. Replacement
-refs and grafts are rejected; enumeration/messages disable replacements and force
-commit/log encodings to UTF-8 against repository/global `i18n` overrides.
-
-A valid complete non-shallow `HEAD` is required. Invalid/unborn heads, zero commits
-and command/read/decode errors are fatal before the only clean branch.
+Allowances bind exact path, detector, capture and expected count. Each active
+path allowance is counted independently per distinct content revision: no
+revision may exceed `Expected`, and at least one must equal it. Commit-message
+allowances remain aggregate and require their exact stage-0 index anchor.
 
 ### Real-script proof
 
-The real-script suite covers drive/UNC punctuation, URL/placeholders,
-path/history/count/action substitutions, executable-YAML scalar decoys, redirected
-Git state, replacement/graft state, hostile names, strict UTF-8/UTF-16, rejected
-UTF-32, invalid/shallow history, zero text and a clean repository.
-
-The workflow lock parses the Windows job and real steps. It requires one pinned
-checkout/setup/scan in order, full depth, no source override or disabling key.
-Comments cannot truncate the job; executable keys stay step-level and checkout
-inputs direct under `with`. Scalar/comment/nested-data decoys cannot spoof it.
+Temporary repositories invoke the real PowerShell script for detector
+punctuation, path/history/count/action substitutions, staged index content,
+ordinary deletion, skip-worktree ambiguity, raw path identity, strict
+UTF-8/UTF-16, rejected UTF-32, invalid/shallow history, missing objects and a
+clean repository. The workflow lock still requires full-depth checkout and the
+real pinned scan step.
 
 ### Do not regress this boundary
 
-- Never use `Split-Path -Leaf` as exemption authority.
-- Never decode the same file separately per rule.
-- Never swallow read, decode or Git errors and continue to the clean branch.
+- Never restore basename or whole-file exemptions.
+- Never rewrite exact Git paths or fetch objects through text output.
+- Never swallow Git, read, decode, reparse or collision errors.
+- Never let a clean worktree replace an indexed blob.
 - Never allow shallow history while claiming commit-message coverage.
-- Never add a whole-file fixture exemption.
-- Never report only a finding count; the inspected and excluded scopes are part
-  of the verdict.
-- Never describe the scanner as proving that no secret of any kind is published.
+- Never describe this configured known-shape scan as proof of no secret of any
+  kind.
 
 ## Issue 107: doctor public-output authority
 
@@ -380,7 +354,9 @@ When changing these boundaries:
 
 1. Identify the final authority that emits green, clean or paste-ready output.
 2. List every input-selection step before changing detector logic.
-3. Key exceptions by normalized repository-relative path and specific rule.
+3. Key network/doctor exceptions by normalized repository-relative URL/path and
+   specific rule; key leak-scanner allowances by exact raw Git path identity,
+   detector, capture and expected count.
 4. Add one positive fixture, one genuine clean control and one inspection-failure
    fixture.
 5. Drive the real named test, script, formatter or workflow artifact.
@@ -397,4 +373,4 @@ foreign profiles, aliases, encoded paths or unrelated secrets; headless tests do
 
 These ceilings are not follow-up bugs; stronger claims require stronger proof first.
 
-> Last updated: 2026-08-28 | Editor: OpenAI (GPT-5.6) | Change: link detector-matching publication evidence to its exact-allowance procedure.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: bind publication scanning to exact raw Git paths, distinct index/worktree revisions, metadata-only HEAD classification and fail-closed deletion/allowance rules.

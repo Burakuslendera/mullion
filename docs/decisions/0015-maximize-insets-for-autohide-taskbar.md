@@ -63,7 +63,7 @@ it steals a pixel from every maximize on the common case (visible taskbar or non
 for no benefit, and would show as a 1px client-height difference nobody asked for.
 The inset must be conditional on an auto-hide bar actually being on that edge.
 
-**Leave it as a documented limitation.** Rejected: docs/verification.md already
+**Leave it as a documented limitation.** Rejected: docs/verification/acceptance-checklist.md#manual-acceptance-checklist already
 treats "the taskbar must still be visible while maximized" as an acceptance item,
 and an unreachable taskbar is the same class of defect for the auto-hide
 configuration. It is a bug, not a boundary.
@@ -106,7 +106,7 @@ configuration. It is a bug, not a boundary.
 - **Not yet verified live.** The reveal behaviour must be confirmed on a real
   machine with an auto-hide taskbar — maximized, the taskbar still pops up on hover
   on the auto-hide edge — on both a primary and a secondary monitor, per
-  docs/verification.md. Filed as issue #30 rather than a blind change for exactly
+  docs/verification/acceptance-checklist.md#manual-acceptance-checklist. Filed as issue #30 rather than a blind change for exactly
   this reason.
 
-> Last updated: 2026-08-15 | Editor: OpenAI (GPT-5.6) | Change: correct pre-0019 three-path wording, state the current two-sizing-path split, and preserve the shell-free hit-test.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point taskbar acceptance references to the canonical checklist.

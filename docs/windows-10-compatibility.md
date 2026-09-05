@@ -201,7 +201,7 @@ distribution and version, and Mullion build identity. At minimum, prove:
    runtime, if both are promised.
 
 The visual, DPI, and Snap portions require the live checklist in
-[verification.md](./verification.md); a screenshot or a successful process exit
+[acceptance-checklist.md](./verification/acceptance-checklist.md#manual-acceptance-checklist); a screenshot or a successful process exit
 alone is insufficient.
 
 ## WebView2 Runtime deployment and capabilities
@@ -274,4 +274,4 @@ Issue #132 should convert this draft into either an accepted compatibility
 decision with a maintained test matrix, or a narrower statement that does not
 promise unverified Win10 behaviour.
 
-> Last updated: 2026-08-27 | Editor: OpenAI (GPT-5.6) | Change: document ordinary versus controlled Windows x64 builds and their artifact-evidence boundary.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point live compatibility proof to the canonical acceptance checklist.

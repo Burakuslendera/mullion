@@ -75,7 +75,7 @@ reintroduces issue #1, invisibly on any single-monitor machine and in every
 headless test. The `rasterizationScaleForDPI` tests lock the *value* (and that it
 cannot compound, being a function of the absolute DPI), but they cannot prove the
 call is wired in; that half is a live check, on a mixed-DPI setup, in
-`docs/verification.md`.
+  `docs/verification/acceptance-checklist.md#manual-acceptance-checklist`.
 
 **Only the DPI half of the scale is set.** Microsoft defines the rasterization
 scale as *monitor DPI scale × user text scale*; the host sets `DPI/96` and ignores
@@ -115,6 +115,7 @@ trivial.
 - **Live confirmation is the acceptance step this record does not yet carry.** The
   headless tests prove the value; only a human dragging the window across a
   mixed-DPI boundary proves the wiring. That check is pending on issue #1 and is
-  owed before the fix is called done, per `docs/verification.md`.
+  owed before the fix is called done, per
+  `docs/verification/acceptance-checklist.md#manual-acceptance-checklist`.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point mixed-DPI acceptance references to the canonical checklist.

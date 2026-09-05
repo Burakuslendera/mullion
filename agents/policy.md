@@ -54,7 +54,7 @@ script=0 (observed). That shape points at the asset path rather than navigation
 (likely). Not yet confirmed: re-run with a Debug-level `Logger` and read the
 `asset response served` / `asset response error` lines to see whether the
 stylesheet request arrived at all, remembering that a served asset outside the
-document/stylesheet/script buckets prints nothing (architecture.md).
+document/stylesheet/script buckets prints nothing (docs/architecture.md).
 ```
 
 The second version costs one extra sentence and tells the next reader exactly what
@@ -70,8 +70,8 @@ the register of a fact is indistinguishable from knowledge.
 Equally: **never present untested code as working.** "It compiles" is not "it
 works", "the tests pass" is not "the window is correct", and a bounds log that
 looks right is not a window that looks right. What counts as proof for window
-behaviour is defined in [window.md](./window.md) and
-[docs/verification.md](../docs/verification.md).
+behaviour is defined in [window.md](./window.md) and the
+[evidence boundary](../docs/verification/evidence.md).
 
 ## Quality gate for behaviour changes
 
@@ -95,12 +95,16 @@ previous agent called it complete.
    operations. Ask whether every new branch has a distinct contract; if not,
    remove it rather than preserving redundant code.
 3. **Use a done gate, not a confidence statement.** Obtain an independent review
-   or second set of eyes. Then run the focused tests for the changed contract,
-   `git diff --check`, and a changed-file scope check. The final report separates
-   automatic tests, real runtime observations, uncovered paths and remaining
-   uncertainty using the labels above. A focused/headless test proves only the
-   seam it exercises; it does not prove WebView2 scheduling, COM implementation,
-   HWND behaviour or rendering.
+   or second set of eyes. For each changed observable contract, list the focused
+   fail-first production-path headless regression, or the approved irreducibly
+   visual/window-manager/shell/compositor residual that substitutes applicable
+   live evidence. Live evidence never waives a deterministic contract. Then run
+   the focused tests, `git diff --check`, and a changed-file scope check. The
+   report names the production path, test result or live action, existing
+   independent approver, artifact/environment, exact uncovered boundary, and
+   remaining uncertainty using the labels above. “Hard to test” is not
+   irreducibility; first extract or seam the decision. See the
+   [evidence boundary](../docs/verification/evidence.md).
 4. **Make the reasoning durable.** Comments explain only a non-obvious
    invariant, ownership, ordering, ABI or security reason; they do not narrate
    obvious control flow. Put the evidence and the actual runtime boundary in the
@@ -181,4 +185,4 @@ exactly and consistently.
 
 Depth is not verbosity. Explain the mechanism, then stop.
 
-> Last updated: 2026-08-14 | Editor: OpenAI (GPT-5.6) | Change: add a repeat-prevention checklist with #102 evidence, minimal-diff discipline, independent self-audit, behavioural test boundaries and honest handoff rules.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: require contract-partitioned headless proof and link the sole evidence boundary while retaining the existing independent review gate.

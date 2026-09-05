@@ -48,7 +48,7 @@ band, wrong hit-test code, stale menu state, mixed-DPI geometry - passes every
 test and fails in front of the user.
 
 The compensating machinery is therefore mandatory, not optional:
-`docs/verification.md` carries a manual acceptance checklist that is re-run in
+`docs/verification/acceptance-checklist.md#manual-acceptance-checklist` carries a manual acceptance checklist that is re-run in
 full whenever the frame, the hit test, DPI or snap is touched, and the pull
 request template requires a reviewer to be told what was verified live and on what
 display setup. "It compiles" is not acceptance, and this record is what makes that
@@ -69,8 +69,9 @@ catches a vtable mistake before it reaches a user.
 
 ## Evidence
 
-- `docs/verification.md`, "The test suite is headless - keep it that way", and the
-  manual acceptance checklist it exists to justify.
+- `docs/verification/evidence.md`, "The test suite is headless - keep it that way", and the
+  manual acceptance checklist in
+  `docs/verification/acceptance-checklist.md#manual-acceptance-checklist`.
 - `.github/PULL_REQUEST_TEMPLATE.md`: "No test creates a window, an HWND, or needs
   the WebView2 Runtime. The suite stays headless."
 - `internal/webview2/interfaces_windows_test.go`: the riskiest code in the
@@ -80,4 +81,4 @@ catches a vtable mistake before it reaches a user.
   arrives at the WebView2 child, and the resulting split between what is
   automatable and what is not.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: link this historical blanket Run-test ban forward to decision 0039's deterministic pre-native exception.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point headless and live evidence references to their canonical verification children.

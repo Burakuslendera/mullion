@@ -15,7 +15,7 @@ points back here for the mechanics.
   installed. It is 1.24 because that is where `os.OpenRoot` arrives.
   [decisions/0042](docs/decisions/0042-go-1-24-remains-the-released-consumer-floor.md).
 - The WebView2 Runtime is optional for the default suite, but required to run the
-  demo and the two opt-in machine tests selected by
+  demo and the opt-in `GATE-WEBVIEW2-MACHINE` lane selected by
   `MULLION_REQUIRE_WEBVIEW2=1`. Both Windows CI lanes set that requirement.
 - The library builds and ships CGo-free, so its normal build needs no C compiler.
   Local Windows `-race` testing is separate: Go's race detector needs a
@@ -23,100 +23,67 @@ points back here for the mechanics.
 
 ## The verification ladder
 
-Run these in order. Each one is cheap; each one catches a different class of
-mistake. Do not skip to the demo.
+Run the canonical [automated gate matrix](./docs/verification/automated-gates.md#automated-gates)
+in order. It owns the executable commands, fail-fast behavior, stable
+`GATE-*` IDs, diagnostic pairs, machine lanes, cross-target cleanup, and live
+demo. Do not copy the ladder into a contribution or maintain a second command
+table.
 
-```powershell
-gofmt -l .                                      # must print nothing
-go build ./...
-go vet ./...
-go test -count=1 ./...
-go test -count=1 -race ./...                    # concurrent timer/callback/state seams
-node scripts/test-bridge.mjs                    # exact embedded bridge in a Node VM
-go run ./cmd/mullion doctor                     # direct runtime/export execution
-go build -tags mullion_dwm_caption_diag ./...; go test -count=1 -tags mullion_dwm_caption_diag ./...
-go build -tags mullion_caption_passthrough_diag ./...; go test -count=1 -tags mullion_caption_passthrough_diag ./...
-$env:GOOS = 'linux';   $env:GOARCH = 'amd64'; go build ./... # stub portability
-$env:GOOS = 'windows'; $env:GOARCH = 'amd64'; go build ./... # supported WebView2 target
-$env:GOOS = 'windows'; $env:GOARCH = '386'; go test -count=1 ./internal/webview2 ./internal/doctor ./host -run '^TestUnsupportedArchitecture' # WOW64 execution
-$env:GOOS = 'windows'; $env:GOARCH = 'arm64'; go build ./... # compile portability only
-Remove-Item Env:GOOS, Env:GOARCH
-pwsh scripts/leak-scan.ps1                      # configured shapes in tracked text and complete reachable history
-Push-Location examples/basic; go run .; Pop-Location # live demo
-```
+The matrix's Windows/amd64 lane is the supported WebView2 hosting target.
+Windows/386 executes the unsupported-architecture gates under WOW64, and
+Windows/ARM64 is compile-only.
+The opt-in `GATE-WEBVIEW2-MACHINE` lane requires
+`MULLION_REQUIRE_WEBVIEW2=1` and a real Runtime, and runs exactly three real
+discovery/report checks. `TestLoadClientFreesTheModuleWhenTheExportIsMissing`
+is a deterministic production cleanup seam in default `GATE-TEST`; real Windows
+`LoadLibrary`/`GetProcAddress`/`FreeLibrary` behavior is not covered.
 
-The Linux build is not decoration. It is the automatic check that a Win32
-symbol has not leaked out of a `_windows.go` file into a portable one. The
-PowerShell environment assignments above are deliberately runnable as written;
-the final `Remove-Item` restores native builds.
-
-The Windows gates prove different contracts. `windows/amd64` is the only
-supported WebView2 hosting target. Windows/386 actually executes the
-architecture-tagged production discovery, host and doctor gates under WOW64,
-proving rejection precedes runtime, DLL, COM, callback, class and HWND work.
-Windows/ARM64 remains compile-only. A green cross-build is source portability,
-not runtime support (decision 0034).
-
-`go test -race ./...` is the one step that wants a C toolchain: on Windows the
-race detector links through a mingw-w64 gcc at test time. That does not soften
-the "no C compiler" rule above — the library builds and ships CGo-free — but on
-a machine without gcc this step cannot run. Say so in your report rather than
-skipping it silently; CI runs it on every push.
+The race lane is test-only and needs a mingw-w64 `gcc` on Windows. The library
+still builds and ships CGo-free. If that toolchain is unavailable, report the
+race lane as not run rather than silently omitting it; CI runs it on every push.
 
 ## Tests stay headless
 
-**No test may create an `HWND`, require a display, enter native COM, call a
-Win32 entry point, or spin a message pump, and no test requires the WebView2
-Runtime by default.** A test may call public `Run()` only through a deterministic
-seam or build path that proves return before runtime discovery and every native
-boundary, with assertions that the forbidden seams were not reached. Choosing
-an input that is merely expected to return early is not proof. This narrow
-exception preserves public preflight coverage without weakening headless CI
+**No default test may create or destroy an `HWND` or window class, require a
+display, inspect or mutate desktop/monitor/input/shell state, enter native COM,
+call a Runtime-owned interface, activate the shell or browser, dispatch a
+native message loop, or require the WebView2 Runtime.** The closed native
+boundary in [the evidence boundary](./docs/verification/evidence.md) is
+exhaustive: only bounded test-owned ABI memory, valid Go-owned callback/vtable
+fixtures, deterministic injected effect seams, and the named isolated `WM_QUIT`
+self-test may cross; every other Win32 entry point and indirect call remains
+forbidden.
+
+A test may call public `Run()` only through a deterministic seam or build path
+that proves return before runtime discovery and every native boundary, with
+assertions that the forbidden seams were not reached. Choosing an input that is
+merely expected to return early is not proof. This narrow exception preserves
+public preflight coverage without weakening headless CI
 ([decision 0039](./docs/decisions/0039-public-run-preflight-stays-headless.md)).
+Window-affine logic must be factored into pure functions that take plain values
+and return decisions; use those functions and existing production seams rather
+than spinning up a real `HWND`.
 
-The one opt-in, and only for a machine that is meant to have a runtime:
-`MULLION_REQUIRE_WEBVIEW2=1` turns the two runtime-dependent tests in
-`internal/webview2` — that a runtime is discoverable, and that it still exports
-the entry point the host calls — from *skip when absent* into *fail when absent*.
-It is unset by default, so `go test ./...` still runs anywhere with nothing
-installed; it is set only where a runtime is guaranteed (CI, whose runner ships
-one), so a green windows job proves that export was checked rather than quietly
-skipped. Why a skip there is dangerous enough to earn the one exception is in
-[docs/decisions/0010](./docs/decisions/0010-ci-requires-the-runtime.md).
+## Every behaviour fix has a contract proof
 
-The consequence for design: window-affine logic must be factored into pure
-functions that take plain values and return decisions. The hit-test resolver, the
-`WM_NCCALCSIZE` client-rect computation, the DPI rect transforms, the style-bit
-profiles, the asset-path resolution and the bridge dispatch are all shaped this
-way precisely so they can be tested without a window. If you find yourself
-wanting to spin up a real `HWND` to test something, extract the decision instead.
-
-Behaviour that genuinely cannot be reduced to a pure function — that the frame is
-smooth, that Snap Layouts open, that the first painted frame is correct — is not
-covered by tests at all. It is covered by the live demo, and it must be stated as
-such.
-
-## Every behaviour fix is locked by a test
-
-A fix without a test is a fix that will be undone by the next refactor. Write the
-test so that it **fails before your change and passes after it**, and name it
-after the contract it locks, not after the function it calls. The DPI
-round-trip and no-compounding tests in `monitor_windows_test.go` are the model: they
-encode the rule, so a future "simplification" that reintroduces double-scaling
-cannot land silently.
-
-When you cannot write a test — the effect is visual, or lives in the window
-manager — say so explicitly in the pull request and describe the manual check you
-performed instead. Silence is read as coverage.
+Every behaviour fix MUST have a focused headless regression for each
+deterministic observable contract. Only an independently approved,
+irreducibly visual, window-manager, shell, or compositor residual may use
+applicable live evidence instead. The contract partition, production path,
+test or approved residual, live artifact/environment, exact uncovered boundary,
+and uncertainty label are mandatory in the report. “Hard to test” is not an
+exception. See [the evidence boundary](./docs/verification/evidence.md).
 
 ## "It compiles" is not evidence
 
-Frame, hit-test, DPI, snap and paint behaviour is accepted only after the live
-demo checklist in [docs/verification.md](./docs/verification.md) has been run on a
-real machine by a human looking at a real window. A green build, a passing test
-suite, a correct bounds log and a plausible screenshot of the *code* are not
-substitutes. This library's entire failure history is of things that reported
-success and rendered nothing; see
+Frame, hit-test, DPI, Snap and paint behavior still require the applicable live
+demo checklist in
+[acceptance-checklist.md](./docs/verification/acceptance-checklist.md#manual-acceptance-checklist)
+on a real machine by a human looking at a real window. Live evidence is
+additional to headless regressions for every reducible contract; it does not
+replace them. A green build, passing test suite, bounds log, or screenshot of
+code is not visual acceptance. This library's failure history is of things that
+reported success and rendered nothing; see
 [docs/lessons-and-dead-ends.md](./docs/lessons-and-dead-ends.md).
 
 The frame and visual acceptance rules — what counts as proof, and what merely
@@ -150,16 +117,26 @@ touching hit-testing or the non-client area.
   (decisions/0025). A sentence that *contains* a URI takes `logsafe.Message`,
   which finds the URLs inside it (decisions/0028). Diagnostics should be
   readable without being a disclosure.
-- Exported API changes are a compatibility event: new `Config` fields must have a
-  zero value that preserves current behaviour.
+- `github.com/Burakuslendera/mullion/host` is a released consumer surface. Before
+  changing an exported declaration, `Config` field, interface or callback
+  signature, sentinel error/`errors.Is` identity, import path, documented
+  default/precedence, or callback contract, compare the `host` API on Windows and
+  non-Windows with the latest released tag and record the result in the pull
+  request. Cover zero, negative, and opt-in semantics; `host/api_contract.go`
+  checks only build-variant parity, not this release check. Clean cutover applies
+  only to internal/unexported or unreleased paths. An intentional incompatibility
+  requires an explicit compatibility/migration decision and release note.
 
 ## Commits and pull requests
 
 - One concern per commit. Imperative subject line.
-- The body says **what changed, why, and what was verified** — which commands from
-  the ladder above, which live checks, and, explicitly, what was *not* covered.
-- A pull request that changes frame, hit-test, DPI or snap behaviour without a
-  live-demo result in its description is incomplete, and will be treated as such.
+- The body says **what changed, why, and what was verified** — name the
+  applicable `GATE-*` IDs, checklist scenario IDs, and explicitly what was not
+  covered.
+- A pull request that changes frame, hit-test, DPI or Snap behavior must include
+  the applicable live-demo result and the contract-partitioned evidence required
+  by [the evidence boundary](./docs/verification/evidence.md); missing a
+  deterministic proof or an approved residual record is incomplete.
 - Documentation is part of the change, not a follow-up. If a fix teaches the
   project something — a symptom, a root cause, a dead end — it lands in `docs/`
   in the same pull request. Work is not done until it is written down; see
@@ -185,4 +162,4 @@ Two rules are worth knowing before you file:
 The full taxonomy and the triage rules are in
 [agents/issues.md](./agents/issues.md).
 
-> Last updated: 2026-08-21 | Editor: OpenAI (GPT-5.6) | Change: point the active Go 1.24 floor contract to its authoritative superseding decision.
+> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: align the contributor machine lane with three Runtime checks and classify the missing-export cleanup seam as default headless evidence.

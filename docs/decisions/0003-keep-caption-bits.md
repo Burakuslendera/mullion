@@ -1,6 +1,6 @@
 # 0003. The frameless frame keeps `WS_CAPTION` and `WS_SYSMENU`
 
-**Status:** Accepted
+**Status:** Superseded by [0048](./0048-caption-bits-before-exposure.md) only for the creation-time/lifetime boundary; accepted for the five-bit steady-state invariant
 
 ## Context
 
@@ -97,4 +97,4 @@ this record stands, and clearing the bits is a regression, not a cleanup.
   right-click menu on a drag region silently does nothing.
 
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5.6) | Change: link 0048 as the limited supersession of the creation-time/lifetime boundary; retain the historical five-bit rationale.

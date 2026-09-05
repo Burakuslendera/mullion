@@ -21,11 +21,28 @@ its minimum tracking size — a client rect around 46x39 px, with an outer windo
 still looks correct. If a bounds log shows a tiny client rect, look here first,
 before you look at WebView2.
 
-**`WS_CAPTION` and `WS_SYSMENU` are never cleared.** DWM and the shell decide what a
-window *is* from its style bits. Drop them and you lose shell animation, the system
-menu, and the full Snap contract. The visual frame is removed in `WM_NCCALCSIZE`, by
-extending the client area — never by removing the styles that make the window a
-window.
+**After successful hidden normalization, all five caption-style bits are never
+cleared.** The `CreateWindowExW` request may omit `WS_CAPTION` or
+`WS_SYSMENU`, and callbacks inside that call are outside the five-bit
+guarantee. Successful normalization means the style, frame-refresh and DWM
+native calls succeed and the post-apply readback matches the active five-bit
+profile. On that path, after the call returns, the hidden host establishes
+`WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX`,
+refreshes the frame and completes DWM setup. Hidden steady state then precedes
+publishing or using the `HWND`, creating or navigating WebView2, showing it,
+accepting interaction or running a host-exposing callback. `Config.Logger`
+diagnostics may run during normalization; they are diagnostic exposure, not
+readiness or publication, and their existing reentrancy/failure behaviour is
+outside this timing rule. DWM and the shell decide what a window *is* from
+these style bits; after successful normalization, drop none of them or shell
+animation, the system menu and the full Snap contract can be lost. The visual
+frame is removed in `WM_NCCALCSIZE`, by extending the client area — never by
+removing the styles that make the window a window. Existing style,
+frame-refresh and DWM failures and a post-apply profile mismatch are logged,
+and the current flow can still reach publication. Those fail-open paths are
+not supported successful normalization; this rule neither accepts nor hides
+them or changes production behaviour. See
+[decision 0048](../docs/decisions/0048-caption-bits-before-exposure.md).
 
 **`WM_NCCALCSIZE` preserves the client extension for every `wParam`.** Windows sends
 it with `wParam == TRUE` and with `wParam == FALSE`. Handle only the `TRUE` case and
@@ -57,11 +74,17 @@ tells you what you asked for, not what was drawn. Rounded corners, drop shadow,
 caption buttons and shell animation are accepted from a screenshot or a recording,
 by a human, and by nothing else.
 
-**`Win+Z` is not Snap evidence.** A keyboard shortcut, or a screenshot of a hover
-that never happened, does not demonstrate that the Snap Layouts flyout opens from the
-maximise button. Acceptance requires the flyout actually opening under a real mouse
-hover. If a report claims hover, it must say that it was a mouse hover — and the
-cursor must be visible in the frame or recording.
+**Shell Snap actions and maximise-button hover are separate evidence.** On Windows
+11, `Win+Z` invokes the shell-owned Snap Layout UI; `Win`+Arrow and edge-drag are
+shell Snap actions. Name the action and record its placement and restore separately.
+These actions do not prove the maximise-button hover flyout. The active
+`caption_sysmenu_nccalc` profile extends the client area over the caption and
+deliberately does not use DWM or synthetic `HTMAXBUTTON` forwarding, so that flyout
+is outside this profile's acceptance contract. A hover-flyout claim, where a
+supporting native profile is deliberately in scope, requires a real mouse hover
+over its native maximise button with both cursor and flyout visible in the frame or
+recording; a keypress, hit-test trace, or another profile's diagnostic result is
+not a substitute.
 
 **The maximise glyph must be correct in the first painted frame.** Not correct after
 a repaint, not correct once the DOM settles. Frame counts, an `IsZoomed` value, a DOM
@@ -79,19 +102,20 @@ that outranks the window looking wrong.
 
 ## Verification and reporting
 
-Every change to frame, hit-test, DPI, snap or paint behaviour is verified with the
-live demo checklist in [docs/verification.md](../docs/verification.md), on a real
-machine, by a human looking at a real window. A passing test suite does not
-substitute; the tests are headless by design and cannot see any of this.
+Every change to frame, hit-test, DPI, Snap or paint behaviour is verified with
+the live demo checklist in
+[docs/verification/acceptance-checklist.md](../docs/verification/acceptance-checklist.md), on a real
+machine, by a human looking at a real window. This is required for the
+applicable visual/window-manager/shell/compositor result and is additional to
+the focused headless regressions for every deterministic contract. Live evidence
+never substitutes for a deterministic test.
 
-Report it in four parts, and never merge them:
-
-1. what the **tests** cover (and which of them you added or changed);
-2. what was **verified live** — which checklist items, on what display setup,
-   including whether a scaled or multi-monitor configuration was involved;
-3. what was **not covered**, explicitly;
-4. what remains **uncertain**, with a label from [policy.md](./policy.md).
-
+Use the four evidence branches, approved-residual fields, exact uncovered
+boundaries, and uncertainty labels in the [required report and exception
+schema](../docs/verification/evidence.md#required-report-and-exception-schema).
+Do not copy that schema into this rule. For a frame report, name the applicable
+scenario IDs, real display setup, and human observation; keep the stricter live
+rules above in force.
 Two specific traps worth naming in any report:
 
 - Multi-monitor and mixed-DPI behaviour is not covered by a single-monitor check.
@@ -105,4 +129,4 @@ If a change makes one of the rules above obsolete, that is a Tier 3 rule change:
 needs explicit human approval and the evidence that retired the rule. Propose it;
 do not quietly edit it out.
 
-> Last updated: 2026-08-06 | Editor: OpenAI (GPT-5.6) | Change: add the single current edit footer required by agents/notes.md; Git remains the source for earlier edit history.
+> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5.6) | Change: define successful caption normalization and record the existing fail-open publication paths.
