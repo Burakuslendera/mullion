@@ -4,6 +4,7 @@ package host
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -51,6 +52,21 @@ type assetFakeState struct {
 	statusCode         int32
 	putContentCalls    int
 	releases           int
+	// addRefs and teardownReleases carry the environment-lifetime schedule
+	// (issue #161): addRefs counts every AddRef the fake saw, teardownReleases
+	// the releases a test's pump performed as the simulated teardown effect,
+	// so callbackReleases = releases - teardownReleases.
+	addRefs          int
+	teardownReleases int
+	journal          func(string)
+}
+
+// journalEvent records one chronology event when the object was built with a
+// recorder; nil keeps the shared vtable slots quiet for tests that do not care.
+func (state *assetFakeState) journalEvent(event string) {
+	if state.journal != nil {
+		state.journal(event)
+	}
 }
 
 var (
@@ -170,12 +186,37 @@ var assetFakeArgsVtbl = webview2.ICoreWebView2WebResourceRequestedEventArgsVtbl{
 }
 
 var assetFakeEnvironmentVtbl = webview2.ICoreWebView2EnvironmentVtbl{
+	IUnknownVtbl: webview2.IUnknownVtbl{
+		AddRef: webview2.ComProc(windows.NewCallback(func(this uintptr) uintptr {
+			state := assetFakeStateFor(this)
+			if state == nil {
+				return 1
+			}
+			state.addRefs++
+			state.journalEvent("addref")
+			return uintptr(state.addRefs)
+		})),
+		Release: webview2.ComProc(windows.NewCallback(func(this uintptr) uintptr {
+			state := assetFakeStateFor(this)
+			if state == nil {
+				return 1
+			}
+			state.releases++
+			state.journalEvent("release")
+			return 1
+		})),
+	},
 	CreateWebResourceResponse: webview2.ComProc(windows.NewCallback(func(this, content, statusCode, reason, headers, out uintptr) uintptr {
 		state := assetFakeStateFor(this)
 		if state == nil {
 			return assetFakeFail
 		}
 		state.createCalls++
+		// The snapshot is the callback's own outstanding reference at the
+		// moment of the vtable call: the pin the callback took minus the
+		// releases it has not made yet. A call at zero is exactly the
+		// use-after-release schedule of issue #161.
+		state.journalEvent(fmt.Sprintf("create:%d", state.addRefs-(state.releases-state.teardownReleases)))
 		state.createStatuses = append(state.createStatuses, int32(statusCode))
 		state.createReasons = append(state.createReasons, assetFakeUtf16At(reason))
 		state.createHeaders = append(state.createHeaders, assetFakeUtf16At(headers))

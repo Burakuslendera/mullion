@@ -74,6 +74,7 @@ These files are that record.
 | [0051](./0051-run-token-comes-from-the-crypto-source.md) | A private command's Run token comes from the crypto source, not a counter | Accepted |
 | [0052](./0052-browser-process-exit-fails-closed.md) | A browser-process exit fails closed instead of leaving a ready Host with a closed WebView | Accepted |
 | [0053](./0053-asset-callback-failure-installs-a-blocking-response.md) | An asset callback that cannot serve installs a blocking response instead of letting the request reach the network | Accepted; terminal escalation reuses 0052's tagged teardown |
+| [0054](./0054-the-asset-callback-pins-the-environment-it-borrows.md) | The asset callback pins the WebView2 environment it borrows for its whole duration | Accepted; composes with 0053's fail-closed answer |
 
 ## When to write one
 
@@ -115,4 +116,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0053's decision that an asset callback failure answers with a blocking response, escalating to 0052's terminal teardown when none can be built (issue #150).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0054's decision that the asset callback pins the environment it borrows for its whole duration (issue #161).

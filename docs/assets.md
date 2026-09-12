@@ -193,6 +193,24 @@ contract-based, not live-proven: no supported-Runtime run has recorded the
 default-host failure presentation or a loopback fallback probe, and that live
 proof ceiling stays with [issue #150](https://github.com/Burakuslendera/mullion/issues/150).
 
+### The callback owns the environment it borrows (issue #161)
+
+The environment the callback builds responses from is an uncounted copy of the
+interface the `Browser` stores. Everything the callback runs before its last
+environment call — `fs.FS` reads and every Logger line — is embedder code that
+may pump a nested native message loop
+([decision 0026](./decisions/0026-navigation-failure-level-follows-classification.md)),
+and a nested `WM_CLOSE`/`WM_DESTROY` tears the Browser down mid-callback,
+releasing the reference that authorized the pointer. The callback therefore
+takes a reference of its own on entry, before any embedder code runs, and
+releases it after the fail-closed finish
+([decision 0054](./decisions/0054-the-asset-callback-pins-the-environment-it-borrows.md)),
+so the served response and the blocking answer above are both built through a
+live interface on every exit. The guarantee is contract-based: headless tests
+prove the reference schedule on a counted fake, and the Runtime's own refcount
+behavior stays an open live-proof ceiling with
+[issue #161](https://github.com/Burakuslendera/mullion/issues/161).
+
 ### Serving from a caller URL instead (`Config.URL`)
 
 By default the frontend is the embedded `fs.FS` above. `Config.URL` is an opt-in that
@@ -429,4 +447,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record the fail-closed callback contract — every error or panic exit answers with the blocking 500 or escalates to the terminal teardown, never the network (issue #150, decision 0053).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record the callback's pinned environment reference - embedder code between the handoff and the last environment call may pump a teardown, so the callback holds its own reference on every exit (issue #161, decision 0054).

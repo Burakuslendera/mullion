@@ -34,7 +34,10 @@ var (
 
 // assetCallback carries one WebResourceRequested invocation from entry to its
 // fail-closed exit. webResourceRequested defers finish, so every exit - error,
-// panic or normal - passes through it exactly once.
+// panic or normal - passes through it exactly once. Its environment is the
+// reference webResourceRequested pinned for the callback's own duration
+// (issue #161): finish runs before that pin's release, so block still calls a
+// live interface.
 type assetCallback struct {
 	provider    *assetProvider
 	args        *webview2.ICoreWebView2WebResourceRequestedEventArgs

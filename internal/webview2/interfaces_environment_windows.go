@@ -69,6 +69,29 @@ type ICoreWebView2Environment struct {
 	Vtbl *ICoreWebView2EnvironmentVtbl
 }
 
+// AddRef takes a reference of the caller's own on the environment object.
+//
+// Browser.Environment hands out an uncounted copy of the interface the Browser
+// stores, so a caller that keeps the pointer across a boundary where embedder
+// code can run - code that pumps a nested message loop can dispatch WM_DESTROY
+// and release the Browser's stored reference mid-call (issue #161) - must take
+// one first, per Microsoft's rules for managing reference counts. Pair every
+// AddRef with exactly one Release.
+func (e *ICoreWebView2Environment) AddRef() {
+	if e == nil {
+		return
+	}
+	asUnknown(e).AddRef()
+}
+
+// Release drops a reference taken by AddRef.
+func (e *ICoreWebView2Environment) Release() {
+	if e == nil {
+		return
+	}
+	asUnknown(e).Release()
+}
+
 // CreateWebResourceResponse builds the response handed back to a
 // WebResourceRequested event.
 //

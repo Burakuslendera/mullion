@@ -281,6 +281,18 @@ defers the constructor reference release until after `add_*` returns, so both a
 registration error and a panic cannot strand it; successful registration leaves
 exactly the runtime's reference.
 
+**The borrowed environment at the asset callback.** `Browser.Environment` is an
+uncounted copy of the interface `Browser` stores; it is handed to the
+`WebResourceRequestedCallback` raw. The host asset callback pins it with its
+own `AddRef` for the duration of one invocation and releases it after the
+fail-closed finish, because the callback runs caller `fs.FS` and Logger code
+between the handoff and its last environment call, and a Logger that pumps a
+nested message loop can dispatch `WM_DESTROY` and release the Browser-owned
+reference mid-callback (issue #161,
+[decision 0054](./decisions/0054-the-asset-callback-pins-the-environment-it-borrows.md)).
+Nothing between the raw retrieval and the pin may pump messages; that adjacency
+is part of the contract.
+
 This is distinct from reporting ownership. Under #86 and
 [decision 0038](./decisions/0038-terminal-policy-owns-error-reporting.md),
 `Embed` returns its primary failure unchanged and does not report it again.
@@ -379,4 +391,4 @@ no taken reference, and the callback's fail-closed contract answers it
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record that a failed WebResourceRequested GetRequest is forwarded to the host callback with no request instead of ending the event silently (issue #150, decision 0053).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record that the asset callback pins the borrowed environment for one invocation, against a nested teardown that releases the Browser's own reference mid-callback (issue #161, decision 0054).
