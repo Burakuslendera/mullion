@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Burakuslendera/mullion/internal/webview2"
 
@@ -268,15 +269,16 @@ func hasTraversalSegment(value string) bool {
 // a decimal serial, plus an optional extension of at most three characters.
 // The shape is matched loosely on purpose. Refusing a file literally given a
 // short-shaped name costs availability; admitting a real generated short name
-// costs the spelling-driven type promotion issue #139 measured. The generated
-// extension is the long extension truncated to three characters, so the
-// extension test is a byte count: a non-ASCII short-shaped extension falls
-// through here and reaches the classifier, where neither the switch nor
-// mime.TypeByExtension knows it and the answer is the opaque default.
+// costs the spelling-driven type promotion issue #139 measured. Both lengths
+// are counted in characters, not bytes, because NTFS generates an alias from
+// the character count: a base of six non-ASCII characters plus a serial is a
+// generated shape at fourteen UTF-8 bytes, and a byte count would let that
+// spelling reach the classifier, where the truncated ".HTM" of a longer opaque
+// name answers html.
 func is8Dot3AliasSegment(segment string) bool {
 	base := segment
 	if dot := strings.LastIndexByte(segment, '.'); dot >= 0 {
-		if len(segment)-dot-1 > 3 {
+		if utf8.RuneCountInString(segment[dot+1:]) > 3 {
 			return false
 		}
 		base = segment[:dot]
@@ -297,7 +299,7 @@ func is8Dot3AliasSegment(segment string) bool {
 			return false
 		}
 	}
-	return len(base[:tilde])+1+len(serial) <= 8
+	return utf8.RuneCountInString(base[:tilde])+1+len(serial) <= 8
 }
 
 // containsBackslashColonOrControl rejects bytes the traversal check above cannot

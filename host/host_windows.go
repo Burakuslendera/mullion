@@ -242,14 +242,25 @@ func newNativeRunTokenRegistry() *nativeRunTokenRegistry {
 	return &nativeRunTokenRegistry{active: make(map[uintptr]struct{})}
 }
 
-// reserve draws candidates until one is non-zero and not live. The only error
-// is the source's own failure, and it issues nothing then: a fallback allocator
+// nativeRunTokenDrawLimit bounds the candidates one reserve may draw before it
+// reports failure. The bound exists for the degenerate source - one that keeps
+// answering zero or live values - which would otherwise spin forever while
+// holding the registry mutex.
+const nativeRunTokenDrawLimit = 32
+
+// reserve draws candidates until one is non-zero and not live, bounded by
+// nativeRunTokenDrawLimit. It issues nothing on error: a fallback allocator
 // would reintroduce the predictable identity the crypto source exists to
-// prevent.
+// prevent (decision 0051).
+//
+// The draw runs under the registry mutex. That is an accepted exception, not a
+// 0046 violation: a candidate draw is eight bytes from crypto/rand and calls no
+// Logger, and serialising the draw with the live-set check is what keeps a
+// reservation atomic.
 func (registry *nativeRunTokenRegistry) reserve() (uintptr, error) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	for {
+	for draw := 0; draw < nativeRunTokenDrawLimit; draw++ {
 		token, err := nativeRunTokenSource()
 		if err != nil {
 			return 0, err
@@ -263,6 +274,11 @@ func (registry *nativeRunTokenRegistry) reserve() (uintptr, error) {
 		registry.active[token] = struct{}{}
 		return token, nil
 	}
+	// A crypto source hitting the bound is broken, not unlucky: 2^64 candidates
+	// do not collide 32 times. Reporting the exhaustion keeps beginRun's
+	// fail-closed path - no window session, no stored token, no reservation -
+	// instead of spinning forever on the mutex.
+	return 0, errors.New("run token source yielded no usable candidate within its draw budget")
 }
 
 func (registry *nativeRunTokenRegistry) release(token uintptr) {

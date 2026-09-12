@@ -278,6 +278,14 @@ func TestResolveAssetRequestServesNonASCIIName(t *testing.T) {
 }
 
 func TestIs8Dot3AliasSegment(t *testing.T) {
+	// The multibyte rows are composed from runes so this source stays ASCII,
+	// the discipline TestNoNonASCIIInSource enforces. Each is a shape NTFS
+	// sizes in characters whose UTF-8 byte length exceeds the limit the shape
+	// allows, so a byte count would have admitted it to the classifier.
+	runes := func(values ...rune) string { return string(values) }
+	six := runes(0x0410, 0x0411, 0x0412, 0x0413, 0x0414, 0x0415)
+	eight := runes(0x0410, 0x0411, 0x0412, 0x0413, 0x0414, 0x0415, 0x0416, 0x0417)
+	ext := runes(0x042f, 0x0417, 0x042b)
 	tests := []struct {
 		name    string
 		segment string
@@ -288,6 +296,9 @@ func TestIs8Dot3AliasSegment(t *testing.T) {
 		{name: "without an extension", segment: "REPORT~1", want: true},
 		{name: "two-digit serial", segment: "AB~12.C", want: true},
 		{name: "eight-character whole base", segment: "ABCDEF~9", want: true},
+		{name: "multibyte base at eight characters", segment: six + "~1.HTM", want: true},
+		{name: "multibyte extension at three characters", segment: runes(0x0410, 0x0411, 0x0412) + "~1." + ext, want: true},
+		{name: "multibyte base beyond eight characters", segment: eight + "~1.HTM", want: false},
 		{name: "serial too large for the shape", segment: "LONGNA~999.HTM", want: false},
 		{name: "tilde without a serial", segment: "report~.txt", want: false},
 		{name: "tilde followed by letters", segment: "a~b.txt", want: false},
