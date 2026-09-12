@@ -253,9 +253,10 @@ func (host *Host) shellExecuteOpen(uri string, admission runAdmission) {
 }
 
 func (host *Host) warnForRun(admission runAdmission, message string) {
-	if !host.enterOriginatingRun(admission) {
+	admission, ok := host.enterOriginatingRun(admission)
+	if !ok {
 		return
 	}
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.log.Warn(message)
 }

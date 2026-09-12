@@ -171,7 +171,7 @@ func shouldNotifyBoundsSource(source string) bool {
 // numeric handle for a later Run.
 func (host *Host) requestDeferredBoundsSync(source uintptr) {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	if !host.runMatches(admission) {
 		return
 	}
@@ -182,10 +182,11 @@ func (host *Host) requestDeferredBoundsSync(source uintptr) {
 }
 
 func (host *Host) fireDeferredBoundsSync(admission runAdmission, source uintptr) {
-	if !host.enterOriginatingRun(admission) {
+	admission, ok := host.enterOriginatingRun(admission)
+	if !ok {
 		return
 	}
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	err := host.postRunCommand(admission, wmNativeSyncBounds, source)
 	// Keep reporting inside the originating Run. endRun cannot begin the next
 	// session until this callback leaves its counted admission.

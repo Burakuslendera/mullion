@@ -103,7 +103,7 @@ func TestBeginRunRejectsConcurrentCallDuringTeardown(t *testing.T) {
 	// Hold one admitted API call so endRun enters its draining state without
 	// completing. A Run call made now is concurrent with the first Run and must
 	// reject immediately, not wait and become a sequential reuse.
-	host.enterRun()
+	admission := host.enterRun()
 	endDone := make(chan struct{})
 	go func() {
 		host.endRun()
@@ -123,16 +123,16 @@ func TestBeginRunRejectsConcurrentCallDuringTeardown(t *testing.T) {
 	select {
 	case beginErr = <-beginDone:
 	case <-time.After(time.Second):
-		host.leaveRun()
+		host.leaveRun(admission)
 		<-endDone
 		t.Fatal("concurrent beginRun waited behind teardown instead of rejecting")
 	}
 	if beginErr == nil || !strings.Contains(beginErr.Error(), "already running") {
-		host.leaveRun()
+		host.leaveRun(admission)
 		<-endDone
 		t.Fatalf("concurrent beginRun error = %v, want already running", beginErr)
 	}
-	host.leaveRun()
+	host.leaveRun(admission)
 	select {
 	case <-endDone:
 	case <-time.After(time.Second):

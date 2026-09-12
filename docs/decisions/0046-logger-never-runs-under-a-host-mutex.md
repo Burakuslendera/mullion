@@ -25,7 +25,9 @@ are handled (host/startup_show_windows.go:83-85 and
 host/host_windows.go:403-407), and the timing summary was its single exception.
 
 Issue #159's inactive-method re-entry through the `beginRun` drain is a
-different mechanism, remains open, and is not covered by this record.
+different mechanism, closed by
+[decision 0049](./0049-inactive-calls-are-admitted-uncounted.md), and is not
+covered by this record.
 
 ## Decision
 
@@ -118,4 +120,4 @@ the constraint comment at the split point, and this record.
 - The full `host.log.*` / host-lock audit found no other site calling the
   Logger while holding a host lock.
 
-> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: create the record — no Logger call runs under a host-owned non-reentrant mutex; snapshot under the lock, emit after unlocking (issue #140).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: repoint the issue #159 cross-reference at decision 0049, which closed that mechanism.

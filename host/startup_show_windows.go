@@ -15,7 +15,7 @@ import (
 // latched, but no HWND post is attempted until the gate has started.
 func (host *Host) startStartupShowGate() {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.startStartupShowGateForRun(admission)
 }
 
@@ -84,10 +84,11 @@ func (host *Host) armStartupShowTimerLocked(admission runAdmission) {
 // winning counted admission keeps its post and fallback log in that Run without
 // holding a non-reentrant mutex across Logger calls.
 func (host *Host) fireStartupShowGate(timer *time.Timer, admission runAdmission) {
-	if !host.enterOriginatingRun(admission) {
+	admission, ok := host.enterOriginatingRun(admission)
+	if !ok {
 		return
 	}
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.releaseStartupShowGateForRun(admission, timer, "frontend_shell_timeout", true)
 }
 

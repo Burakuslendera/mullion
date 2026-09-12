@@ -296,12 +296,6 @@ func (host *Host) beginRun() error {
 		host.runMu.Unlock()
 		return errors.New("host is already running")
 	}
-	// Drain generation-zero work before closing API admission for the reset.
-	// Keeping runStarting false while waiting is load-bearing: a Logger invoked
-	// by an older admitted call may re-enter another Host method.
-	for host.runCalls != 0 {
-		host.runCond.Wait()
-	}
 	host.runStarting = true
 	defer func() {
 		host.runStarting = false
@@ -398,13 +392,25 @@ type runAdmission struct {
 	token   uintptr
 	hwnd    windowHandle
 	running bool
+	// counted marks an entry that joined the active Run's counted set, which
+	// endRun waits to drain. An entry made while no Run is active is admitted
+	// uncounted: its Logger may re-enter Run, and a count held across that
+	// re-entry would park Run's beginRun on a leaveRun the same goroutine
+	// cannot reach.
+	counted bool
 }
 
 // enterRun admits an exported method without retaining a non-reentrant mutex
 // across Logger calls or native dispatch. endRun marks callback admission
-// closed and waits for every exported method that enters before token poison; a
-// Logger callback may therefore re-enter Host methods without deadlocking,
-// while N's readiness sequence still finishes before N+1 can begin.
+// closed and waits for every exported method that enters the active Run before
+// token poison; a Logger callback may therefore re-enter Host methods without
+// deadlocking, while N's readiness sequence still finishes before N+1 can
+// begin.
+//
+// Only an active Run's entries join the counted set. A call made while no Run
+// is active waits on nothing and is waited on by nothing: the tagged command
+// routes reject its generation-zero identity once a Run owns a token, so no
+// stale effect needs a drain to stay out of the next session.
 func (host *Host) enterRun() runAdmission {
 	host.runMu.Lock()
 	host.ensureRunCondLocked()
@@ -422,12 +428,18 @@ func (host *Host) enterRun() runAdmission {
 		running: host.running,
 	}
 	host.mu.RUnlock()
-	host.runCalls++
+	if admission.running {
+		admission.counted = true
+		host.runCalls++
+	}
 	host.runMu.Unlock()
 	return admission
 }
 
-func (host *Host) leaveRun() {
+func (host *Host) leaveRun(admission runAdmission) {
+	if !admission.counted {
+		return
+	}
 	host.runMu.Lock()
 	host.runCalls--
 	if host.runCalls == 0 && host.runCond != nil {
@@ -444,17 +456,22 @@ func (host *Host) ensureRunCondLocked() {
 
 // enterOriginatingRun admits a library-owned callback only while its captured
 // identity still names the current Run. A callback arriving after teardown has
-// closed admission neither waits into nor observes the next Run.
-func (host *Host) enterOriginatingRun(admission runAdmission) bool {
+// closed admission neither waits into nor observes the next Run. It returns the
+// admission to leave: only an active Run's callback joins the counted set, so
+// the returned admission is the one whose leaveRun must run.
+func (host *Host) enterOriginatingRun(admission runAdmission) (runAdmission, bool) {
 	host.runMu.Lock()
 	host.ensureRunCondLocked()
 	if host.runStarting || host.runEnding || !host.runMatches(admission) {
 		host.runMu.Unlock()
-		return false
+		return admission, false
 	}
-	host.runCalls++
+	if admission.running {
+		admission.counted = true
+		host.runCalls++
+	}
 	host.runMu.Unlock()
-	return true
+	return admission, true
 }
 
 func (host *Host) currentRun() runAdmission {

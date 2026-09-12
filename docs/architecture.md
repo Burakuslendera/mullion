@@ -193,15 +193,19 @@ Every private message in this table carries the originating active-Run token in
 compares token and HWND before the first command-specific log, browser call or
 Win32 mutation, then validates command-specific payloads before their operation
 seam. An API call belongs to the Run active when the method enters.
-Entry increments a short locked admission count, then releases the mutex before
-native, WebView, caller or Logger code. Re-entrant Logger/bridge calls do not
-self-deadlock in the mutex-held and active-Run cases covered by the current
-evidence; the generation-zero inactive-admission cycle in
-[issue #159](https://github.com/Burakuslendera/mullion/issues/159) remains open:
-an inactive public method's Logger callback can re-enter `Run` while that method's
-admission keeps `beginRun` waiting. The same discipline holds at every host-owned
-non-reentrant mutex: no Logger call runs while one is held — snapshot under the
-lock, emit after unlocking
+Entry takes a short locked admission, then releases the mutex before native,
+WebView, caller or Logger code. Only an active Run's entries join the counted
+admission set teardown waits to drain; a call made while no Run is active is
+admitted uncounted, so its Logger callback can re-enter `Run` — or any other
+method — without waiting on an admission that call itself owns
+([decision 0049](./decisions/0049-inactive-calls-are-admitted-uncounted.md)).
+The tagged command routes reject such a call's generation-zero identity once a
+Run owns its token, which is what keeps stale effects out of the next session
+without ordering inactive calls against `Run`'s reset. Re-entrant
+Logger/bridge calls therefore do not self-deadlock, including an inactive
+method's callback re-entering `Run`. The same discipline holds at every
+host-owned non-reentrant mutex: no Logger call runs while one is held —
+snapshot under the lock, emit after unlocking
 ([decision 0046](./decisions/0046-logger-never-runs-under-a-host-mutex.md)) —
 because a Logger callback re-entering a `Host` method that takes it
 self-deadlocks that goroutine (issue #140). Teardown closes library-callback
