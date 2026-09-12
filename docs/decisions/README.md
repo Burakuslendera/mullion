@@ -116,4 +116,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0054's decision that the asset callback pins the environment it borrows for its whole duration (issue #161).
+> Last updated: 2026-09-13 | Editor: ZCode (GLM-5.3-Flash) | Change: index the fail-closed records - the browser-process-exit terminal (0052, issue #155), the asset callback's blocking response (0053, issue #150) and the pinned environment (0054, issue #161).

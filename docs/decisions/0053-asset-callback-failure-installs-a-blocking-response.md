@@ -43,7 +43,10 @@ When even that cannot be built or installed - no args to answer on, no environme
 to build from, or a Runtime that refused both attempts - the callback escalates to
 the fail-closed terminal teardown of [decision 0052](./0052-browser-process-exit-fails-closed.md):
 one latched cause, one token-validated tagged destroy command, `Run` reporting
-`ErrAssetBoundaryClosed` instead of a false normal close. The webview2 layer
+`ErrAssetBoundaryClosed` instead of a false normal close. The escalation keeps
+0052's `ShuttingDown` refusal: one arriving while a user-initiated close already
+owns the browser is declined, so a close the user started still returns a normal
+close. The webview2 layer
 participates only by forwarding: a failed `GetRequest` is reported and the host
 callback still runs with no request, because the host owns the boundary policy and
 a silent return there would be the fail-open exit itself.
@@ -108,3 +111,30 @@ a silent return there would be the fail-open exit itself.
   ordinary machines. That would mean the blocking path's two COM calls are too
   fragile to be the last resort, and a cheaper answer (a cached response object,
   for instance) belongs here.
+
+## Evidence
+
+- `TestAssetCallbackFailsClosedOnEveryErrorExit` injects each recoverable
+  failure independently on the fake COM vtables - a nil request, a failed
+  `GetUri`, a `CreateWebResourceResponse` that fails once, a `PutResponse`
+  that fails once, and a panic from the asset `fs.FS` - and asserts the
+  blocking answer every time: a `500` with no content, the standard
+  `nosniff`/no-store header block, put exactly once, its creator reference
+  released.
+- `TestAssetCallbackBlocksBeforeReportingThePanic` runs the recovered-panic
+  exit against a Logger whose `Error` panics and asserts the blocking response
+  is installed before the panic report, so a second panic out of the recover
+  body cannot leave the event without a response.
+- `TestAssetCallbackEscalatesWhenNoResponseIsPossible` covers the exits with
+  no answer to install - unavailable event args or environment, a response
+  creation that never succeeds, a `PutResponse` that never succeeds - and
+  asserts exactly one terminal escalation with a recorded stage and cause.
+- `TestAssetCallbackServesWithoutEscalation` pins the success path: a normal
+  document still answers its own `200` with the body stream attached, an
+  unreadable method is absorbed as before, and the terminal seam stays silent.
+- `TestAssetBoundaryTerminalLatchesOnceAndRefusesShuttingDown` and
+  `TestAssetBoundaryTerminalAppliesThroughTheTaggedCommand` pin the host side
+  of the escalation: one latched cause per `Run`, a shutting-down browser
+  refused, and the shared teardown command logging the true cause.
+
+> Last updated: 2026-09-13 | Editor: ZCode (GLM-5.3-Flash) | Change: record the blocking-response escalation and add the Evidence section - the fake-vtable suite pinning the blocking 500, the panic-report ordering, the exactly-once escalation and the unchanged success path (issue #150).
