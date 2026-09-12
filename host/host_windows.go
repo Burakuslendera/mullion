@@ -3,8 +3,11 @@
 package host
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"runtime"
 	"sync"
 	"time"
@@ -32,7 +35,9 @@ type Host struct {
 
 	// activeRunToken is the non-zero identity carried in lParam by every
 	// private window command. It is protected by mu together with hwnd so a
-	// command can prove both session and handle ownership in one snapshot.
+	// command can prove both session and handle ownership in one snapshot. Its
+	// value is issued by sharedNativeRunTokens and must stay unpredictable to
+	// another process; never log it or carry it across a process boundary.
 	activeRunToken uintptr
 
 	config    Config
@@ -200,15 +205,36 @@ type Host struct {
 	externalOpenSlots chan struct{}
 }
 
+// nativeRunTokenSource yields one Run-token candidate per call. Production
+// draws from the cryptographic random source; tests stub it because a fixed
+// candidate sequence is the only deterministic way to pin the zero and
+// live-collision discard paths.
+var nativeRunTokenSource = randomRunToken
+
+func randomRunToken() (uintptr, error) {
+	var raw [8]byte
+	if _, err := io.ReadFull(rand.Reader, raw[:]); err != nil {
+		return 0, err
+	}
+	// The conversion truncates a 64-bit draw to the platform's LPARAM width on
+	// 32-bit; the low bits stay cryptographically random either way.
+	return uintptr(binary.LittleEndian.Uint64(raw[:])), nil
+}
+
 // sharedNativeRunTokens is process-global, not per Host. Windows can recycle an
 // HWND across Host values; a per-Host first-generation token would let an older
-// delayed command target a new owner's window. Reservation also retains every
-// live uintptr rather than merely incrementing: the value crosses Win32 in an
-// LPARAM, so a counter wraps at uintptr width and must skip a still-active
-// session instead of silently colliding with it.
+// delayed command target a new owner's window. Reservation retains every live
+// uintptr for the session's whole life: the value crosses Win32 in an LPARAM,
+// and a collision must skip a still-active session instead of silently
+// reissuing its identity.
+//
+// Candidates come from nativeRunTokenSource, never a counter. The private
+// message identifiers are fixed WM_APP numbers any same-desktop process can
+// construct, so the LPARAM token is the only bearer of private-command
+// authority and must stay unpredictable to another process; a counted
+// allocation hands a peer the next value (issue #141, decision 0051).
 type nativeRunTokenRegistry struct {
 	mu     sync.Mutex
-	next   uintptr
 	active map[uintptr]struct{}
 }
 
@@ -216,19 +242,26 @@ func newNativeRunTokenRegistry() *nativeRunTokenRegistry {
 	return &nativeRunTokenRegistry{active: make(map[uintptr]struct{})}
 }
 
-func (registry *nativeRunTokenRegistry) reserve() uintptr {
+// reserve draws candidates until one is non-zero and not live. The only error
+// is the source's own failure, and it issues nothing then: a fallback allocator
+// would reintroduce the predictable identity the crypto source exists to
+// prevent.
+func (registry *nativeRunTokenRegistry) reserve() (uintptr, error) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	for {
-		registry.next++
-		if registry.next == 0 {
+		token, err := nativeRunTokenSource()
+		if err != nil {
+			return 0, err
+		}
+		if token == 0 {
 			continue
 		}
-		if _, live := registry.active[registry.next]; live {
+		if _, live := registry.active[token]; live {
 			continue
 		}
-		registry.active[registry.next] = struct{}{}
-		return registry.next
+		registry.active[token] = struct{}{}
+		return token, nil
 	}
 }
 
@@ -305,9 +338,13 @@ func (host *Host) beginRun() error {
 	if host.window() != 0 || host.browser != nil || host.quitPending {
 		return errors.New("previous host window session did not tear down")
 	}
+	token, err := sharedNativeRunTokens.reserve()
+	if err != nil {
+		return fmt.Errorf("native Run token unavailable: %w", err)
+	}
 	host.running = true
 	host.mu.Lock()
-	host.activeRunToken = sharedNativeRunTokens.reserve()
+	host.activeRunToken = token
 	host.mu.Unlock()
 
 	host.webViewEmbedding = false

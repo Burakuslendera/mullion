@@ -71,6 +71,7 @@ These files are that record.
 | [0048](./0048-caption-bits-before-exposure.md) | Successful caption normalization completes before exposure, not in the initial request | Accepted; supersedes only the creation-time/lifetime boundary in [0003](./0003-keep-caption-bits.md) |
 | [0049](./0049-inactive-calls-are-admitted-uncounted.md) | A call made while no Run is active takes no counted admission; only an active Run's entries wait in teardown | Accepted |
 | [0050](./0050-8-dot-3-alias-spellings-are-refused.md) | An asset request spelled as an NTFS 8.3 short name is refused | Accepted |
+| [0051](./0051-run-token-comes-from-the-crypto-source.md) | A private command's Run token comes from the crypto source, not a counter | Accepted |
 
 ## When to write one
 
@@ -112,4 +113,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0050's NTFS 8.3 short-name refusal at the asset boundary (issue #139).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0051's decision that a private command's Run token is drawn from the crypto source per session, not counted (issue #141).
