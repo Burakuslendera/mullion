@@ -212,11 +212,11 @@ func resolveAssetRequest(origin canonicalOrigin, rawURI string) (assetRequest, i
 	return assetRequest{path: assetPath, category: "asset"}, 0
 }
 
-// hasTraversalSegment rejects a path segment that Windows' DOS-to-NT path
-// conversion would turn into a name other than the one mullion decided about.
-// That conversion strips trailing dots and spaces (the "MagicDot" behaviour),
-// while path.Clean is lexical and folds only an exact "..". Two consequences,
-// and the rule below covers both:
+// hasTraversalSegment rejects a path segment that Windows' path resolution
+// would turn into a name other than the one mullion decided about. path.Clean
+// is lexical and folds only an exact "..", while Windows normalises, strips and
+// aliases; three classes of segment can open a file mullion did not classify,
+// and the rules below refuse each of them:
 //
 //   - A segment made of nothing but dots and spaces - ".. ", "...", ".. ." -
 //     can normalise to ".." or "." on some Windows builds, which is an escape.
@@ -225,22 +225,29 @@ func resolveAssetRequest(origin canonicalOrigin, rawURI string) (assetRequest, i
 //     response from the name it was given rather than the file it gets:
 //     filepath.Ext("notes.txt.") is ".", the extension switch misses, and the
 //     answer comes from the fallback instead of from ".txt" (issue #100).
-//     Rejecting the alias removes that one class of alias. It does not make the
-//     mapping one-to-one, and the comment here used to claim it did. Windows
-//     also matches a name case-insensitively and, where 8.3 generation is on,
-//     under a short name: measured, "averylongname.html", "AVERYLONGNAME.HTML"
-//     and "AVERYL~1.HTM" all open the same file. Those two are left alone
-//     because they cannot raise the type - the extension switch lower-cases, and
-//     a truncated 8.3 extension can only fall out of the switch into
-//     application/octet-stream, never into html.
+//   - A segment in the NTFS 8.3 short-name shape opens the long-named file the
+//     short name was generated from, and the generated extension is the long
+//     one truncated to three characters. Truncation can land inside the
+//     extension switch the long spelling misses: "payload.htmlx" is opaque by
+//     its long spelling while its generated short name ends ".HTM" and answers
+//     html, so the same opaque bytes typed differently by spelling (issue
+//     #139). is8Dot3AliasSegment carries the shape.
 //
-// The second rule subsumes the first, since a segment of only dots and spaces
-// necessarily ends in one; both are written out because they answer different
-// questions and a later reader will ask both. Windows cannot create a file whose
-// name ends in a dot or a space, so this never rejects a real file there. A
-// caller whose fs.FS was built elsewhere - an embed.FS assembled on Linux - can
-// hold such a name, and it is refused deliberately: the boundary decides on the
-// name it was handed, not on which platform produced the bytes.
+// Case-insensitive matching is the remaining spelling that opens another
+// entry's name, and it is left alone because it cannot raise the type: the
+// extension switch lower-cases and mime.TypeByExtension folds case too.
+//
+// The first two rules are written out separately even though a segment of only
+// dots and spaces necessarily ends in one, because they answer different
+// questions and a later reader will ask both. Windows cannot create a file
+// whose name ends in a dot or a space, so they never reject a real file there;
+// a caller whose fs.FS was built elsewhere - an embed.FS assembled on Linux -
+// can hold such a name, and it is refused deliberately: the boundary decides on
+// the name it was handed, not on which platform produced the bytes. The 8.3
+// rule is different: Windows can create a file literally named "report~1.txt",
+// and the shape check refuses it whether or not a long name generated it. That
+// is the price, and it is paid on the fail-closed side: a spelling that
+// resolves through an alias is exactly the spelling mullion must not type.
 func hasTraversalSegment(value string) bool {
 	for _, segment := range strings.Split(value, "/") {
 		if segment == "" {
@@ -249,8 +256,48 @@ func hasTraversalSegment(value string) bool {
 		if strings.HasSuffix(segment, ".") || strings.HasSuffix(segment, " ") {
 			return true
 		}
+		if is8Dot3AliasSegment(segment) {
+			return true
+		}
 	}
 	return false
+}
+
+// is8Dot3AliasSegment reports whether a segment has the shape NTFS generates
+// for an 8.3 short name: a base of at most eight characters ending in "~" and
+// a decimal serial, plus an optional extension of at most three characters.
+// The shape is matched loosely on purpose. Refusing a file literally given a
+// short-shaped name costs availability; admitting a real generated short name
+// costs the spelling-driven type promotion issue #139 measured. The generated
+// extension is the long extension truncated to three characters, so the
+// extension test is a byte count: a non-ASCII short-shaped extension falls
+// through here and reaches the classifier, where neither the switch nor
+// mime.TypeByExtension knows it and the answer is the opaque default.
+func is8Dot3AliasSegment(segment string) bool {
+	base := segment
+	if dot := strings.LastIndexByte(segment, '.'); dot >= 0 {
+		if len(segment)-dot-1 > 3 {
+			return false
+		}
+		base = segment[:dot]
+	}
+	tilde := strings.LastIndexByte(base, '~')
+	// A generated short name always has a base before the serial, and exactly
+	// one dot overall, so a dot before the tilde marks a name that was created
+	// in this shape rather than generated.
+	if tilde <= 0 || strings.ContainsRune(base[:tilde], '.') {
+		return false
+	}
+	serial := base[tilde+1:]
+	if serial == "" {
+		return false
+	}
+	for i := 0; i < len(serial); i++ {
+		if serial[i] < '0' || serial[i] > '9' {
+			return false
+		}
+	}
+	return len(base[:tilde])+1+len(serial) <= 8
 }
 
 // containsBackslashColonOrControl rejects bytes the traversal check above cannot

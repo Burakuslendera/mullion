@@ -62,6 +62,13 @@ func TestContentTypeForAsset(t *testing.T) {
 		{"uppercase woff", "FONT.WOFF", "font/woff"},
 		{"mixed case woff2", "Font.Woff2", "font/woff2"},
 		{"wasm", "app.wasm", "application/wasm"},
+		// The pair below is issue #139's mechanism, locked on the classifier's
+		// side of the boundary. The classifier is name-based, so it types the
+		// alias spelling html while the long name of the same file is opaque;
+		// the boundary refuses the alias spelling, which is what keeps this row
+		// from being reachable through an asset request.
+		{"truncated-extension long name", "payload.htmlx", "application/octet-stream"},
+		{"8.3 alias spelling of that long name", "PAYLOA~1.HTM", "text/html; charset=utf-8"},
 		{"no extension", "README", "application/octet-stream"},
 		{"unknown extension", "upload.foobar", "application/octet-stream"},
 		{"content-addressed name", "uploads/9f0c4a1b2e", "application/octet-stream"},
@@ -78,7 +85,7 @@ func TestContentTypeForAsset(t *testing.T) {
 // The property behind the table above, stated directly: the bytes never decide.
 // Same HTML payload under three names; only the one that says .html is html.
 func TestContentTypeForAssetIgnoresTheBytes(t *testing.T) {
-	for _, path := range []string{"README", "upload.foobar", "uploads/9f0c4a1b2e"} {
+	for _, path := range []string{"README", "upload.foobar", "uploads/9f0c4a1b2e", "payload.htmlx"} {
 		if got := contentTypeForAsset(path); got == "text/html; charset=utf-8" {
 			t.Fatalf("contentTypeForAsset(%q) = %q, want anything but html", path, got)
 		}

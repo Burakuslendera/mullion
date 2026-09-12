@@ -9,8 +9,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"testing/fstest"
+	"unsafe"
 )
 
 const testVirtualHost = defaultVirtualHost
@@ -40,6 +42,7 @@ func TestResolveAssetPath(t *testing.T) {
 		{name: "traversal", uri: testOrigin + "/../secret", wantErr: http.StatusForbidden},
 		{name: "encoded traversal", uri: testOrigin + "/%2e%2e/secret", wantErr: http.StatusForbidden},
 		{name: "backslash traversal (%5c)", uri: testOrigin + "/..%5c..%5csecret", wantErr: http.StatusForbidden},
+		{name: "8.3 alias spelling", uri: testOrigin + "/PAYLOA~1.HTM", wantErr: http.StatusForbidden},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -225,6 +228,16 @@ func TestResolveAssetRequestDiagnostic(t *testing.T) {
 		{name: "trailing dot alias (%2e)", uri: testOrigin + "/notes.txt%2e", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "trailing space alias (%20)", uri: testOrigin + "/notes.txt%20", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "trailing dot on a directory", uri: testOrigin + "/sub./notes.txt", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		// The 8.3 short-name shape (issue #139). The generated extension is the
+		// long one truncated to three characters, so "PAYLOA~1.HTM" is html where
+		// "payload.htmlx" is opaque: the alias spelling is refused instead of
+		// typed. Names that only resemble the shape are served, because refusing
+		// more than the grammar expresses would widen the availability cost.
+		{name: "8.3 alias spelling", uri: testOrigin + "/PAYLOA~1.HTM", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "8.3 alias spelling (%7e)", uri: testOrigin + "/payloa%7e1.htm", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "8.3 alias spelling without an extension", uri: testOrigin + "/report~1", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "short-shaped name that is not generated", uri: testOrigin + "/report~1.backup", wantPath: "report~1.backup", wantCategory: "asset"},
+		{name: "tilde without a serial is served", uri: testOrigin + "/a~b.txt", wantPath: "a~b.txt", wantCategory: "asset"},
 		// Windows device names pass this boundary and are handed to the caller's
 		// fs.FS. Deliberate, and these rows keep it that way - see decisions/0031
 		// before "hardening" it. os.DirFS refuses them itself (measured on
@@ -261,6 +274,139 @@ func TestResolveAssetRequestServesNonASCIIName(t *testing.T) {
 	got, status := resolveAssetRequest(testAssetOrigin, testOrigin+"/%e6%97%a5%e6%9c%ac.html")
 	if got.path != want || got.category != "asset" || status != 0 {
 		t.Fatalf("resolveAssetRequest() = {%q %q}, %d, want {%q %q}, 0", got.path, got.category, status, want, "asset")
+	}
+}
+
+func TestIs8Dot3AliasSegment(t *testing.T) {
+	tests := []struct {
+		name    string
+		segment string
+		want    bool
+	}{
+		{name: "generated short name with extension", segment: "PAYLOA~1.HTM", want: true},
+		{name: "lowercase spelling of one", segment: "payloa~1.htm", want: true},
+		{name: "without an extension", segment: "REPORT~1", want: true},
+		{name: "two-digit serial", segment: "AB~12.C", want: true},
+		{name: "eight-character whole base", segment: "ABCDEF~9", want: true},
+		{name: "serial too large for the shape", segment: "LONGNA~999.HTM", want: false},
+		{name: "tilde without a serial", segment: "report~.txt", want: false},
+		{name: "tilde followed by letters", segment: "a~b.txt", want: false},
+		{name: "no tilde", segment: "notes.txt", want: false},
+		{name: "extension longer than three characters", segment: "report~1.backup", want: false},
+		{name: "no base before the serial", segment: "~1.htm", want: false},
+		{name: "dot before the serial", segment: "a.b~1.htm", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := is8Dot3AliasSegment(test.segment); got != test.want {
+				t.Fatalf("is8Dot3AliasSegment(%q) = %v, want %v", test.segment, got, test.want)
+			}
+		})
+	}
+}
+
+// windowsShortPath returns the 8.3 short name Windows reports for path. It
+// skips rather than fails when none exists: 8.3 generation is a per-volume
+// setting, so the alias arm of a test is a volume property, not an assertion.
+func windowsShortPath(t *testing.T, path string) string {
+	t.Helper()
+	getShortPathName := syscall.NewLazyDLL("kernel32.dll").NewProc("GetShortPathNameW")
+	pointer, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		t.Skipf("path cannot be passed to GetShortPathNameW: %v", err)
+	}
+	size, _, _ := getShortPathName.Call(uintptr(unsafe.Pointer(pointer)), 0, 0)
+	if size == 0 {
+		t.Skipf("GetShortPathNameW produced no short path for %q", path)
+	}
+	buffer := make([]uint16, size)
+	written, _, _ := getShortPathName.Call(uintptr(unsafe.Pointer(pointer)), uintptr(unsafe.Pointer(&buffer[0])), size)
+	if written == 0 || written > size {
+		t.Skipf("GetShortPathNameW could not report the short path for %q", path)
+	}
+	return syscall.UTF16ToString(buffer)
+}
+
+func openRootAssetFS(t *testing.T, dir string) fs.FS {
+	t.Helper()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatalf("os.OpenRoot(%q): %v", dir, err)
+	}
+	t.Cleanup(func() { root.Close() })
+	return root.FS()
+}
+
+// TestAssetProviderNeverTypesAnAliasSpellingOfAnOpaqueName pins the boundary
+// against issue #139. The long name "payload.htmlx" is opaque - the extension
+// switch misses it - while the 8.3 short name Windows generates for the same
+// file ends in ".HTM", the truncated extension, which the switch answers html.
+// The alias spelling is refused before the classifier can see it, so both
+// spellings of one file agree on its type by construction.
+func TestAssetProviderNeverTypesAnAliasSpellingOfAnOpaqueName(t *testing.T) {
+	dir := t.TempDir()
+	const longName = "payload.htmlx"
+	body := []byte("inert bytes, not markup")
+	for _, name := range []string{longName, "plain.txt", "data1234"} {
+		if err := os.WriteFile(filepath.Join(dir, name), body, 0o644); err != nil {
+			t.Fatalf("write %q: %v", name, err)
+		}
+	}
+	alias := filepath.Base(windowsShortPath(t, filepath.Join(dir, longName)))
+	if alias == longName {
+		t.Skipf("this volume generated no distinct 8.3 short name for %q", longName)
+	}
+	if !is8Dot3AliasSegment(alias) {
+		t.Skipf("generated short name %q is outside the shape the boundary reasons about", alias)
+	}
+	longInfo, err := os.Stat(filepath.Join(dir, longName))
+	if err != nil {
+		t.Fatalf("stat %q: %v", longName, err)
+	}
+	aliasInfo, err := os.Stat(filepath.Join(dir, alias))
+	if err != nil {
+		t.Fatalf("stat the generated short name %q: %v", alias, err)
+	}
+	if !os.SameFile(longInfo, aliasInfo) {
+		t.Fatalf("short name %q resolves to a different file than %q", alias, longName)
+	}
+
+	for name, assets := range map[string]fs.FS{
+		"os.DirFS":    os.DirFS(dir),
+		"os.OpenRoot": openRootAssetFS(t, dir),
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider := newTestAssetProvider(assets)
+
+			// The long spelling is opaque and stays opaque: the classifier sees
+			// the name that was handed, and ".htmlx" is not a type it trusts.
+			response := provider.resolve(testOrigin + "/" + longName)
+			if response.status != http.StatusOK || response.contentType != "application/octet-stream" {
+				t.Fatalf("%q = {%d %q}, want {200 application/octet-stream}", longName, response.status, response.contentType)
+			}
+			// The alias spelling opens this same file; the boundary refuses it
+			// rather than typing it from the truncated extension.
+			for _, spelling := range []string{alias, strings.ToLower(alias)} {
+				response := provider.resolve(testOrigin + "/" + spelling)
+				if response.status != http.StatusForbidden {
+					t.Fatalf("%q = %d, want 403", spelling, response.status)
+				}
+				if response.contentType == "text/html; charset=utf-8" {
+					t.Fatalf("%q content type = %q, want anything but html", spelling, response.contentType)
+				}
+			}
+			// Controls: a typed name keeps its type and an untyped one stays
+			// opaque by its own spelling, so the refusals above are about the
+			// aliasing and not about the fixture's bytes or directory.
+			response = provider.resolve(testOrigin + "/plain.txt")
+			if response.status != http.StatusOK || response.contentType != "text/plain; charset=utf-8" {
+				t.Fatalf("plain.txt = {%d %q}, want {200 text/plain; charset=utf-8}", response.status, response.contentType)
+			}
+			response = provider.resolve(testOrigin + "/data1234")
+			if response.status != http.StatusOK || response.contentType != "application/octet-stream" {
+				t.Fatalf("data1234 = {%d %q}, want {200 application/octet-stream}", response.status, response.contentType)
+			}
+		})
 	}
 }
 
@@ -415,6 +561,7 @@ func TestAssetProviderResolveDiagnosticCategories(t *testing.T) {
 		{name: "triple-dot segment", uri: testOrigin + "/.../secret", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "colon drive/ADS (%3a)", uri: testOrigin + "/file.txt%3astream", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "trailing dot alias", uri: testOrigin + "/style.css.", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
+		{name: "8.3 alias spelling", uri: testOrigin + "/payloa~1.htm", wantPath: "traversal", wantCategory: "traversal", wantStatus: http.StatusForbidden},
 		{name: "device name reaches the fs.FS", uri: testOrigin + "/nul", wantPath: "nul", wantCategory: "missing", wantStatus: http.StatusNotFound},
 		{name: "invalid", uri: "://", wantPath: "invalid", wantCategory: "invalid", wantStatus: http.StatusBadRequest},
 	}

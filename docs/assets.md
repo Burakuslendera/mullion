@@ -43,6 +43,7 @@ path runs without its filter.
 | scheme is not `https` | `403` |
 | host or effective port differs from the planned embedded origin | `403` |
 | path has a `.` or `..` segment, **or any segment ending in a dot or a space** (`notes.txt.`, `sub./x`) — Windows' DOS-to-NT conversion strips those, so the name would not be the file | `403` |
+| path has a segment in the NTFS 8.3 short-name shape (`PAYLOA~1.HTM`) — the generated extension is the long one truncated, and the truncation can land inside the type switch the long spelling misses (issue #139) | `403` |
 | path contains a backslash, a colon or a control or rendering-control character (incl. `%5c`, `%00`) | `403` |
 | path is not a valid `fs.FS` name (`fs.ValidPath` — raw invalid UTF-8 among others) | `403` |
 | path is `favicon.ico`, no file exists | `204`, shortcut answered after lookup |
@@ -73,6 +74,23 @@ One further class is rejected for the same reason (issue #100). Any segment
 ending in a dot or a space is refused, not only a segment made entirely of them:
 Windows strips those, so `notes.txt.` is an alias for `notes.txt`, and the name
 mullion classified would not be the file the OS opens.
+
+The 8.3 short name is a third alias class, and the one that can raise the type
+(issue #139). Where 8.3 generation is on, a long name is also reachable through
+the short name Windows generates for it, and the generated extension is the long
+one truncated to three characters — a truncation that can land inside the type
+switch the long spelling misses. The audit behind the issue measured, through
+both production adapters, the same opaque bytes answering
+`application/octet-stream` by long spelling and `text/html` by short:
+`payload.htmlx` is unclassified while its generated short name ends `.HTM`. A
+segment in the short-name shape is therefore refused like the dot/space aliases,
+so the classifier never sees a spelling the OS may resolve to a different entry;
+the refusal is fail-closed by construction and costs the availability of files
+literally given a short-shaped name. Case-insensitive matching is the remaining
+spelling that opens another name, and it is admitted because it cannot change
+the class: the switch lower-cases and `mime.TypeByExtension` folds case too.
+[Decision 0050](./decisions/0050-8-dot-3-alias-spellings-are-refused.md) owns
+the shape and its cost.
 
 **Windows device names are not filtered here** — `/nul`, `/con`, `/com1` reach
 the caller's `fs.FS` like any other name. That is a decision (`decisions/0031`),
@@ -387,4 +405,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point the August evidence link to the canonical verification records path.
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record the 8.3 short-name refusal row in the boundary table and the alias-class paragraph behind it (issue #139, decision 0050).
