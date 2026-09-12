@@ -45,10 +45,11 @@ func (host *Host) startRenderWatchdogForRun(admission runAdmission) {
 }
 
 func (host *Host) fireRenderWatchdog(generation uint64, admission runAdmission) {
-	if !host.enterOriginatingRun(admission) {
+	admission, ok := host.enterOriginatingRun(admission)
+	if !ok {
 		return
 	}
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.renderMu.Lock()
 	if host.renderGeneration != generation {
 		host.renderMu.Unlock()
@@ -85,7 +86,7 @@ func (host *Host) stopRenderWatchdog() {
 // controller.
 func (host *Host) MarkFrontendReady() {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 
 	host.renderMu.Lock()
 	if host.frontendReady {
@@ -118,7 +119,7 @@ func (host *Host) MarkFrontendReady() {
 // the startup timing record and show gate keep their own per-Run guards.
 func (host *Host) MarkFrontendShellReady() {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 
 	host.renderMu.Lock()
 	if host.frontendShellReady {
@@ -145,8 +146,8 @@ func (host *Host) MarkFrontendShellReady() {
 // MarkFrontendPhase records a free-form progress marker from the frontend. It
 // appears in the render-watchdog summary as the last phase reached.
 func (host *Host) MarkFrontendPhase(phase string) {
-	host.enterRun()
-	defer host.leaveRun()
+	admission := host.enterRun()
+	defer host.leaveRun(admission)
 	phase = logsafe.Field(phase)
 	host.diagnostics.recordFrontendPhase(phase)
 	host.log.Debug("mullion: frontend phase, phase=" + phase)
@@ -155,7 +156,7 @@ func (host *Host) MarkFrontendPhase(phase string) {
 // MarkFrontendDiagnostic records a frontend diagnostic event (a script error, a
 // failed resource, a DOM snapshot).
 func (host *Host) MarkFrontendDiagnostic(kind string, detail string) {
-	host.enterRun()
-	defer host.leaveRun()
+	admission := host.enterRun()
+	defer host.leaveRun(admission)
 	host.recordFrontendDiagnostic(kind, detail)
 }

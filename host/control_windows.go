@@ -18,7 +18,7 @@ import (
 // Run is active or the window cannot become visible.
 func (host *Host) Show() error {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.log.Debug("mullion: show requested")
 
 	// Admission is counted rather than represented by a held mutex: a deferred
@@ -45,7 +45,7 @@ func (host *Host) Show() error {
 // active, it has no window effect.
 func (host *Host) Hide() {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.log.Debug("mullion: hide requested")
 	host.warnIf("hide post", host.postRunCommand(admission, wmNativeHide, 0))
 }
@@ -54,7 +54,7 @@ func (host *Host) Hide() {
 // no Run is active, it has no window effect.
 func (host *Host) Quit() {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.log.Debug("mullion: quit requested")
 	host.warnIf("quit post", host.postRunCommand(admission, wmNativeQuit, 0))
 }
@@ -63,7 +63,7 @@ func (host *Host) Quit() {
 // window effect.
 func (host *Host) Minimise() {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.log.Debug("mullion: minimize requested")
 	host.warnIf("minimize post", host.postRunCommand(admission, wmNativeMinimize, 0))
 }
@@ -72,7 +72,7 @@ func (host *Host) Minimise() {
 // When no Run is active, it has no window effect.
 func (host *Host) ToggleMaximise() {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.log.Debug("mullion: maximize toggle requested")
 	host.warnIf("maximize toggle post", host.postRunCommand(admission, wmNativeMaxToggle, 0))
 }
@@ -81,7 +81,7 @@ func (host *Host) ToggleMaximise() {
 // When no Run is active, it has no window effect.
 func (host *Host) StartDrag() {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	host.log.Debug("mullion: titlebar drag requested")
 	host.warnIf("titlebar drag post", host.postRunCommand(admission, wmNativeStartDrag, 0))
 }
@@ -91,7 +91,7 @@ func (host *Host) StartDrag() {
 // Run is active, it has no window effect.
 func (host *Host) StartResize(edge string) {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	hit, ok := resizeHitTestForEdge(edge)
 	if !ok {
 		host.log.Warn("mullion: resize requested with unknown edge, edge=" + logsafe.Field(edge))
@@ -106,7 +106,7 @@ func (host *Host) StartResize(edge string) {
 // cross-thread-safe native query.
 func (host *Host) IsMaximised() bool {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	if !admission.running || admission.hwnd == 0 {
 		return false
 	}
@@ -129,7 +129,7 @@ func (host *Host) IsMaximised() bool {
 // session-tagged, so a recycled HWND can never receive an older Run's title.
 func (host *Host) SetTitle(title string) {
 	admission := host.enterRun()
-	defer host.leaveRun()
+	defer host.leaveRun(admission)
 	text, err := windows.UTF16PtrFromString(title)
 	if err != nil {
 		host.warnIf("set title", err)
