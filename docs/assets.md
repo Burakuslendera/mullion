@@ -3,6 +3,7 @@
 ## Contents
 
 - [A callback failure answers in process, never on the wire (issue #150)](#a-callback-failure-answers-in-process-never-on-the-wire-issue-150)
+- [The callback owns the environment it borrows (issue #161)](#the-callback-owns-the-environment-it-borrows-issue-161)
 - [Serving from a caller URL instead (`Config.URL`)](#serving-from-a-caller-url-instead-configurl)
 - [COM stream lifetime](#com-stream-lifetime)
 - [The two-second gap before the first subresource (issues #85, #77)](#the-two-second-gap-before-the-first-subresource-issues-85-77)
@@ -186,7 +187,10 @@ recovered panic — receives one deterministic blocking answer, a `500` with no
 content and the standard `nosniff`/no-store headers built without a stream. When
 even that cannot be built or installed, the session ends through the terminal
 teardown of [decision 0052](./decisions/0052-browser-process-exit-fails-closed.md)
-and `Run` reports `ErrAssetBoundaryClosed`; it never reports a normal close. The
+and `Run` reports `ErrAssetBoundaryClosed`; it never reports a normal close for
+an escalation it accepted. The redline is the browser's own shutdown state: an
+escalation arriving while a user-initiated close already owns the browser is
+refused, so a close the user started still reports a normal close. The
 webview2 layer forwards a failed `GetRequest` to the same callback with no
 request rather than ending the event silently. The blocking behavior is
 contract-based, not live-proven: no supported-Runtime run has recorded the
@@ -447,4 +451,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record the callback's pinned environment reference - embedder code between the handoff and the last environment call may pump a teardown, so the callback holds its own reference on every exit (issue #161, decision 0054).
+> Last updated: 2026-09-13 | Editor: ZCode (GLM-5.3-Flash) | Change: record the fail-closed callback contract - every unanswered exit takes the blocking 500 or escalates through the 0052 terminal teardown, with the IsShuttingDown refusal keeping a user-initiated close a normal close (issue #150, decision 0053) - and the callback's pinned environment reference (issue #161, decision 0054).

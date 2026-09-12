@@ -391,4 +391,4 @@ no taken reference, and the callback's fail-closed contract answers it
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record that the asset callback pins the borrowed environment for one invocation, against a nested teardown that releases the Browser's own reference mid-callback (issue #161, decision 0054).
+> Last updated: 2026-09-13 | Editor: ZCode (GLM-5.3-Flash) | Change: record the fail-closed trio on the hosting side - the process-failed kind matrix with the browser-process-exit terminal (issue #155, decision 0052), the forwarded GetRequest feeding the blocking-response contract (issue #150, decision 0053), and the borrowed environment the asset callback pins (issue #161, decision 0054).

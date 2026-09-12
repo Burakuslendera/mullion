@@ -58,17 +58,23 @@ func (callback *assetCallback) failed(stage string, cause error) {
 // finish closes the contract. A callback that installed its response is done;
 // anything else receives the deterministic blocking response, or - when even
 // that cannot be built or installed - escalates to the terminal teardown. A
-// recovered panic is treated like any other failure: reported, then blocked.
+// recovered panic is treated like any other failure: blocked, then reported.
+// Blocking runs first because the event dispatch's own recover turns a panic
+// that escapes this deferred finish into an S_OK return with no response -
+// the documented fail-open transition - so the report must not run before the
+// answer exists.
 func (callback *assetCallback) finish() {
-	if recovered := recover(); recovered != nil {
+	recovered := recover()
+	if recovered != nil {
 		callback.stage = "panic"
 		callback.cause = errors.New(logsafe.Field(fmt.Sprint(recovered)))
+	}
+	if !callback.installed {
+		callback.block()
+	}
+	if recovered != nil {
 		callback.provider.log.Error("mullion: asset callback panicked, reason=" + logsafe.Reason(callback.cause))
 	}
-	if callback.installed {
-		return
-	}
-	callback.block()
 }
 
 // block installs the blocking response: a 500 carrying the boundary's standard
@@ -128,8 +134,8 @@ func (provider *assetProvider) escalate(stage string, cause, blocker error) {
 // requestAssetBoundaryTerminal latches the asset boundary's fail-closed
 // terminal outcome once and schedules the window destruction through the same
 // tagged command the browser-process-exit policy uses. A browser already
-// shutting down is refused: its teardown owns the outcome, and a stale event
-// must not turn a user close into a boundary failure.
+// shutting down is refused: its teardown owns the outcome, so a user close the
+// browser has already claimed stays a normal close in Run's report.
 func (host *Host) requestAssetBoundaryTerminal(stage string, cause error) {
 	if host.assetBoundaryTerminal {
 		return

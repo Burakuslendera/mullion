@@ -50,23 +50,25 @@ func (host *Host) requestBrowserProcessExitTerminal(browser *webview2.Browser) {
 // there, and WM_DESTROY's own teardown is idempotent behind it. The log names
 // the latched cause - the command is shared by the browser-process-exit policy
 // and the asset boundary escalation (issue #150), and a pasted log must show
-// which one tore the window down.
+// which one tore the window down. The check order mirrors terminalOutcome: in
+// the dual-terminal race both flags latch, the browser-process-exit cause owns
+// Run's error, and the log must name that same cause.
 func (host *Host) applyBrowserProcessExitTeardown(hwnd windowHandle) {
-	if host.assetBoundaryTerminal {
-		host.log.Debug("mullion: asset boundary terminal applying, action=host_close")
-	} else {
+	if host.browserExitTerminal {
 		host.log.Debug("mullion: browser process exit terminal applying, action=host_close")
+	} else {
+		host.log.Debug("mullion: asset boundary terminal applying, action=host_close")
 	}
 	procDestroyWindow.Call(uintptr(hwnd))
 }
 
-// browserExitTerminalOutcome is the message loop's exit result. The loop
+// terminalOutcome is the message loop's exit result. The loop
 // cannot distinguish a user close from the terminal teardown by its exit code,
 // so the recorded cause decides: a session that ended because the browser
 // process died is returned as ErrBrowserProcessExited, one that ended because
 // the asset boundary escalated (issue #150) as ErrAssetBoundaryClosed - never
 // as success.
-func (host *Host) browserExitTerminalOutcome() error {
+func (host *Host) terminalOutcome() error {
 	if host.browserExitTerminal {
 		return ErrBrowserProcessExited
 	}

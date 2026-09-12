@@ -81,14 +81,14 @@ var (
 // reused by a later allocation and misread.
 func resetAssetFakes(t *testing.T) {
 	t.Helper()
-	clear := func() {
+	reset := func() {
 		assetFakeMu.Lock()
 		assetFakeStates = map[uintptr]*assetFakeState{}
 		assetFakeKeep = nil
 		assetFakeMu.Unlock()
 	}
-	clear()
-	t.Cleanup(clear)
+	reset()
+	t.Cleanup(reset)
 }
 
 func assetFakeTrack[T any](object *T, state *assetFakeState) {
@@ -117,6 +117,7 @@ func assetFakeWriteAddress(dst, value uintptr) {
 // assetFakeUtf16At reads a NUL-terminated UTF-16 string out of fake-owned
 // memory by moving one unit at a time, mirroring the package's utf16At idiom.
 func assetFakeUtf16At(address uintptr) string {
+	// limit is the unterminated-string guard: the scan stops at 4 KiB even with no NUL.
 	const limit = 4096
 	units := make([]uint16, 0, 64)
 	for offset := uintptr(0); offset < limit; offset += 2 {
@@ -294,6 +295,21 @@ func (panicAssetFS) Open(string) (fs.File, error) {
 	panic("asset fs exploded")
 }
 
+// panickingAssetLogger is a Logger whose every Error line records and then
+// panics - the embedder-logger failure the recover body must survive with the
+// blocking answer already installed.
+type panickingAssetLogger struct {
+	messages *[]string
+}
+
+func (logger panickingAssetLogger) Debug(string) {}
+func (logger panickingAssetLogger) Info(string)  {}
+func (logger panickingAssetLogger) Warn(string)  {}
+func (logger panickingAssetLogger) Error(message string) {
+	*logger.messages = append(*logger.messages, message)
+	panic("logger exploded")
+}
+
 // requireBlockingResponse asserts the deterministic blocking answer reached the
 // event args: a 500 with the boundary's standard headers, built with no
 // content, put exactly once, and its creator reference released. Rows that
@@ -396,6 +412,33 @@ func TestAssetCallbackFailsClosedOnEveryErrorExit(t *testing.T) {
 				t.Fatalf("terminate calls = %d (%v), want 0: the blocking response held", len(terminal.stages), terminal.stages)
 			}
 		})
+	}
+}
+
+// TestAssetCallbackBlocksBeforeReportingThePanic drives the recovered-panic
+// exit with a Logger whose Error panics. A second panic out of the deferred
+// finish meets the event dispatch's own recover, which returns S_OK for the
+// event - and S_OK without put_Response is the fail-open transition that hands
+// the matched request to the network (issue #150) - so the blocking install
+// must run before the panic report, not after it.
+func TestAssetCallbackBlocksBeforeReportingThePanic(t *testing.T) {
+	resetAssetFakes(t)
+	messages := []string{}
+	terminal := &assetTerminalRecord{}
+	provider := newAssetProvider(panicAssetFS{}, newLogSink(panickingAssetLogger{messages: &messages}), testAssetOrigin, newNativeDiagnostics(), terminal.terminate)
+	request, _ := newFakeAssetRequest(t)
+	args, argsState := newFakeAssetArgs(t)
+	environment, environmentState := newFakeAssetEnvironment(t)
+
+	provider.webResourceRequested(request, args, environment)
+
+	requireBlockingResponse(t, argsState, environmentState)
+	if len(terminal.stages) != 0 {
+		t.Fatalf("terminate calls = %d (%v), want 0: the blocking response held", len(terminal.stages), terminal.stages)
+	}
+	if len(messages) != 2 || !strings.Contains(messages[0], "asset boundary blocked request") ||
+		!strings.Contains(messages[1], "asset callback panicked") {
+		t.Fatalf("error lines = %q, want the blocking report before the panic report", messages)
 	}
 }
 
@@ -509,7 +552,7 @@ func TestAssetCallbackServesWithoutEscalation(t *testing.T) {
 // refuses the request, and the shared teardown command logs the true cause.
 func TestAssetBoundaryTerminalLatchesOnceAndRefusesShuttingDown(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
-	if host.browserExitTerminalOutcome() != nil {
+	if host.terminalOutcome() != nil {
 		t.Fatal("a fresh host must not report a terminal outcome")
 	}
 	host.requestAssetBoundaryTerminal("environment", errAssetEnvironmentUnavailable)
@@ -517,8 +560,8 @@ func TestAssetBoundaryTerminalLatchesOnceAndRefusesShuttingDown(t *testing.T) {
 	if !host.assetBoundaryTerminal {
 		t.Fatal("the escalation did not latch")
 	}
-	if !errors.Is(host.browserExitTerminalOutcome(), ErrAssetBoundaryClosed) {
-		t.Fatalf("outcome = %v, want ErrAssetBoundaryClosed", host.browserExitTerminalOutcome())
+	if !errors.Is(host.terminalOutcome(), ErrAssetBoundaryClosed) {
+		t.Fatalf("outcome = %v, want ErrAssetBoundaryClosed", host.terminalOutcome())
 	}
 	if got := strings.Count(logger.String(), "asset boundary terminal requested"); got != 1 {
 		t.Fatalf("terminal requested lines = %d, want exactly 1", got)

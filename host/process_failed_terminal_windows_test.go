@@ -60,7 +60,7 @@ func TestProcessFailedBrowserExitPostsOneTaggedTerminalCommand(t *testing.T) {
 	if !strings.Contains(logged, "level=ERROR msg=mullion: webview2 process failed, kind=0") {
 		t.Fatalf("browser exit was not reported at ERROR:\n%s", logged)
 	}
-	if !errors.Is(host.browserExitTerminalOutcome(), ErrBrowserProcessExited) {
+	if !errors.Is(host.terminalOutcome(), ErrBrowserProcessExited) {
 		t.Fatal("latched browser exit did not become Run's terminal outcome")
 	}
 }
@@ -121,7 +121,7 @@ func TestProcessFailedBrowserExitTerminalLeavesNoLiveHostWithAClosedWebView(t *t
 	}); err == nil || reEmbedded {
 		t.Fatalf("destroyed window allowed a post-terminal embed: err=%v reEmbedded=%t", err, reEmbedded)
 	}
-	if !errors.Is(host.browserExitTerminalOutcome(), ErrBrowserProcessExited) {
+	if !errors.Is(host.terminalOutcome(), ErrBrowserProcessExited) {
 		t.Fatal("terminal teardown did not keep the browser-exit run outcome")
 	}
 	// A stale timer identity after the teardown must stay inert.
@@ -138,7 +138,7 @@ func TestProcessFailedBrowserExitTerminalLeavesNoLiveHostWithAClosedWebView(t *t
 	if host.browser != nil {
 		t.Fatal("browser ownership leaked into the next session")
 	}
-	if host.browserExitTerminalOutcome() != nil {
+	if host.terminalOutcome() != nil {
 		t.Fatal("next session inherited the terminal outcome")
 	}
 }
@@ -178,7 +178,7 @@ func TestProcessFailedOtherKindsKeepTheObservationOnlyPolicy(t *testing.T) {
 			if got := strings.Count(logger.String(), want); got != 2 {
 				t.Fatalf("kind observations = %d, want one per event:\n%s", got, logger.String())
 			}
-			if host.browserExitTerminalOutcome() != nil {
+			if host.terminalOutcome() != nil {
 				t.Fatal("a non-terminal kind became Run's terminal outcome")
 			}
 		})
@@ -226,7 +226,7 @@ func TestProcessFailedBrowserExitAfterDestroyRecordsOutcomeWithoutPost(t *testin
 	if strings.Contains(logger.String(), "level=WARN") {
 		t.Fatalf("the skipped post degraded into a warning:\n%s", logger.String())
 	}
-	if !errors.Is(host.browserExitTerminalOutcome(), ErrBrowserProcessExited) {
+	if !errors.Is(host.terminalOutcome(), ErrBrowserProcessExited) {
 		t.Fatal("browser exit after destroy did not become Run's terminal outcome")
 	}
 }
@@ -254,10 +254,19 @@ func TestProcessFailedAfterBrowserShutdownIsIgnored(t *testing.T) {
 	}
 }
 
+// TestProcessExitCommandAppliesOnlyForTheOriginatingRun delivers the tagged
+// command after the browser-exit producer latched, so the applying log names a
+// cause a request actually recorded: both producers latch before posting, so a
+// delivery with no latched terminal is unreachable from production wiring.
 func TestProcessExitCommandAppliesOnlyForTheOriginatingRun(t *testing.T) {
 	host, logger := newTestHost(t, Config{})
 	const hwnd = windowHandle(0x1556)
 	run := beginHeadlessLifecycleRun(t, host, hwnd)
+	browser := host.newWebViewBrowser()
+	host.browser = browser
+	host.postNativeCommand = func(windowHandle, uint32, uintptr, uintptr) error { return nil }
+
+	browser.ProcessFailedCallback(webview2.ProcessFailedObservation{Kind: webview2.ProcessFailedKindBrowserProcessExited})
 
 	host.windowProc(hwnd, wmNativeProcessExit, 0, run.token+1)
 	if strings.Contains(logger.String(), "browser process exit terminal applying") {
@@ -267,5 +276,36 @@ func TestProcessExitCommandAppliesOnlyForTheOriginatingRun(t *testing.T) {
 	host.windowProc(hwnd, wmNativeProcessExit, 0, run.token)
 	if !strings.Contains(logger.String(), "browser process exit terminal applying") {
 		t.Fatal("the originating run's command did not apply the terminal teardown")
+	}
+}
+
+// TestDualTerminalApplicationNamesTheOutcomeOwningCause pins the shared
+// command's log priority against terminalOutcome: with both terminal causes
+// latched, the browser-process-exit cause owns Run's error, so the applying
+// log must name that same cause rather than the asset boundary.
+func TestDualTerminalApplicationNamesTheOutcomeOwningCause(t *testing.T) {
+	host, logger := newTestHost(t, Config{})
+	const hwnd = windowHandle(0x1559)
+	run := beginHeadlessLifecycleRun(t, host, hwnd)
+	browser := host.newWebViewBrowser()
+	host.browser = browser
+	host.postNativeCommand = func(windowHandle, uint32, uintptr, uintptr) error { return nil }
+
+	browser.ProcessFailedCallback(webview2.ProcessFailedObservation{Kind: webview2.ProcessFailedKindBrowserProcessExited})
+	host.requestAssetBoundaryTerminal("environment", errAssetEnvironmentUnavailable)
+	if !host.browserExitTerminal || !host.assetBoundaryTerminal {
+		t.Fatal("the dual-terminal scenario did not latch both causes")
+	}
+
+	host.windowProc(hwnd, wmNativeProcessExit, 0, run.token)
+
+	if !errors.Is(host.terminalOutcome(), ErrBrowserProcessExited) {
+		t.Fatalf("outcome = %v, want ErrBrowserProcessExited", host.terminalOutcome())
+	}
+	if !strings.Contains(logger.String(), "browser process exit terminal applying") {
+		t.Fatalf("the applying log did not name the outcome-owning cause:\n%s", logger.String())
+	}
+	if strings.Contains(logger.String(), "asset boundary terminal applying") {
+		t.Fatal("the applying log named the asset boundary over the outcome owner")
 	}
 }

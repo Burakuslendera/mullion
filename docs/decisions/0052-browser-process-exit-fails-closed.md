@@ -129,6 +129,10 @@ reproduction contract and the Windows 10/11 parity row in issue #129.
 - `TestProcessFailedBrowserExitAfterDestroyRecordsOutcomeWithoutPost` and
   `TestProcessFailedAfterBrowserShutdownIsIgnored` pin the teardown-window and
   stale-browser deliveries; `TestProcessExitCommandAppliesOnlyForTheOriginatingRun`
-  pins the tagged dispatch.
+  pins the tagged dispatch behind the latched browser-exit cause.
+- `TestDualTerminalApplicationNamesTheOutcomeOwningCause` pins the shared
+  command's log priority: with both terminal causes latched, the applying log
+  names the browser-process-exit cause that owns `Run`'s error, mirroring
+  `terminalOutcome`.
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: create the record — ProcessFailed(BrowserProcessExited) fails closed through one tagged terminal command, other kinds stay observation-only (issue #155).
+> Last updated: 2026-09-13 | Editor: ZCode (GLM-5.3-Flash) | Change: create the record — ProcessFailed(BrowserProcessExited) fails closed through one tagged terminal command, other kinds stay observation-only (issue #155) — and pin the shared command's log priority, which names the terminal cause that owns Run's error when both causes latch.

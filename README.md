@@ -382,6 +382,22 @@ was taken that way, on the same flat ground.
   [decisions/0030](docs/decisions/0030-guard-exempts-the-virtual-host-name.md);
   the runtime behaviour behind it is upstream since 2022 and unfixed
   ([WebView2Feedback #2381](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2381)).
+- **A browser-process exit closes the window, and `Run` returns
+  `ErrBrowserProcessExited`.** WebView2 documents the control as Closed after
+  `BROWSER_PROCESS_EXITED`, so mullion fails closed instead of recreating the
+  WebView: the window is destroyed through the audited teardown and the `Host`
+  stays reusable for a later `Run`. An application that wants a visible error
+  surface or an automatic restart owns that decision at its call site
+  ([decisions/0052](docs/decisions/0052-browser-process-exit-fails-closed.md)).
+- **An asset callback that cannot answer in process answers with a blocking
+  `500`, and a persistent COM failure closes the window.** Every exit from the
+  embedded-asset callback installs a deterministic `500` with the boundary's
+  standard headers, so a failed request is never handed to the network; when
+  even that response cannot be built or installed, the session ends and `Run`
+  returns `ErrAssetBoundaryClosed`. An escalation arriving while a
+  user-initiated close already owns the browser is refused, so a close the
+  user started still reports a normal close
+  ([decisions/0053](docs/decisions/0053-asset-callback-failure-installs-a-blocking-response.md)).
 - **WebView2 does not render while the window is hidden.** With `StartHidden`, the
   frontend cannot signal readiness until the first `Show`. "Load it invisibly and
   reveal it when ready" is not achievable this way.
