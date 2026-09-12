@@ -24,7 +24,7 @@ func TestStructuredDiagnosticEmittersKeepSingleFieldValues(t *testing.T) {
 
 	t.Run("asset error", func(t *testing.T) {
 		logger := &captureLogger{}
-		provider := newAssetProvider(nil, newLogSink(logger), canonicalOrigin{}, nil)
+		provider := newAssetProvider(nil, newLogSink(logger), canonicalOrigin{}, nil, nil)
 		provider.logAssetResponseError(assetResponse{
 			status:  http.StatusNotFound,
 			reason:  "Not Found" + forged,
@@ -35,7 +35,7 @@ func TestStructuredDiagnosticEmittersKeepSingleFieldValues(t *testing.T) {
 
 	t.Run("asset served", func(t *testing.T) {
 		logger := &captureLogger{}
-		provider := newAssetProvider(nil, newLogSink(logger), canonicalOrigin{}, nil)
+		provider := newAssetProvider(nil, newLogSink(logger), canonicalOrigin{}, nil, nil)
 		provider.logAssetResponseDebug(assetResponse{
 			status:      200,
 			contentType: "text/javascript" + forged,

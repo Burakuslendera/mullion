@@ -76,7 +76,12 @@ type Host struct {
 	// makes the message loop return ErrBrowserProcessExited instead of a false
 	// normal close. beginRun resets it per session.
 	browserExitTerminal bool
-	architectureErr     error
+	// assetBoundaryTerminal records that the asset boundary escalated (issue
+	// #150): a matched request could not be answered in process and no blocking
+	// response could be installed. Same confinement, exactly-once and reset
+	// discipline as browserExitTerminal; the loop returns ErrAssetBoundaryClosed.
+	assetBoundaryTerminal bool
+	architectureErr       error
 
 	dpiAwarenessErr      error
 	renderMu             sync.Mutex
@@ -372,6 +377,7 @@ func (host *Host) beginRun() error {
 	host.webViewEmbedding = false
 	host.windowDestroyed = false
 	host.browserExitTerminal = false
+	host.assetBoundaryTerminal = false
 	host.moveSizeActive = false
 	host.frameStateGeneration = 0
 	host.assets = assetProvider{}
@@ -650,7 +656,7 @@ func (host *Host) runAfterRuntimeDiscovery() (runErr error) {
 			err := errors.New("asset fs unavailable")
 			return err
 		}
-		host.assets = newAssetProvider(host.config.Assets, host.log, host.source.origin, host.diagnostics)
+		host.assets = newAssetProvider(host.config.Assets, host.log, host.source.origin, host.diagnostics, host.requestAssetBoundaryTerminal)
 	}
 
 	host.log.Debug("mullion: window create requested")

@@ -198,6 +198,12 @@ func (browser *Browser) handleProcessFailed(args *ICoreWebView2ProcessFailedEven
 // The args pointer is borrowed for the duration of the event and is left
 // untouched (see the ownership note in handlers_windows.go); only the
 // GetRequest result is owned here.
+//
+// A failed GetRequest is not a silent exit (issue #150): under the WebView2
+// contract an event that ends without put_Response continues on the network,
+// so swallowing the failure would answer the boundary with the wire. The host
+// callback still runs - with no request - and owns the blocking response. No
+// request reference is taken on this path, so there is nothing to release.
 func (browser *Browser) handleWebResourceRequested(args *ICoreWebView2WebResourceRequestedEventArgs) {
 	if browser.WebResourceRequestedCallback == nil || args == nil {
 		return
@@ -205,6 +211,7 @@ func (browser *Browser) handleWebResourceRequested(args *ICoreWebView2WebResourc
 	request, err := args.GetRequest()
 	if err != nil {
 		browser.reportError(eventGetterError("WebResourceRequested", "GetRequest", err))
+		browser.WebResourceRequestedCallback(nil, args)
 		return
 	}
 	defer asUnknown(request).Release()

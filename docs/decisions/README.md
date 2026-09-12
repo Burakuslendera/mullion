@@ -73,6 +73,7 @@ These files are that record.
 | [0050](./0050-8-dot-3-alias-spellings-are-refused.md) | An asset request spelled as an NTFS 8.3 short name is refused | Accepted |
 | [0051](./0051-run-token-comes-from-the-crypto-source.md) | A private command's Run token comes from the crypto source, not a counter | Accepted |
 | [0052](./0052-browser-process-exit-fails-closed.md) | A browser-process exit fails closed instead of leaving a ready Host with a closed WebView | Accepted |
+| [0053](./0053-asset-callback-failure-installs-a-blocking-response.md) | An asset callback that cannot serve installs a blocking response instead of letting the request reach the network | Accepted; terminal escalation reuses 0052's tagged teardown |
 
 ## When to write one
 
@@ -114,4 +115,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0052's decision that ProcessFailed(BrowserProcessExited) fails closed through one tagged terminal command while other kinds stay observation-only (issue #155).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0053's decision that an asset callback failure answers with a blocking response, escalating to 0052's terminal teardown when none can be built (issue #150).

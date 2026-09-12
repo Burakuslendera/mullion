@@ -20,6 +20,11 @@ type assetProvider struct {
 	log         *logSink
 	origin      canonicalOrigin
 	diagnostics *nativeDiagnostics
+	// terminate is the fail-closed escalation seam (issue #150): the one
+	// remaining move when no blocking response can be built or installed. Run
+	// wires it to the host's terminal teardown; nil is reachable only from
+	// tests whose scenarios never escalate.
+	terminate func(stage string, cause error)
 }
 
 type assetResponse struct {
@@ -36,11 +41,11 @@ type assetRequest struct {
 	category string
 }
 
-func newAssetProvider(assets fs.FS, log *logSink, origin canonicalOrigin, diagnostics *nativeDiagnostics) assetProvider {
+func newAssetProvider(assets fs.FS, log *logSink, origin canonicalOrigin, diagnostics *nativeDiagnostics, terminate func(stage string, cause error)) assetProvider {
 	if log == nil {
 		log = newLogSink(NopLogger{})
 	}
-	return assetProvider{assets: assets, log: log, origin: origin, diagnostics: diagnostics}
+	return assetProvider{assets: assets, log: log, origin: origin, diagnostics: diagnostics, terminate: terminate}
 }
 
 // webResourceRequested answers one intercepted request out of the fs.FS. Serving
@@ -53,22 +58,36 @@ func newAssetProvider(assets fs.FS, log *logSink, origin canonicalOrigin, diagno
 // Those measurements do not establish the timing of every caller-selected name;
 // names outside the reserved TLD may retain the resolver wait. See decision 0030
 // and docs/assets.md.
+//
+// The callback is fail-closed (issue #150): WebView2 continues a request whose
+// event ends without put_Response on the normal network stack, so no error or
+// panic exit may return without a response. The deferred assetCallback.finish
+// owns that guarantee - every exit below either installed its response or is
+// answered with the deterministic blocking response, and a failure that cannot
+// even build one escalates to the terminal teardown. See
+// asset_failclosed_windows.go.
 func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs, environment *webview2.ICoreWebView2Environment) {
+	callback := &assetCallback{provider: provider, args: args, environment: environment}
+	defer callback.finish()
 	if request == nil {
 		provider.log.Warn("mullion: asset request unavailable")
+		callback.failed("get_request", errAssetRequestUnavailable)
 		return
 	}
 	if args == nil {
 		provider.log.Warn("mullion: asset request args unavailable")
+		callback.failed("event_args", errAssetEventArgsUnavailable)
 		return
 	}
 	if environment == nil {
 		provider.log.Warn("mullion: asset environment unavailable")
+		callback.failed("environment", errAssetEnvironmentUnavailable)
 		return
 	}
 	uri, err := request.GetUri()
 	if err != nil {
 		provider.log.Warn("mullion: asset request uri failed, reason=" + logsafe.Reason(err))
+		callback.failed("get_uri", err)
 		return
 	}
 	method, err := request.GetMethod()
@@ -86,6 +105,7 @@ func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebVi
 	webviewResponse, stream, err := provider.createWebResourceResponse(environment, response)
 	if err != nil {
 		provider.log.Error("mullion: asset response failed, reason=" + logsafe.Reason(err))
+		callback.failed("create_response", err)
 		return
 	}
 	// Deferred so the creator references are released after the PutResponse
@@ -96,7 +116,10 @@ func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebVi
 	defer provider.releaseResponse(webviewResponse, stream)
 	if err := args.PutResponse(webviewResponse); err != nil {
 		provider.log.Error("mullion: asset response put failed, reason=" + logsafe.Reason(err))
+		callback.failed("put_response", err)
+		return
 	}
+	callback.installed = true
 }
 
 func (provider *assetProvider) logAssetResponseError(response assetResponse) {
