@@ -98,6 +98,7 @@ const (
 	wmNativeStartResize = wmApp + 27
 	wmNativeSyncBounds  = wmApp + 28
 	wmNativeSetTitle    = wmApp + 29
+	wmNativeProcessExit = wmApp + 30
 
 	scMinimize = 0xF020
 	scMaximize = 0xF030

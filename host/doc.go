@@ -41,6 +41,10 @@
 // its direct cross-thread-safe query; and readiness and diagnostic methods
 // synchronize with Run teardown.
 //
+// Run reports ErrBrowserProcessExited instead of a normal close when the
+// WebView2 browser process exited and the fail-closed terminal policy tore the
+// window down (issue #155); the Host remains reusable for a later Run.
+//
 // See docs/architecture.md for the bootstrap contract, docs/frame-and-dpi.md for
 // the frame and DPI rules, and docs/snap-and-nonclient-region.md for what
 // WebView2 can and cannot do with Windows 11 snap.
