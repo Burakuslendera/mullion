@@ -15,6 +15,14 @@ var ErrUnsupportedPlatform = errors.New("mullion: unsupported platform (windows 
 // error also names runtime.GOARCH and the supported windows/amd64 target.
 var ErrUnsupportedArchitecture = errors.New("mullion: unsupported Windows architecture")
 
+// ErrBrowserProcessExited is returned by Run when the WebView2 browser process
+// exited after startup. The runtime has closed the control, and the host's
+// fail-closed policy tears the window down rather than leaving a ready Host
+// attached to a dead WebView (issue #155). Use errors.Is; Run reports it after
+// the ordinary WM_DESTROY teardown has released every ownership field, so the
+// Host is reusable for a later Run.
+var ErrBrowserProcessExited = errors.New("mullion: webview2 browser process exited")
+
 // Colour is an 8-bit-per-channel RGBA colour.
 type Colour struct{ R, G, B, A uint8 }
 

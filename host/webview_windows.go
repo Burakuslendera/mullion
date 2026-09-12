@@ -174,6 +174,13 @@ func (host *Host) newWebViewBrowser() *webview2.Browser {
 			return
 		}
 		host.log.Error("mullion: webview2 process failed, kind=" + formatInt32(int32(observation.Kind)))
+		// Only BrowserProcessExited ends the control: the runtime has already
+		// moved this WebView to Closed and names recreation as the only recovery
+		// (issue #155). Every other kind leaves the control alive, so the host
+		// keeps its observation-only wait policy there (decision 0052).
+		if observation.Kind == webview2.ProcessFailedKindBrowserProcessExited {
+			host.requestBrowserProcessExitTerminal(browser)
+		}
 	}
 	browser.NewWindowRequestedCallback = func(observation webview2.NewWindowRequestedObservation) {
 		host.reportEventGetterFailure("NewWindowRequested", "GetUri", observation.URIErr)

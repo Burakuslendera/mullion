@@ -70,7 +70,13 @@ type Host struct {
 	webViewEmbedding bool
 	windowDestroyed  bool
 	quitPending      bool
-	architectureErr  error
+	// browserExitTerminal records that ProcessFailed(BrowserProcessExited) was
+	// observed this session (issue #155, decision 0052). It is UI-thread
+	// confined like host.browser, guards the exactly-once terminal request, and
+	// makes the message loop return ErrBrowserProcessExited instead of a false
+	// normal close. beginRun resets it per session.
+	browserExitTerminal bool
+	architectureErr     error
 
 	dpiAwarenessErr      error
 	renderMu             sync.Mutex
@@ -365,6 +371,7 @@ func (host *Host) beginRun() error {
 
 	host.webViewEmbedding = false
 	host.windowDestroyed = false
+	host.browserExitTerminal = false
 	host.moveSizeActive = false
 	host.frameStateGeneration = 0
 	host.assets = assetProvider{}

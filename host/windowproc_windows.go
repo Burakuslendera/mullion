@@ -124,7 +124,7 @@ func isNativeHostCommand(message uint32) bool {
 	switch message {
 	case wmNativeShow, wmNativeHide, wmNativeQuit, wmNativeMinimize,
 		wmNativeMaxToggle, wmNativeStartDrag, wmNativeStartResize,
-		wmNativeSyncBounds, wmNativeSetTitle:
+		wmNativeSyncBounds, wmNativeSetTitle, wmNativeProcessExit:
 		return true
 	default:
 		return false
@@ -164,6 +164,8 @@ func (host *Host) dispatchNativeHostCommand(hwnd windowHandle, message uint32, w
 	case wmNativeQuit:
 		host.log.Debug("mullion: quit applying")
 		procDestroyWindow.Call(uintptr(hwnd))
+	case wmNativeProcessExit:
+		host.applyBrowserProcessExitTeardown(hwnd)
 	case wmNativeMinimize:
 		host.minimizeFromMessage()
 	case wmNativeMaxToggle:
