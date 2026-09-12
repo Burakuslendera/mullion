@@ -23,6 +23,15 @@ var ErrUnsupportedArchitecture = errors.New("mullion: unsupported Windows archit
 // Host is reusable for a later Run.
 var ErrBrowserProcessExited = errors.New("mullion: webview2 browser process exited")
 
+// ErrAssetBoundaryClosed is returned by Run when the embedded asset boundary
+// failed closed (issue #150): a matched request could not be answered in
+// process and no blocking response could be installed, so the fail-closed
+// terminal policy tore the window down rather than let the request continue on
+// the network. Use errors.Is; Run reports it after the ordinary WM_DESTROY
+// teardown has released every ownership field, so the Host is reusable for a
+// later Run.
+var ErrAssetBoundaryClosed = errors.New("mullion: embedded asset boundary failed closed")
+
 // Colour is an 8-bit-per-channel RGBA colour.
 type Colour struct{ R, G, B, A uint8 }
 

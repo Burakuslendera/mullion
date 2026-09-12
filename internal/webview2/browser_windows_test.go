@@ -337,22 +337,28 @@ func TestHandleWebResourceRequestedWithoutCallbackTakesNoReference(t *testing.T)
 	runtime.KeepAlive(args)
 }
 
-// A failing GetRequest owns nothing: the error is reported and the callback is
-// not run with a nil request.
+// A failing GetRequest is reported AND forwarded (issue #150): the WebView2
+// contract continues an event that ends without put_Response on the network,
+// so the callback must run - with no request and no taken reference - and own
+// the blocking response. Silence here would be a fail-open exit.
 func TestHandleWebResourceRequestedReportsGetRequestFailure(t *testing.T) {
 	args, _ := newFakeWebResourceArgs(t, nil)
 
 	browser := New()
 	var reported error
 	browser.ErrorCallback = func(err error) { reported = err }
-	browser.WebResourceRequestedCallback = func(*ICoreWebView2WebResourceRequest, *ICoreWebView2WebResourceRequestedEventArgs) {
-		t.Error("the callback must not run when GetRequest fails")
+	var got *ICoreWebView2WebResourceRequest
+	browser.WebResourceRequestedCallback = func(request *ICoreWebView2WebResourceRequest, _ *ICoreWebView2WebResourceRequestedEventArgs) {
+		got = request
 	}
 
 	browser.handleWebResourceRequested(args)
 
 	if reported == nil {
 		t.Fatal("a GetRequest failure must reach the error callback")
+	}
+	if got != nil {
+		t.Fatal("the callback must run with no request when GetRequest fails")
 	}
 	runtime.KeepAlive(args)
 }

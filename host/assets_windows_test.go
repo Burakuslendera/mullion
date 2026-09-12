@@ -23,7 +23,7 @@ var (
 )
 
 func newTestAssetProvider(assets fs.FS) assetProvider {
-	return newAssetProvider(assets, newLogSink(NopLogger{}), testAssetOrigin, newNativeDiagnostics())
+	return newAssetProvider(assets, newLogSink(NopLogger{}), testAssetOrigin, newNativeDiagnostics(), nil)
 }
 
 func TestResolveAssetPath(t *testing.T) {
@@ -132,7 +132,7 @@ func TestAssetProviderResolveDirectoryIsMissingWithoutSessionError(t *testing.T)
 	logger := newLogSink(NopLogger{})
 	provider := newAssetProvider(fstest.MapFS{
 		"sub/index.html": &fstest.MapFile{Data: []byte("<html></html>")},
-	}, logger, testAssetOrigin, newNativeDiagnostics())
+	}, logger, testAssetOrigin, newNativeDiagnostics(), nil)
 
 	response := provider.resolve(testOrigin + "/sub")
 	if response.status != http.StatusNotFound {

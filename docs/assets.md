@@ -2,6 +2,7 @@
 
 ## Contents
 
+- [A callback failure answers in process, never on the wire (issue #150)](#a-callback-failure-answers-in-process-never-on-the-wire-issue-150)
 - [Serving from a caller URL instead (`Config.URL`)](#serving-from-a-caller-url-instead-configurl)
 - [COM stream lifetime](#com-stream-lifetime)
 - [The two-second gap before the first subresource (issues #85, #77)](#the-two-second-gap-before-the-first-subresource-issues-85-77)
@@ -168,6 +169,29 @@ Bodies are wrapped in a COM `IStream` built with `SHCreateMemStream`.
 silently use only the low 32 bits and expose a truncated or empty stream (issue
 #120). The request fails and the asset-response error is logged rather than
 serving partial content.
+
+### A callback failure answers in process, never on the wire (issue #150)
+
+The table above says what mullion answers with; this section says what it never
+does. WebView2's documented contract for `WebResourceRequested` is fail-open: an
+event that ends without `put_Response` lets the request continue on the normal
+network stack. A callback error exit that returns without a response therefore
+crosses the no-network boundary this page describes, and the repository priority
+ladder classifies that as a blocker.
+
+Every exit from the callback is closed ([decision 0053](./decisions/0053-asset-callback-failure-installs-a-blocking-response.md)):
+a request mullion could not serve — a failed getter, an unavailable request,
+event-args or environment, a failed response construction or `PutResponse`, a
+recovered panic — receives one deterministic blocking answer, a `500` with no
+content and the standard `nosniff`/no-store headers built without a stream. When
+even that cannot be built or installed, the session ends through the terminal
+teardown of [decision 0052](./decisions/0052-browser-process-exit-fails-closed.md)
+and `Run` reports `ErrAssetBoundaryClosed`; it never reports a normal close. The
+webview2 layer forwards a failed `GetRequest` to the same callback with no
+request rather than ending the event silently. The blocking behavior is
+contract-based, not live-proven: no supported-Runtime run has recorded the
+default-host failure presentation or a loopback fallback probe, and that live
+proof ceiling stays with [issue #150](https://github.com/Burakuslendera/mullion/issues/150).
 
 ### Serving from a caller URL instead (`Config.URL`)
 
@@ -405,4 +429,4 @@ Twelve mutants were run against the shipped rule. The guard is now strict enough
 that a comment naming the reserved TLD on its own fails the scan, which is why the
 prose here and in `config.go` names it rather than spells it.
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record the 8.3 short-name refusal row in the boundary table and the alias-class paragraph behind it (issue #139, decision 0050).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record the fail-closed callback contract — every error or panic exit answers with the blocking 500 or escalates to the terminal teardown, never the network (issue #150, decision 0053).

@@ -10,6 +10,7 @@
   - [Completion and embed lifetime](#completion-and-embed-lifetime)
   - [Document-created script registration barrier](#document-created-script-registration-barrier)
   - [Reporting follows return ownership](#reporting-follows-return-ownership)
+  - [A failed GetRequest is forwarded, not swallowed (issue #150)](#a-failed-getrequest-is-forwarded-not-swallowed-issue-150)
 
 This document describes how the host talks to WebView2 without a third-party
 binding. It moved verbatim out of [architecture.md](./architecture.md) — the
@@ -365,7 +366,17 @@ misses remain warnings. This keeps one owner per terminal report without hiding
 non-returnable failures
 ([decision 0038](./decisions/0038-terminal-policy-owns-error-reporting.md)).
 
+### A failed GetRequest is forwarded, not swallowed (issue #150)
+
+The `WebResourceRequested` handler owns one exception to the quiet-return rule.
+`GetRequest` failing used to end the handler after the report — but under the
+WebView2 contract an event that ends without `put_Response` continues on the
+normal network stack, so silence here is a fail-open exit from the asset
+boundary. The handler now still invokes the host callback, with no request and
+no taken reference, and the callback's fail-closed contract answers it
+([decision 0053](./decisions/0053-asset-callback-failure-installs-a-blocking-response.md),
+[Asset serving without a port](./assets.md#a-callback-failure-answers-in-process-never-on-the-wire-issue-150)).
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: add the process-failed kind matrix — BrowserProcessExited fails closed through one tagged terminal command, other kinds stay observation-only, recovery owned at the call site (issue #155, decision 0052).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record that a failed WebResourceRequested GetRequest is forwarded to the host callback with no request instead of ending the event silently (issue #150, decision 0053).
