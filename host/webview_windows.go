@@ -204,6 +204,10 @@ func (host *Host) createWebView() error {
 	host.log.Debug("mullion: webview2 instance requested")
 	browser := host.newWebViewBrowser()
 	if host.source.embedded {
+		// The environment is an uncounted copy of the Browser's stored interface.
+		// webResourceRequested pins it with its own reference before any embedder
+		// code runs; nothing between this retrieval and that pin may pump messages,
+		// or the copy could outlive the stored interface it came from (issue #161).
 		browser.WebResourceRequestedCallback = func(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs) {
 			host.assets.webResourceRequested(request, args, browser.Environment())
 		}

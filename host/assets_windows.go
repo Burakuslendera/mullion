@@ -66,8 +66,23 @@ func newAssetProvider(assets fs.FS, log *logSink, origin canonicalOrigin, diagno
 // answered with the deterministic blocking response, and a failure that cannot
 // even build one escalates to the terminal teardown. See
 // asset_failclosed_windows.go.
+//
+// The callback is also the environment's owner for its own duration (issue
+// #161): the pointer arrives as an uncounted copy of the Browser's stored
+// interface, and everything below before the last COM use - fs.FS reads and
+// every logSink line - is embedder code that may pump a nested message loop
+// (decision 0026), dispatch WM_CLOSE/WM_DESTROY, and release the Browser-owned
+// reference mid-callback. The pin takes a reference of the callback's own
+// before any of that code runs and releases it after finish, so the served
+// path and the fail-closed block alike call a live interface and no exit
+// strands a reference. It is registered before finish so its release runs
+// after finish's (LIFO), never inside it.
 func (provider *assetProvider) webResourceRequested(request *webview2.ICoreWebView2WebResourceRequest, args *webview2.ICoreWebView2WebResourceRequestedEventArgs, environment *webview2.ICoreWebView2Environment) {
 	callback := &assetCallback{provider: provider, args: args, environment: environment}
+	if environment != nil {
+		environment.AddRef()
+		defer environment.Release()
+	}
 	defer callback.finish()
 	if request == nil {
 		provider.log.Warn("mullion: asset request unavailable")
