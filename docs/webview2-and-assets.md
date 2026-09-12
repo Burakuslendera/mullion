@@ -6,6 +6,7 @@
   - [Finding the runtime, and skipping the loader DLL](#finding-the-runtime-and-skipping-the-loader-dll)
   - [The Go-owned ABI is explicit](#the-go-owned-abi-is-explicit)
   - [Event handlers are COM objects we implement](#event-handlers-are-com-objects-we-implement)
+  - [The process-failed kind matrix](#the-process-failed-kind-matrix)
   - [Completion and embed lifetime](#completion-and-embed-lifetime)
   - [Document-created script registration barrier](#document-created-script-registration-barrier)
   - [Reporting follows return ownership](#reporting-follows-return-ownership)
@@ -216,6 +217,32 @@ stale-ID result and availability cost belong to
 live observations are recorded once in the
 [verification records](./verification/records/2026-08.md#2026-08-records).
 
+### The process-failed kind matrix
+
+`ProcessFailed` kinds do not share a lifecycle meaning, and Microsoft's
+[contract](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2processfailedkind)
+differs per kind. The host classifies explicitly instead of reacting to the
+event as such
+([decision 0052](./decisions/0052-browser-process-exit-fails-closed.md)):
+
+| Kind | Runtime state after the event | Host policy |
+| --- | --- | --- |
+| `BROWSER_PROCESS_EXITED` (0) | The WebView is Closed; only recreation recovers | Fail closed: one tagged terminal command (`WM_APP+30`) destroys the window through the ordinary `WM_DESTROY` teardown; `Run` returns `ErrBrowserProcessExited`. The callback never destroys or re-embeds inline. |
+| `RENDER_PROCESS_EXITED` (1) | The runtime builds a new renderer and error page | Observation only: the ERROR kind line per event; the navigation-completion and error-surface machinery owns what the user sees. |
+| `RENDER_PROCESS_UNRESPONSIVE` (2) | Advisory; the renderer may recover | Observation only, per event. One advisory is never a browser exit. |
+| Any other value | Not classified by mullion | Observation only. A future kind that closes the control must be added to the terminal branch explicitly. |
+
+The recovery owner is the host call site: after a browser-process exit the
+window closes and `Run` reports `ErrBrowserProcessExited`; an automatic
+re-embed or a visible fallback is an application decision the terminal seam
+does not make. The live ceiling: no browser process was killed under
+observation for this matrix — the runtime state column is the vendor contract,
+and the strand it produces (a committed browser presenting a closed WebView as
+embedded while ready, with the watchdog stopped) is pinned headless at the
+policy seams. Live confirmation on supported runtimes follows the issue #155
+reproduction contract and the [Windows 10/11 parity row](./windows-10-compatibility.md)
+(issue #129).
+
 ### Completion and embed lifetime
 
 Issue #98 closes one invariant across the asynchronous loader and `Browser.Embed`:
@@ -341,4 +368,4 @@ non-returnable failures
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-09-04 | Editor: OpenAI (GPT-5.6) | Change: point verification records and live acceptance to canonical child documents.
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: add the process-failed kind matrix — BrowserProcessExited fails closed through one tagged terminal command, other kinds stay observation-only, recovery owned at the call site (issue #155, decision 0052).

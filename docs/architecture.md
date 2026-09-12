@@ -126,7 +126,12 @@ first result even when the source is also invalid.
    and tears down the browser. Generic WebView2 environment/controller creation is
    the open [issue #154](https://github.com/Burakuslendera/mullion/issues/154) gap:
    its nested wait can consume `WM_QUIT` and continue until the loader timeout
-   instead of exiting promptly.
+   instead of exiting promptly. `ProcessFailed(BrowserProcessExited)` fails closed
+   after startup: the callback latches one terminal cause and posts a tagged
+   `WM_APP+30` command whose destroy hands the window to the ordinary
+   `WM_DESTROY` teardown, and `Run` returns `ErrBrowserProcessExited` instead of
+   a false normal close; every other kind stays observation-only
+   ([decisions/0052](./decisions/0052-browser-process-exit-fails-closed.md)).
    Optional tab-strip registration still supplies its documented handler but never enters
    that wait or pumps startup; non-lifecycle optional errors remain warnings, whereas
    lifecycle invalidation stops later readiness and navigation. A committed browser remains
@@ -309,6 +314,11 @@ One window procedure switch routes everything.
 - **`WM_DESTROY`** — records the destruction first, so a WebView2 embed still pumping
   cannot later commit a browser to a window that is gone (decision 0016); then stops
   the render watchdog, shuts the WebView down, posts `WM_QUIT`.
+- **`WM_APP+30` (terminal process exit)** — the tagged command
+  `ProcessFailed(BrowserProcessExited)` posts; its body is a plain window destroy,
+  so the ownership teardown above runs exactly once and `Run` reports
+  `ErrBrowserProcessExited` (decision 0052). The event callback itself never
+  destroys inline.
 
 Everything else falls through to `DefWindowProc`.
 
@@ -367,4 +377,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: state that the active-Run token is drawn from the cryptographic random source per session, not counted (issue #141, decision 0051); add the token's never-logged/never-cross-process rule and the uncounted inactive-Run admission to the callback contract.
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record the ProcessFailed(BrowserProcessExited) fail-closed terminal transition, its WM_APP+30 tagged command, and the observation-only policy for other kinds (issue #155, decision 0052).

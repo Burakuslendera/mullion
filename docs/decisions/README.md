@@ -72,6 +72,7 @@ These files are that record.
 | [0049](./0049-inactive-calls-are-admitted-uncounted.md) | A call made while no Run is active takes no counted admission; only an active Run's entries wait in teardown | Accepted |
 | [0050](./0050-8-dot-3-alias-spellings-are-refused.md) | An asset request spelled as an NTFS 8.3 short name is refused | Accepted |
 | [0051](./0051-run-token-comes-from-the-crypto-source.md) | A private command's Run token comes from the crypto source, not a counter | Accepted |
+| [0052](./0052-browser-process-exit-fails-closed.md) | A browser-process exit fails closed instead of leaving a ready Host with a closed WebView | Accepted |
 
 ## When to write one
 
@@ -113,4 +114,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0051's decision that a private command's Run token is drawn from the crypto source per session, not counted (issue #141); cross-reference 0031's 8.3-alias consequence to 0050 in the index.
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0052's decision that ProcessFailed(BrowserProcessExited) fails closed through one tagged terminal command while other kinds stay observation-only (issue #155).
