@@ -167,7 +167,10 @@ first result even when the source is also invalid.
    same-desktop process can construct: the token is the only value such a peer
    cannot predict, and a predictable one would let it authorize the private
    lifecycle commands directly. A session whose token cannot be sourced does
-   not start. Deferred
+   not start. The token is bearer authority: it is never logged, never carried
+   across a process boundary and never embedded in a diagnostic
+   ([decision 0051](./decisions/0051-run-token-comes-from-the-crypto-source.md)).
+   Deferred
    bounds posts preserve their original token and HWND. An older Run therefore
    cannot mutate the newer owner. Concurrent calls to `Run` on one `Host` are
    rejected immediately, including calls arriving while the prior Run is still
@@ -255,7 +258,9 @@ implementation must be safe to call from more than one goroutine. The launch
 reports from its own thread, and the render watchdog and the startup show gate
 write from `time.AfterFunc` timers. Each library-owned callback preserves its
 originating Run: it either takes a counted admission and finishes there, or
-finds teardown/a different token and performs no post or log. A late
+finds teardown/a different token and performs no post or log. A call that
+entered while no Run was active is admitted uncounted, so its callback can
+re-enter `Run` without waiting on an admission that call itself owns. A late
 system-browser worker may finish its OS launch, but its warnings are similarly
 suppressed after its Run ends. `NopLogger` is trivially safe and `SlogLogger`
 inherits whatever `*slog.Logger` guarantees; a Logger of the embedder's own that
@@ -362,4 +367,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: state that the active-Run token is drawn from the cryptographic random source per session, not counted (issue #141, decision 0051).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: state that the active-Run token is drawn from the cryptographic random source per session, not counted (issue #141, decision 0051); add the token's never-logged/never-cross-process rule and the uncounted inactive-Run admission to the callback contract.

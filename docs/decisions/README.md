@@ -51,7 +51,7 @@ These files are that record.
 | [0028](./0028-message-keeps-the-urls-inside-it.md) | A message keeps the http(s) URLs inside it | Accepted; malformed-userinfo and unsafe open-authority control output refined by [0044](./0044-malformed-http-userinfo-is-never-emitted-by-diagnostics.md) without superseding 0028 |
 | [0029](./0029-system-browser-launch-off-the-ui-thread.md) | The system-browser launch runs off the UI thread, bounded | Accepted; 0043 records historical concurrency and routing rationale; [current implementation](../bridge.md#issue-116-current-disposition) |
 | [0030](./0030-guard-exempts-the-virtual-host-name.md) | The no-port guard exempts one virtual host name, not a file | Accepted |
-| [0031](./0031-the-bytes-never-decide-the-content-type.md) | The bytes never decide the content type, and the boundary decides the name | Accepted; reparse-point consequence answered by 0033 |
+| [0031](./0031-the-bytes-never-decide-the-content-type.md) | The bytes never decide the content type, and the boundary decides the name | Accepted; reparse-point consequence answered by 0033; 8.3-alias consequence answered by 0050 |
 | [0032](./0032-the-supported-go-floor-is-1-22.md) | The supported Go floor is 1.22, and it is a promise rather than a default | Superseded by 0033 |
 | [0033](./0033-the-go-floor-is-1-24-so-the-asset-root-can-be-a-root.md) | The Go floor is 1.24, so that an asset directory can be an `os.Root` | Superseded by [0042](./0042-go-1-24-remains-the-released-consumer-floor.md) |
 | [0034](./0034-webview2-hosting-is-windows-amd64-only.md) | WebView2 hosting is supported only on Windows/amd64 | Accepted |
@@ -113,4 +113,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0051's decision that a private command's Run token is drawn from the crypto source per session, not counted (issue #141).
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: index 0051's decision that a private command's Run token is drawn from the crypto source per session, not counted (issue #141); cross-reference 0031's 8.3-alias consequence to 0050 in the index.

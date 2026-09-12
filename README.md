@@ -341,6 +341,15 @@ was taken that way, on the same flat ground.
   boundary answers `403`. Windows cannot create one, but an `embed.FS` assembled
   on another platform can carry one, and a cross-compiled application shipping
   such a name will not be able to serve it.
+- **A file literally named in the NTFS 8.3 short-name shape is refused, even
+  when it is legitimate.** A segment like `PAYLOA~1.HTM` is the shape Windows
+  generates for a long name's alias, and the generated extension is the long one
+  truncated — which can raise a type the long spelling does not have. The
+  boundary refuses the shape itself, so a long name stays reachable only by its
+  long spelling and a file literally given a short-shaped name gets a `403` for
+  it. The shape's limits are counted in characters, matching NTFS's generation
+  ([decisions/0050](docs/decisions/0050-8-dot-3-alias-spellings-are-refused.md),
+  [assets.md](docs/assets.md)).
 - **An asset directory that other code can write into is not contained, and
   mullion cannot enforce the remedy.** Serving from `os.OpenRoot(dir).FS()`
   refuses a junction or symlink planted inside `dir`; serving from `os.DirFS(dir)`
