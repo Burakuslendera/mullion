@@ -224,6 +224,31 @@ func TestNativeRunTokenRegistryFailsClosedWhenSourceFails(t *testing.T) {
 	}
 }
 
+// A source that answers (0, nil) forever would make an unbounded reserve loop
+// while it held the registry mutex; the draw budget must turn it into an error
+// that issues nothing.
+func TestNativeRunTokenRegistryBoundsADegenerateSource(t *testing.T) {
+	var draws int
+	stubNativeRunTokenSource(t, func() (uintptr, error) {
+		draws++
+		return 0, nil
+	})
+
+	registry := newNativeRunTokenRegistry()
+	if token, err := registry.reserve(); err == nil || token != 0 {
+		t.Fatalf("reserve = (%#x, %v), want (0, error) from a source that never yields a candidate", token, err)
+	}
+	if draws != nativeRunTokenDrawLimit {
+		t.Fatalf("candidate draws = %d, want the draw budget %d", draws, nativeRunTokenDrawLimit)
+	}
+	registry.mu.Lock()
+	live := len(registry.active)
+	registry.mu.Unlock()
+	if live != 0 {
+		t.Fatalf("exhausted reserve retained %d live tokens", live)
+	}
+}
+
 // A session whose token cannot be sourced must not start: no window work, no
 // running mark, and no reservation left in the process-global registry.
 func TestBeginRunFailsClosedWhenRunTokenSourceFails(t *testing.T) {
@@ -231,6 +256,36 @@ func TestBeginRunFailsClosedWhenRunTokenSourceFails(t *testing.T) {
 	stubNativeRunTokenSource(t, func() (uintptr, error) {
 		return 0, errors.New("source failed")
 	})
+	sharedNativeRunTokens.mu.Lock()
+	liveBefore := len(sharedNativeRunTokens.active)
+	sharedNativeRunTokens.mu.Unlock()
+
+	if err := host.beginRun(); err == nil {
+		t.Fatal("beginRun succeeded without a sourced Run token")
+	}
+	if host.running {
+		t.Fatal("failed beginRun left the Host marked running")
+	}
+	host.mu.Lock()
+	stored := host.activeRunToken
+	host.mu.Unlock()
+	if stored != 0 {
+		t.Fatalf("failed beginRun stored Run token %#x", stored)
+	}
+	sharedNativeRunTokens.mu.Lock()
+	liveAfter := len(sharedNativeRunTokens.active)
+	sharedNativeRunTokens.mu.Unlock()
+	if liveAfter != liveBefore {
+		t.Fatalf("failed beginRun changed live reservations from %d to %d", liveBefore, liveAfter)
+	}
+}
+
+// The degenerate (0, nil) source must fail beginRun the same way a failing one
+// does: no window session, no running mark, no stored token and no reservation
+// left in the process-global registry.
+func TestBeginRunFailsClosedWhenRunTokenSourceNeverYields(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	stubNativeRunTokenSource(t, func() (uintptr, error) { return 0, nil })
 	sharedNativeRunTokens.mu.Lock()
 	liveBefore := len(sharedNativeRunTokens.active)
 	sharedNativeRunTokens.mu.Unlock()
@@ -294,11 +349,11 @@ func TestRunTokenSourceDrawsDistinctNonZeroValues(t *testing.T) {
 	}
 }
 
-// A peer without the sourced value can only prearrange candidates. Every value
-// the removed counted allocator would have issued must fail the same gate the
-// owner's token passes, and the issued identity itself must never fall inside
-// that predictable range.
-func TestPredictedCandidatesCannotAuthorizePrivateCommand(t *testing.T) {
+// A peer without the sourced value can only prearrange candidates. A counted
+// allocator's sequential output is exactly such a prearranged range, so every
+// value it would have issued must fail the same gate the owner's token passes,
+// and the issued identity itself must never fall inside that range.
+func TestSequentiallyPredictedCandidatesCannotAuthorizePrivateCommand(t *testing.T) {
 	host, _ := newTestHost(t, Config{})
 	const hwnd = windowHandle(0xb1b1)
 	run := beginHeadlessLifecycleRun(t, host, hwnd)
