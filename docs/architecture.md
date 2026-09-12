@@ -161,7 +161,13 @@ first result even when the source is also invalid.
    goroutine-safe calls. Every private command carries a process-global,
    non-zero active-Run token in `lParam` and is rejected unless both that token
    and the callback HWND still match; process scope matters because Windows can
-   recycle one numeric handle across two different `Host` values. Deferred
+   recycle one numeric handle across two different `Host` values. The token is
+   drawn once per session from the cryptographic random source, never counted,
+   because the private message identifiers are fixed `WM_APP` numbers any
+   same-desktop process can construct: the token is the only value such a peer
+   cannot predict, and a predictable one would let it authorize the private
+   lifecycle commands directly. A session whose token cannot be sourced does
+   not start. Deferred
    bounds posts preserve their original token and HWND. An older Run therefore
    cannot mutate the newer owner. Concurrent calls to `Run` on one `Host` are
    rejected immediately, including calls arriving while the prior Run is still
@@ -356,4 +362,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-09-05 | Editor: OpenAI (GPT-5.6) | Change: define successful caption normalization and record the existing fail-open publication paths.
+> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: state that the active-Run token is drawn from the cryptographic random source per session, not counted (issue #141, decision 0051).

@@ -173,27 +173,158 @@ func TestRunTokensAreProcessGlobalAcrossHosts(t *testing.T) {
 	}
 }
 
-// Private-command identities travel through LPARAM as uintptr values. At counter
-// wrap, a live first-session value must stay reserved; after its owner ends, the
-// same value may be issued again without weakening the collision guard.
-func TestNativeRunTokenRegistrySkipsLiveTokenAtUintptrWrap(t *testing.T) {
+// The candidate source is stubbed because a fixed sequence is the only way to
+// reach the discard paths deterministically: production crypto draw can be
+// neither forced to collide nor forced to zero.
+func TestNativeRunTokenRegistrySkipsZeroAndLiveCandidates(t *testing.T) {
+	const first, second = uintptr(0x51c1), uintptr(0x51c2)
+	candidates := []uintptr{0, first, first, second}
+	var draws int
+	stubNativeRunTokenSource(t, func() (uintptr, error) {
+		draws++
+		return candidates[draws-1], nil
+	})
+
 	registry := newNativeRunTokenRegistry()
-	live := registry.reserve()
-	if live != 1 {
-		t.Fatalf("first native Run token = %#x, want 1", live)
+	live, err := registry.reserve()
+	if err != nil || live != first {
+		t.Fatalf("first reserve = (%#x, %v), want (%#x, nil) after discarding the zero candidate", live, err, first)
 	}
+	next, err := registry.reserve()
+	if err != nil || next != second {
+		t.Fatalf("second reserve = (%#x, %v), want (%#x, nil) after discarding the live candidate", next, err, second)
+	}
+	if draws != 4 {
+		t.Fatalf("candidate draws = %d, want 4 (zero, issued, live, issued)", draws)
+	}
+}
 
-	registry.next = ^uintptr(0)
-	next := registry.reserve()
-	if next == 0 || next == live {
-		t.Fatalf("wrapped native Run token = %#x, want a non-zero value distinct from live %#x", next, live)
-	}
+func stubNativeRunTokenSource(t *testing.T, source func() (uintptr, error)) {
+	t.Helper()
+	original := nativeRunTokenSource
+	nativeRunTokenSource = source
+	t.Cleanup(func() { nativeRunTokenSource = original })
+}
 
-	registry.release(live)
-	registry.next = ^uintptr(0)
-	if reused := registry.reserve(); reused != live {
-		t.Fatalf("released native Run token = %#x after wrap, want %#x", reused, live)
+// A failed source must issue nothing: a fallback allocator would hand out the
+// predictable identity the crypto source exists to prevent.
+func TestNativeRunTokenRegistryFailsClosedWhenSourceFails(t *testing.T) {
+	sourceErr := errors.New("source failed")
+	stubNativeRunTokenSource(t, func() (uintptr, error) { return 0, sourceErr })
+
+	registry := newNativeRunTokenRegistry()
+	if token, err := registry.reserve(); !errors.Is(err, sourceErr) || token != 0 {
+		t.Fatalf("reserve = (%#x, %v), want (0, %v)", token, err, sourceErr)
 	}
+	registry.mu.Lock()
+	live := len(registry.active)
+	registry.mu.Unlock()
+	if live != 0 {
+		t.Fatalf("failed reserve retained %d live tokens", live)
+	}
+}
+
+// A session whose token cannot be sourced must not start: no window work, no
+// running mark, and no reservation left in the process-global registry.
+func TestBeginRunFailsClosedWhenRunTokenSourceFails(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	stubNativeRunTokenSource(t, func() (uintptr, error) {
+		return 0, errors.New("source failed")
+	})
+	sharedNativeRunTokens.mu.Lock()
+	liveBefore := len(sharedNativeRunTokens.active)
+	sharedNativeRunTokens.mu.Unlock()
+
+	if err := host.beginRun(); err == nil {
+		t.Fatal("beginRun succeeded without a sourced Run token")
+	}
+	if host.running {
+		t.Fatal("failed beginRun left the Host marked running")
+	}
+	host.mu.Lock()
+	stored := host.activeRunToken
+	host.mu.Unlock()
+	if stored != 0 {
+		t.Fatalf("failed beginRun stored Run token %#x", stored)
+	}
+	sharedNativeRunTokens.mu.Lock()
+	liveAfter := len(sharedNativeRunTokens.active)
+	sharedNativeRunTokens.mu.Unlock()
+	if liveAfter != liveBefore {
+		t.Fatalf("failed beginRun changed live reservations from %d to %d", liveBefore, liveAfter)
+	}
+}
+
+// The issued identity must be the sourced candidate itself: a counter or other
+// deterministic input mixing into it would hand a peer the value without the
+// source's secrecy.
+func TestBeginRunSourcesItsRunTokenFromTheCryptoSource(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	const sourced = uintptr(0x9e3779b9)
+	var draws int
+	stubNativeRunTokenSource(t, func() (uintptr, error) {
+		draws++
+		return sourced, nil
+	})
+
+	run := beginHeadlessLifecycleRun(t, host, windowHandle(0xb0b0))
+	if draws != 1 {
+		t.Fatalf("token source draws = %d, want exactly one per reservation", draws)
+	}
+	if run.token != sourced {
+		t.Fatalf("issued Run token = %#x, want the sourced candidate %#x", run.token, sourced)
+	}
+	host.mu.Lock()
+	host.hwnd = 0
+	host.mu.Unlock()
+	host.endRun()
+}
+
+func TestRunTokenSourceDrawsDistinctNonZeroValues(t *testing.T) {
+	first, err := randomRunToken()
+	if err != nil {
+		t.Fatalf("randomRunToken = %v", err)
+	}
+	second, err := randomRunToken()
+	if err != nil {
+		t.Fatalf("randomRunToken = %v", err)
+	}
+	if first == 0 || second == 0 || first == second {
+		t.Fatalf("crypto source draws = (%#x, %#x), want distinct non-zero values", first, second)
+	}
+}
+
+// A peer without the sourced value can only prearrange candidates. Every value
+// the removed counted allocator would have issued must fail the same gate the
+// owner's token passes, and the issued identity itself must never fall inside
+// that predictable range.
+func TestPredictedCandidatesCannotAuthorizePrivateCommand(t *testing.T) {
+	host, _ := newTestHost(t, Config{})
+	const hwnd = windowHandle(0xb1b1)
+	run := beginHeadlessLifecycleRun(t, host, hwnd)
+
+	var applied int
+	host.applyNativeCommand = func(windowHandle, uint32, uintptr) uintptr {
+		applied++
+		return 0
+	}
+	for guess := uintptr(0); guess <= 8; guess++ {
+		if guess == run.token {
+			t.Fatalf("issued Run token %#x fell inside the predictable range a counted allocator would hand out", guess)
+		}
+		host.windowProc(hwnd, wmNativeQuit, 0, guess)
+	}
+	if applied != 0 {
+		t.Fatalf("predicted candidates applied %d private commands", applied)
+	}
+	host.windowProc(hwnd, wmNativeQuit, 0, run.token)
+	if applied != 1 {
+		t.Fatalf("owner's token applied %d private commands, want 1", applied)
+	}
+	host.mu.Lock()
+	host.hwnd = 0
+	host.mu.Unlock()
+	host.endRun()
 }
 
 func TestEndRunReleasesActiveNativeRunToken(t *testing.T) {
