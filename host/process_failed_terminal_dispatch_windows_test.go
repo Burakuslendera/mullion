@@ -72,7 +72,7 @@ func TestProcessExitSecondDeliveryAfterTeardownIsRefused(t *testing.T) {
 	if !host.browserExitTerminal {
 		t.Fatal("the refusal cleared the latched terminal cause")
 	}
-	if !errors.Is(host.browserExitTerminalOutcome(), ErrBrowserProcessExited) {
+	if !errors.Is(host.terminalOutcome(), ErrBrowserProcessExited) {
 		t.Fatal("the refusal changed Run's terminal outcome")
 	}
 }

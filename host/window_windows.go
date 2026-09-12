@@ -98,7 +98,7 @@ func (host *Host) messageLoop() error {
 			return syscallError(err)
 		case 0:
 			host.log.Debug("mullion: message loop exited")
-			return host.browserExitTerminalOutcome()
+			return host.terminalOutcome()
 		default:
 			procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
 			procDispatchMessage.Call(uintptr(unsafe.Pointer(&message)))
