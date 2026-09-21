@@ -198,6 +198,10 @@ func (host *Host) beginWindowDestroy(hwnd windowHandle) {
 		return
 	}
 	host.windowDestroyed = true
+	if host.embedCancellation != nil {
+		close(host.embedCancellation)
+		host.embedCancellation = nil
+	}
 	host.quitPending = true
 	host.hwnd = 0
 }

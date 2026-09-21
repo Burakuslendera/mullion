@@ -214,7 +214,7 @@ func (host *Host) createWebView() error {
 	}
 
 	host.log.Debug("mullion: webview2 embed requested")
-	if err := browser.Embed(uintptr(host.window())); err != nil {
+	if err := browser.EmbedWithCancellation(uintptr(host.window()), host.embedCancellation); err != nil {
 		return errors.Join(errors.New("embed webview2"), err)
 	}
 	if err := host.commitEmbeddedBrowser(browser); err != nil {

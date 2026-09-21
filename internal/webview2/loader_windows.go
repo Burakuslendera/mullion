@@ -31,9 +31,10 @@ import (
 const DefaultTimeout = 60 * time.Second
 
 // loaderWaiter is the completion wait effect used by the loader's native
-// calls. Production wrappers pass waitFor[completion], retaining the real
-// message pump and its completion-first policy; focused tests pass a
-// deterministic waiter so native-call ownership paths never enter the pump.
+// calls. Production wrappers retain the real message pump and its lifecycle
+// cancellation > consumed WM_QUIT > completion > timeout decision; focused
+// tests pass a deterministic waiter so native-call ownership paths never enter
+// the pump.
 type loaderWaiter func(<-chan completion, time.Duration, string) (completion, error)
 
 // Environment is a live ICoreWebView2Environment.
@@ -79,6 +80,10 @@ func CreateEnvironment(userDataFolder string, additionalBrowserArgs string) (*En
 
 // CreateEnvironmentWithOptions is CreateEnvironment with the full option set.
 func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
+	return createEnvironmentWithOptionsCancellation(opts, nil)
+}
+
+func createEnvironmentWithOptionsCancellation(opts Options, cancelled <-chan struct{}) (*Environment, error) {
 	found, err := findRuntime()
 	if err != nil {
 		return nil, err
@@ -87,7 +92,9 @@ func CreateEnvironmentWithOptions(opts Options) (*Environment, error) {
 	if err != nil {
 		return nil, err
 	}
-	return createEnvironmentWithProc(opts, found, loaded.createEnviron, waitFor[completion])
+	return createEnvironmentWithProc(opts, found, loaded.createEnviron, func(done <-chan completion, timeout time.Duration, what string) (completion, error) {
+		return waitForCreation(done, cancelled, timeout, what)
+	})
 }
 
 // createEnvironmentWithProc is the native-call portion of
@@ -163,6 +170,12 @@ func createEnvironmentWithProc(opts Options, found resolved, createEnviron ComPr
 // fires, and must run on the window's own thread.
 func (e *Environment) CreateController(parent windows.Handle) (*IUnknown, error) {
 	return e.createControllerWithTimeout(parent, DefaultTimeout, waitFor[completion])
+}
+
+func (e *Environment) createControllerWithCancellation(parent windows.Handle, cancelled <-chan struct{}) (*IUnknown, error) {
+	return e.createControllerWithTimeout(parent, DefaultTimeout, func(done <-chan completion, timeout time.Duration, what string) (completion, error) {
+		return waitForCreation(done, cancelled, timeout, what)
+	})
 }
 
 // createControllerWithTimeout contains the native-call portion of

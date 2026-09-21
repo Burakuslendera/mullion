@@ -491,3 +491,67 @@ func TestReleaseBrowserObjectsToleratesNilCallbacks(t *testing.T) {
 		t.Fatalf("controller-only teardown: closed=%t releasedController=%t, want both true", closed, releasedController)
 	}
 }
+
+func TestEmbedCancellationBeforeEnvironmentCompletionDoesNotStartController(t *testing.T) {
+	browser := New()
+	browser.UserDataFolder = t.TempDir()
+	wantErr := errors.New("environment creation cancelled")
+	controllerCalls := 0
+	cancelled := make(chan struct{})
+	close(cancelled)
+
+	err := browser.embedWith(
+		1,
+		cancelled,
+		func(_ Options, got <-chan struct{}) (*Environment, error) {
+			if got != cancelled {
+				t.Fatal("environment phase did not receive the Run cancellation identity")
+			}
+			select {
+			case <-got:
+			default:
+				t.Fatal("environment phase received an open cancellation signal")
+			}
+			return nil, wantErr
+		},
+		func(*Environment, windows.Handle, <-chan struct{}) (*IUnknown, error) {
+			controllerCalls++
+			return nil, nil
+		},
+	)
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("embed error = %v, want %v", err, wantErr)
+	}
+	if controllerCalls != 0 {
+		t.Fatalf("controller calls = %d, want 0 after environment cancellation", controllerCalls)
+	}
+}
+
+func TestEmbedPassesRunCancellationToControllerPhase(t *testing.T) {
+	browser := New()
+	browser.UserDataFolder = t.TempDir()
+	cancelled := make(chan struct{})
+	wantErr := errors.New("controller creation cancelled")
+
+	err := browser.embedWith(
+		1,
+		cancelled,
+		func(_ Options, got <-chan struct{}) (*Environment, error) {
+			if got != cancelled {
+				t.Fatal("environment phase did not receive the Run cancellation identity")
+			}
+			return &Environment{}, nil
+		},
+		func(_ *Environment, _ windows.Handle, got <-chan struct{}) (*IUnknown, error) {
+			if got != cancelled {
+				t.Fatal("controller phase did not receive the environment phase cancellation identity")
+			}
+			return nil, wantErr
+		},
+	)
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("embed error = %v, want %v", err, wantErr)
+	}
+}

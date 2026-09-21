@@ -123,10 +123,13 @@ first result even when the source is also invalid.
    timeout, Browser shutdown, or `WM_QUIT` fails closed in the accepted required-
    script wait: cancellation → queued `WM_QUIT` → completion → timeout precedence
    applies, the consumed quit is re-posted, and the returned-error owner uncommits
-   and tears down the browser. Generic WebView2 environment/controller creation is
-   the open [issue #154](https://github.com/Burakuslendera/mullion/issues/154) gap:
-   its nested wait can consume `WM_QUIT` and continue until the loader timeout
-   instead of exiting promptly. `ProcessFailed(BrowserProcessExited)` fails closed
+   and tears down the browser. Generic WebView2 environment/controller creation
+   uses the same cancellation → queued `WM_QUIT` → completion → timeout decision:
+   `WM_DESTROY` closes the current Run's embed-cancellation signal, an observed
+   quit ends the nested wait, and only a quit actually consumed by that wait is
+   re-posted. A cancelled environment phase cannot start controller creation;
+   either phase keeps the completion handler's abandonment and exact-once result
+   release ownership. `ProcessFailed(BrowserProcessExited)` fails closed
    after startup: the callback latches one terminal cause and posts a tagged
    `WM_APP+30` command whose destroy hands the window to the ordinary
    `WM_DESTROY` teardown, and `Run` returns `ErrBrowserProcessExited` instead of
@@ -377,4 +380,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-09-12 | Editor: ZCode (GLM-5.3-Flash) | Change: record the ProcessFailed(BrowserProcessExited) fail-closed terminal transition, its WM_APP+30 tagged command, and the observation-only policy for other kinds (issue #155, decision 0052).
+> Last updated: 2026-09-22 | Editor: OpenAI (GPT-5.6) | Change: record prompt environment/controller creation cancellation and WM_QUIT precedence for issue #154.

@@ -7,7 +7,6 @@ package webview2
 // creation entry points.
 
 import (
-	"fmt"
 	"time"
 	"unsafe"
 
@@ -92,29 +91,34 @@ func (p *pump) finish() {
 	}
 }
 
-// waitFor pumps the message queue until the handler reports, or the deadline
-// passes.
+// waitFor pumps the message queue until the handler reports, a queued quit is
+// observed, or the deadline passes.
 func waitFor[T any](done <-chan T, timeout time.Duration, what string) (T, error) {
-	var zero T
-	var messages pump
-	defer messages.finish()
+	return waitForCreation(done, nil, timeout, what)
+}
 
-	deadline := time.Now().Add(timeout)
-	for {
-		select {
-		case value := <-done:
-			return value, nil
-		default:
-		}
-		if time.Now().After(deadline) {
-			// One last look: the handler may have fired inside the final step.
-			select {
-			case value := <-done:
-				return value, nil
-			default:
-			}
-			return zero, fmt.Errorf("webview2: gave up after %s waiting for %s", timeout, what)
-		}
-		messages.step()
-	}
+func waitForCreation[T any](done <-chan T, cancelled <-chan struct{}, timeout time.Duration, what string) (T, error) {
+	var messages pump
+	return waitForCreationCompletion(
+		done,
+		cancelled,
+		timeout,
+		what,
+		func() bool {
+			messages.drain()
+			return messages.quitSeen
+		},
+		func() bool {
+			messages.step()
+			return messages.quitSeen
+		},
+		messages.finish,
+	)
+}
+
+// waitForCreationCompletion owns the creation wait decision without owning any
+// native queue effect. The shared decision keeps cancellation and an observed
+// quit ahead of a completion delivered by the same dispatch turn.
+func waitForCreationCompletion[T any](done <-chan T, cancelled <-chan struct{}, timeout time.Duration, what string, queuedQuit func() bool, step func() bool, finish func()) (T, error) {
+	return waitForRequiredScriptCompletion(done, cancelled, timeout, what, queuedQuit, step, finish)
 }

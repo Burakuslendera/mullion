@@ -270,6 +270,21 @@ window before returning; the deferred call remains the all-exits guard for
 successful waits, completion-result errors and panics. This is the completion
 handler extension of the timeout ownership fixed by #37, not a second owner.
 
+Environment and controller creation also share one terminal wait decision:
+lifecycle cancellation → queued `WM_QUIT` → completion → timeout. `WM_DESTROY`
+closes the current Run's embed-cancellation signal before later teardown work;
+the nested creation pump stops at its next decision point instead of waiting out
+the loader deadline. A quit removed by that pump is re-posted exactly once with
+its original code. Cancellation during environment creation prevents controller
+creation; cancellation during controller creation returns through the existing
+environment guard. In both phases the completion handler remains the sole owner
+of buffered or late results until acceptance transfers the owned reference.
+
+The focused creation-wait tests prove that deterministic precedence, finish
+ownership, and the Host's per-Run cancellation lifetime without an `HWND`, COM
+apartment, Runtime, or native queue. They do not prove real WebView2 callback
+scheduling, STA timing, visible close latency, or Runtime process cleanup.
+
 **Embed failure and event registration.** `CreateEnvironment`,
 `CreateController` and `GetCoreWebView2` each return an owned interface
 reference. `Embed` keeps each local reference deferred until ownership is
@@ -391,4 +406,4 @@ no taken reference, and the callback's fail-closed contract answers it
 
 Asset serving moved verbatim to [Asset serving without a port](./assets.md).
 
-> Last updated: 2026-09-13 | Editor: ZCode (GLM-5.3-Flash) | Change: record the fail-closed trio on the hosting side - the process-failed kind matrix with the browser-process-exit terminal (issue #155, decision 0052), the forwarded GetRequest feeding the blocking-response contract (issue #150, decision 0053), and the borrowed environment the asset callback pins (issue #161, decision 0054).
+> Last updated: 2026-09-22 | Editor: OpenAI (GPT-5.6) | Change: record issue #154 creation-wait cancellation, quit precedence, ownership, and proof ceiling.

@@ -67,9 +67,10 @@ type Host struct {
 	// WM_DESTROY dispatched inside the pump would skip ShuttingDown and the
 	// browser committed afterwards would never be torn down (issue #23, decision
 	// 0016). Both are UI-thread-confined, like host.browser itself.
-	webViewEmbedding bool
-	windowDestroyed  bool
-	quitPending      bool
+	webViewEmbedding  bool
+	windowDestroyed   bool
+	embedCancellation chan struct{}
+	quitPending       bool
 	// browserExitTerminal records that ProcessFailed(BrowserProcessExited) was
 	// observed this session (issue #155, decision 0052). It is UI-thread
 	// confined like host.browser, guards the exactly-once terminal request, and
@@ -376,6 +377,7 @@ func (host *Host) beginRun() error {
 
 	host.webViewEmbedding = false
 	host.windowDestroyed = false
+	host.embedCancellation = make(chan struct{})
 	host.browserExitTerminal = false
 	host.assetBoundaryTerminal = false
 	host.moveSizeActive = false
