@@ -1,6 +1,6 @@
 # 0016. The WebView2 embed is single-flight, and a destroyed window cancels it
 
-**Status:** Accepted; extended by [0045](./0045-required-document-created-script-registration-barrier.md)
+**Status:** Accepted; extended by [0045](./0045-required-document-created-script-registration-barrier.md) and issue #154's prompt creation-wait cancellation
 
 ## Context
 
@@ -34,6 +34,12 @@ UI-thread-confined flags on `Host` enforce it:
   the one place a live browser is committed to `host.browser`
   (`navigateOrTearDown` only ever nils the field back on its teardown path) -
   tears the browser down instead of committing when the flag is up.
+- Each Run owns an embed-cancellation signal. `WM_DESTROY` closes it when it
+  invalidates the parent, and environment/controller creation gives cancellation
+  and an observed queued `WM_QUIT` priority over completion and timeout. A
+  cancelled environment phase cannot start controller creation; the existing
+  completion abandonment and local environment/controller guards retain COM
+  release ownership for cancellation and late delivery.
 
 Both flags are read and written only on the UI thread, the same confinement
 `host.browser` itself relies on.
@@ -94,8 +100,11 @@ commits a live browser.)
   committed) and `TestCommitAssignsTheBrowserOnALiveWindow` - all headless,
   through the same injected-create seam `registerEventsOrTearDown` and
   `navigateOrTearDown` use.
+- `internal/webview2/loader_pump_windows_test.go` drives the production creation
+  wait decision without a native queue, and `host/embed_cancellation_windows_test.go`
+  pins cancellation at window destruction plus fresh signal identity per Run.
 - The live re-entrancy (a real `Show()` racing a real embed) needs a runtime
   and timing, and stays a live-only scenario; the flags' decision logic is what
   the suite pins.
 
-> Last updated: 2026-08-31 | Editor: OpenAI (GPT-5.6) | Change: link the required-script readiness extension without discarding the single-flight decision.
+> Last updated: 2026-09-22 | Editor: OpenAI (GPT-5.6) | Change: terminate in-flight creation promptly when its Run is destroyed or its nested pump consumes WM_QUIT.

@@ -174,8 +174,8 @@ type scriptCompletionWaiter func(*scriptCompletionHandler) error
 // waitForRequiredScriptCompletion is the headless effect seam for the required
 // script barrier's cancellation and quit decision. Tests use it to prove the
 // cancellation > queued WM_QUIT > completion > timeout precedence without
-// entering Win32. Loader and controller creation retain waitFor's established
-// completion-first policy.
+// entering Win32. Environment and controller creation reuse this decision with
+// their own IUnknown ownership handlers.
 func waitForRequiredScriptCompletion[T any](done <-chan T, cancelled <-chan struct{}, timeout time.Duration, what string, queuedQuit func() bool, step func() bool, finish func()) (T, error) {
 	var zero T
 	defer finish()

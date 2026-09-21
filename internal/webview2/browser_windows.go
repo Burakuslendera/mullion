@@ -133,12 +133,42 @@ func (browser *Browser) reportWarning(err error) {
 // the loader pumps the loop until they land. On a warm runtime this takes a few
 // hundred milliseconds; on a cold one, longer.
 func (browser *Browser) Embed(parent uintptr) error {
+	return browser.embed(parent, nil)
+}
+
+// EmbedWithCancellation is the Host lifecycle form of Embed. Closing cancelled
+// stops an in-flight environment or controller wait; ordinary Embed retains no
+// external lifecycle owner.
+func (browser *Browser) EmbedWithCancellation(parent uintptr, cancelled <-chan struct{}) error {
+	return browser.embed(parent, cancelled)
+}
+
+func (browser *Browser) embed(parent uintptr, cancelled <-chan struct{}) error {
+	return browser.embedWith(
+		parent,
+		cancelled,
+		createEnvironmentWithOptionsCancellation,
+		func(environment *Environment, parent windows.Handle, cancelled <-chan struct{}) (*IUnknown, error) {
+			return environment.createControllerWithCancellation(parent, cancelled)
+		},
+	)
+}
+
+func (browser *Browser) embedWith(
+	parent uintptr,
+	cancelled <-chan struct{},
+	createEnvironment func(Options, <-chan struct{}) (*Environment, error),
+	createController func(*Environment, windows.Handle, <-chan struct{}) (*IUnknown, error),
+) error {
 	userData, err := browser.userDataFolder()
 	if err != nil {
 		return err
 	}
 
-	environment, err := CreateEnvironment(userData, browser.AdditionalBrowserArguments)
+	environment, err := createEnvironment(Options{
+		UserDataFolder:             userData,
+		AdditionalBrowserArguments: browser.AdditionalBrowserArguments,
+	}, cancelled)
 	if err != nil {
 		return err
 	}
@@ -149,7 +179,7 @@ func (browser *Browser) Embed(parent uintptr) error {
 		}
 	}()
 
-	controllerUnknown, err := environment.CreateController(windows.Handle(parent))
+	controllerUnknown, err := createController(environment, windows.Handle(parent), cancelled)
 	if err != nil {
 		return err
 	}

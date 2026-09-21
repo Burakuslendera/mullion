@@ -5,6 +5,7 @@ package webview2
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -17,6 +18,7 @@ type loaderCallMode uint8
 const (
 	loaderCallFailsSynchronously loaderCallMode = iota
 	loaderCallTimesOut
+	loaderCallCancelled
 	loaderCallCompletesWithFailure
 	loaderCallSucceeds
 )
@@ -32,6 +34,12 @@ func deterministicLoaderWaiter(done <-chan completion, timeout time.Duration, wh
 	default:
 		return completion{}, fmt.Errorf("webview2: gave up after %s waiting for %s", timeout, what)
 	}
+}
+
+func cancelledLoaderWaiter(done <-chan completion, timeout time.Duration, what string) (completion, error) {
+	cancelled := make(chan struct{})
+	close(cancelled)
+	return waitForCreationCompletion(done, cancelled, timeout, what, func() bool { return false }, func() bool { return false }, func() {})
 }
 
 func packageCompletionHandler(this uintptr, iid windows.GUID) (*IUnknown, bool) {
@@ -97,7 +105,7 @@ func (c *environmentNativeCall) invoke(checkRunningInstance, runtimeType, userDa
 		)
 	}
 
-	if (c.mode == loaderCallTimesOut || c.mode == loaderCallSucceeds) && c.handlerRegistered {
+	if (c.mode == loaderCallTimesOut || c.mode == loaderCallCancelled || c.mode == loaderCallSucceeds) && c.handlerRegistered {
 		c.heldHandler = handler
 		c.heldHandler.AddRef() // the fake runtime retains the asynchronous callback
 	}
@@ -187,6 +195,7 @@ func TestCreateEnvironmentWithOptionsNativeCallBoundary(t *testing.T) {
 	}{
 		{"synchronous failure", loaderCallFailsSynchronously},
 		{"timeout and late result", loaderCallTimesOut},
+		{"cancellation and late result", loaderCallCancelled},
 		{"completed failure", loaderCallCompletesWithFailure},
 		{"success", loaderCallSucceeds},
 	} {
@@ -202,7 +211,11 @@ func TestCreateEnvironmentWithOptionsNativeCallBoundary(t *testing.T) {
 			})
 			proc := ComProc(windows.NewCallback(call.invoke))
 
-			environment, err := createEnvironmentWithProc(options, found, proc, deterministicLoaderWaiter)
+			waiter := loaderWaiter(deterministicLoaderWaiter)
+			if test.mode == loaderCallCancelled {
+				waiter = cancelledLoaderWaiter
+			}
+			environment, err := createEnvironmentWithProc(options, found, proc, waiter)
 
 			if call.checkRunningInstance != 1 {
 				t.Errorf("checkRunningInstance = %d, want 1", call.checkRunningInstance)
@@ -238,9 +251,12 @@ func TestCreateEnvironmentWithOptionsNativeCallBoundary(t *testing.T) {
 				}
 				assertLoaderRoots(t, baseline, call.optionsThis, call.handlerThis)
 				assertFakeResultCounts(t, resultState, 0, 0)
-			case loaderCallTimesOut:
+			case loaderCallTimesOut, loaderCallCancelled:
 				if err == nil || environment != nil {
-					t.Fatalf("timeout = %p, %v; want nil environment and error", environment, err)
+					t.Fatalf("terminal wait = %p, %v; want nil environment and error", environment, err)
+				}
+				if test.mode == loaderCallCancelled && !strings.Contains(err.Error(), "cancelled waiting") {
+					t.Fatalf("cancellation error = %v, want cancellation classification", err)
 				}
 				if serverFor(call.optionsThis) != nil {
 					t.Error("environment options remained rooted after timeout")
@@ -317,7 +333,7 @@ func (c *controllerNativeCall) invoke(this, parent, handlerThis uintptr) uintptr
 	handler, handlerRegistered := packageCompletionHandler(handlerThis, iidControllerCompletedHandler)
 	c.handlerRegistered = handlerRegistered
 
-	if (c.mode == loaderCallTimesOut || c.mode == loaderCallSucceeds) && c.handlerRegistered {
+	if (c.mode == loaderCallTimesOut || c.mode == loaderCallCancelled || c.mode == loaderCallSucceeds) && c.handlerRegistered {
 		c.heldHandler = handler
 		c.heldHandler.AddRef()
 	}
@@ -377,6 +393,7 @@ func TestEnvironmentCreateControllerNativeCallBoundary(t *testing.T) {
 	}{
 		{"synchronous failure", loaderCallFailsSynchronously},
 		{"timeout and late result", loaderCallTimesOut},
+		{"cancellation and late result", loaderCallCancelled},
 		{"completed failure", loaderCallCompletesWithFailure},
 		{"success", loaderCallSucceeds},
 	} {
@@ -398,7 +415,11 @@ func TestEnvironmentCreateControllerNativeCallBoundary(t *testing.T) {
 			call.expectedThis = uintptr(unsafe.Pointer(rawEnvironment))
 			environment := &Environment{unknown: rawEnvironment}
 
-			controller, err := environment.createControllerWithTimeout(parent, time.Millisecond, deterministicLoaderWaiter)
+			waiter := loaderWaiter(deterministicLoaderWaiter)
+			if test.mode == loaderCallCancelled {
+				waiter = cancelledLoaderWaiter
+			}
+			controller, err := environment.createControllerWithTimeout(parent, time.Millisecond, waiter)
 
 			if call.actualThis != call.expectedThis {
 				t.Errorf("native environment this = %#x, want %#x", call.actualThis, call.expectedThis)
@@ -420,9 +441,12 @@ func TestEnvironmentCreateControllerNativeCallBoundary(t *testing.T) {
 				}
 				assertLoaderRoots(t, baseline, call.handlerThis)
 				assertFakeResultCounts(t, resultState, 0, 0)
-			case loaderCallTimesOut:
+			case loaderCallTimesOut, loaderCallCancelled:
 				if err == nil || controller != nil {
-					t.Fatalf("timeout = %p, %v; want nil controller and error", controller, err)
+					t.Fatalf("terminal wait = %p, %v; want nil controller and error", controller, err)
+				}
+				if test.mode == loaderCallCancelled && !strings.Contains(err.Error(), "cancelled waiting") {
+					t.Fatalf("cancellation error = %v, want cancellation classification", err)
 				}
 				if liveServerCount() != baseline+1 || serverFor(call.handlerThis) == nil {
 					t.Fatalf("late handler roots = %d, want baseline+1 (%d) until the fake runtime releases it", liveServerCount(), baseline+1)
