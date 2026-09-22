@@ -82,6 +82,7 @@ type Host struct {
 	// response could be installed. Same confinement, exactly-once and reset
 	// discipline as browserExitTerminal; the loop returns ErrAssetBoundaryClosed.
 	assetBoundaryTerminal bool
+	visibilityTerminal    bool
 	architectureErr       error
 
 	dpiAwarenessErr      error
@@ -96,6 +97,9 @@ type Host struct {
 	startupShowRequested bool
 	startupShowApplying  bool
 	startupShowReleased  bool
+	startupShowFailures  uint8
+	visibilityGeneration uint64
+	startupShowIntent    uint64
 	startupTiming        *startupTiming
 	diagnostics          *nativeDiagnostics
 	sysMenuLast          sysMenuSnapshot
@@ -111,6 +115,12 @@ type Host struct {
 	sendNativeCommand         func(windowHandle, uint32, uintptr, uintptr) (uintptr, error)
 	queryNativeMaximised      func(windowHandle) bool
 	applyNativeCommand        func(windowHandle, uint32, uintptr) uintptr
+	applyControllerVisibility func(bool) error
+	applyParentVisibility     func(windowHandle, int32) error
+	queryParentVisible        func(windowHandle) bool
+	applyParentUpdate         func(windowHandle) error
+	applyParentForeground     func(windowHandle) error
+	destroyNativeWindow       func(windowHandle)
 	postFrameState            func(string) error
 	syncWindowBounds          func(string)
 	// The error-surface admission state (issues #3, #56, #68; decisions/0017,
@@ -380,6 +390,7 @@ func (host *Host) beginRun() error {
 	host.embedCancellation = make(chan struct{})
 	host.browserExitTerminal = false
 	host.assetBoundaryTerminal = false
+	host.visibilityTerminal = false
 	host.moveSizeActive = false
 	host.frameStateGeneration = 0
 	host.assets = assetProvider{}
@@ -421,6 +432,9 @@ func (host *Host) beginRun() error {
 	host.startupShowRequested = false
 	host.startupShowApplying = false
 	host.startupShowReleased = false
+	host.startupShowFailures = 0
+	host.visibilityGeneration = 0
+	host.startupShowIntent = 0
 	host.startupTiming = newStartupTiming(host.config.StartHidden)
 	if host.log != nil {
 		host.startupTiming.warnBase = host.log.WarnCount()

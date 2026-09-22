@@ -75,6 +75,7 @@ These files are that record.
 | [0052](./0052-browser-process-exit-fails-closed.md) | A browser-process exit fails closed instead of leaving a ready Host with a closed WebView | Accepted |
 | [0053](./0053-asset-callback-failure-installs-a-blocking-response.md) | An asset callback that cannot serve installs a blocking response instead of letting the request reach the network | Accepted; terminal escalation reuses 0052's tagged teardown |
 | [0054](./0054-the-asset-callback-pins-the-environment-it-borrows.md) | The asset callback pins the WebView2 environment it borrows for its whole duration | Accepted; composes with 0053's fail-closed answer |
+| [0055](./0055-startup-visibility-is-a-bounded-transaction.md) | Startup visibility is a controller-first bounded transaction | Accepted; issue #160 |
 
 ## When to write one
 
@@ -116,4 +117,4 @@ the most useful part.
 
 Fixing a typo or a broken link in an old record is fine. Changing what it claims
 is not.
-> Last updated: 2026-09-13 | Editor: ZCode (GLM-5.3-Flash) | Change: index the fail-closed records - the browser-process-exit terminal (0052, issue #155), the asset callback's blocking response (0053, issue #150) and the pinned environment (0054, issue #161).
+> Last updated: 2026-09-22 | Editor: OpenAI (GPT-5.6) | Change: index the bounded controller-first visibility transaction (0055, issue #160).

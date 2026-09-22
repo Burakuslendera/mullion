@@ -522,7 +522,7 @@ func TestStartupShowApplicationFailureRestoresFallbackAndRetries(t *testing.T) {
 	// The queued command reached the production dispatch seam, but embedding
 	// rejected the application. The fallback must become live again.
 	host.applyNativeCommand = func(windowHandle, uint32, uintptr) uintptr { return 0 }
-	host.windowProc(hwnd, wmNativeShow, 0, run.token)
+	host.windowProc(hwnd, wmNativeShow, startupShowCommand, run.token)
 	host.startupMu.Lock()
 	retryTimer := host.startupShowTimer
 	released := host.startupShowReleased
@@ -727,6 +727,10 @@ func TestExportedCommandsCarryEntryRunTokenAndPreserveWParamPayloads(t *testing.
 			boundsPayloads = append(boundsPayloads, got.wParam)
 		case wmNativeSetTitle:
 			titlePayload = got.wParam
+		case wmNativeShow:
+			if got.wParam != 0 && got.wParam != startupShowCommand {
+				t.Errorf("show command changed wParam to %#x", got.wParam)
+			}
 		default:
 			if got.wParam != 0 {
 				t.Errorf("command %#x changed zero wParam to %#x", got.message, got.wParam)

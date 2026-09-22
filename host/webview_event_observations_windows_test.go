@@ -430,7 +430,8 @@ func TestShowReportsReturnedCreationErrorExactlyOnce(t *testing.T) {
 	defer host.endRun()
 	wantErr := errors.New("filter failed")
 	host.sendNativeCommand = func(windowHandle, uint32, uintptr, uintptr) (uintptr, error) {
-		if host.showFromMessageWithEnsure(func(string) error { return wantErr }) {
+		intent, _ := host.beginVisibilityShowIntent(false)
+		if host.showFromMessageWithEnsure(intent, func(string) error { return wantErr }) == showVisible {
 			return 1, nil
 		}
 		return 0, nil

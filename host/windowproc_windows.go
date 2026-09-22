@@ -147,20 +147,42 @@ func (host *Host) dispatchNativeHostCommand(hwnd windowHandle, message uint32, w
 		return 0
 	}
 	if host.applyNativeCommand != nil {
+		var showIntent uint64
+		if message == wmNativeShow {
+			var ok bool
+			showIntent, ok = host.beginVisibilityShowIntent(wParam == startupShowCommand)
+			if !ok {
+				return 0
+			}
+		} else if message == wmNativeHide {
+			host.beginVisibilityHideIntent()
+		}
 		result := host.applyNativeCommand(hwnd, message, wParam)
-		if message == wmNativeShow && result == 0 {
-			host.retryStartupShowAfterFailedApplication(hwnd, token)
+		if message == wmNativeShow && wParam == startupShowCommand && result == 0 {
+			host.resolveStartupShowFailure(hwnd, token, showIntent, showRetryableHidden)
 		}
 		return result
 	}
 	switch message {
 	case wmNativeShow:
-		if host.showFromMessage() {
+		intent, ok := host.beginVisibilityShowIntent(wParam == startupShowCommand)
+		if !ok {
+			return 0
+		}
+		disposition := host.showFromMessage(intent)
+		if disposition == showVisible {
 			return 1
 		}
-		host.retryStartupShowAfterFailedApplication(hwnd, token)
+		if disposition == showTerminal {
+			host.applyVisibilityTerminalTeardown(hwnd)
+			return 0
+		}
+		if wParam == startupShowCommand && host.resolveStartupShowFailure(hwnd, token, intent, disposition) {
+			host.applyVisibilityTerminalTeardown(hwnd)
+		}
 	case wmNativeHide:
-		host.hideFromMessage()
+		intent := host.beginVisibilityHideIntent()
+		host.hideFromMessage(intent)
 	case wmNativeQuit:
 		host.log.Debug("mullion: quit applying")
 		procDestroyWindow.Call(uintptr(hwnd))

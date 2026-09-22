@@ -151,7 +151,11 @@ first result even when the source is also invalid.
 7. **Show.** Parent window and WebView2 controller are both made visible explicitly.
    Showing the parent alone is not enough: the controller has an independent
    visibility flag, and a visible parent hosting an invisible controller renders as a
-   blank window. Under `Config.StartHidden`, steps 6 and 7 defer to the first `Show`.
+   blank window. Visibility is controller-first and transactional: automatic startup
+   gets one safe-hidden retry, then fails closed with
+   `ErrWindowVisibilityUnavailable`; explicit `Show` does not retry
+   ([decision 0055](./decisions/0055-startup-visibility-is-a-bounded-transaction.md)).
+   Under `Config.StartHidden`, steps 6 and 7 defer to the first `Show`.
 
 8. **Message loop and teardown.** `GetMessage` / `TranslateMessage` /
    `DispatchMessage`, owned by the library, pump on the locked thread until
@@ -380,4 +384,4 @@ Non-Windows `Run` returns `ErrUnsupportedPlatform`; no portable window
 abstraction is attempted
 ([decision 0034](./decisions/0034-webview2-hosting-is-windows-amd64-only.md)).
 
-> Last updated: 2026-09-22 | Editor: OpenAI (GPT-5.6) | Change: record prompt environment/controller creation cancellation and WM_QUIT precedence for issue #154.
+> Last updated: 2026-09-22 | Editor: OpenAI (GPT-5.6) | Change: record controller-first bounded visibility for issue #160.
