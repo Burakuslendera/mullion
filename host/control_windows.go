@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/Burakuslendera/mullion/internal/logsafe"
+	"github.com/Burakuslendera/mullion/internal/webview2"
 )
 
 // Show makes the active Run's window and WebView2 controller visible, creating
@@ -168,81 +169,189 @@ func (host *Host) sendRunCommand(admission runAdmission, message uint32, wParam 
 	return sendWindowMessageResult(admission.hwnd, message, wParam, admission.token)
 }
 
-func (host *Host) showFromMessage() bool {
-	return host.showFromMessageWithEnsure(host.ensureWebView)
+type showDisposition uint8
+
+const (
+	showVisible showDisposition = iota
+	showRetryableHidden
+	showCancelled
+	showTerminal
+)
+
+func (host *Host) showFromMessage(intent uint64) showDisposition {
+	return host.showFromMessageWithEnsure(intent, host.ensureWebView)
 }
 
 // showFromMessageWithEnsure keeps the terminal reporting boundary headless-testable.
 // A create error cannot be returned through SendMessage's integer result, so this
 // UI-thread handler owns its one report; Show only returns the public error.
-func (host *Host) showFromMessageWithEnsure(ensure func(string) error) bool {
-	return host.showFromMessageWithEffects(ensure, host.applyShowAfterEnsure)
+func (host *Host) showFromMessageWithEnsure(intent uint64, ensure func(string) error) showDisposition {
+	return host.showFromMessageWithEffects(intent, ensure, host.applyShowAfterEnsure)
 }
 
 // showFromMessageWithEffects keeps the post-ensure HWND/controller boundary
 // explicit. A failed required-script barrier must not reach any visibility,
 // foreground, bounds, or controller effect in apply.
-func (host *Host) showFromMessageWithEffects(ensure func(string) error, apply func() bool) bool {
+func (host *Host) showFromMessageWithEffects(intent uint64, ensure func(string) error, apply func(uint64) showDisposition) showDisposition {
 	host.log.Debug("mullion: show applying")
 	if err := ensure("show"); err != nil {
 		host.log.Error("mullion: show failed, reason=" + logsafe.Reason(err))
-		return false
+		return showCancelled
 	}
-	return apply()
+	if !host.visibilityIntentMatches(intent) {
+		return showCancelled
+	}
+	return apply(intent)
 }
 
-func (host *Host) applyShowAfterEnsure() bool {
-	hwnd := host.window()
-	showErr := showWindow(hwnd, swShow)
+func (host *Host) applyShowAfterEnsure(intent uint64) showDisposition {
+	admission := host.currentRun()
+	hwnd := admission.hwnd
+	browser := host.browser
+	if hwnd == 0 || browser == nil || !host.showOwnershipMatches(admission, browser, intent) {
+		return showCancelled
+	}
+	if err := host.setControllerVisibility(true); err != nil {
+		host.log.Warn("mullion: webview show failed, source=show, reason=" + logsafe.Reason(err))
+		if !host.showOwnershipMatches(admission, browser, intent) {
+			return showCancelled
+		}
+		if !host.parentVisible(hwnd) {
+			return showRetryableHidden
+		}
+		return host.rollbackShow(admission, browser, intent)
+	}
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return showCancelled
+	}
+	showErr := host.setParentVisibility(hwnd, swShow)
 	host.warnIf("show apply", showErr)
-	if showErr == nil && !isWindowVisible(hwnd) && host.config.StartHidden {
-		host.log.Debug("mullion: show retry requested, reason=startup_hidden")
-		showErr = showWindow(hwnd, swShow)
-		host.warnIf("show retry", showErr)
+	if host.showOwnershipMatches(admission, browser, intent) {
+		host.warnIf("foreground apply", host.setParentForeground(hwnd))
 	}
-	host.warnIf("foreground apply", setForegroundWindow(hwnd))
-	updateErr := updateWindow(hwnd)
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return showCancelled
+	}
+	updateErr := host.updateParent(hwnd)
 	host.warnIf("update apply", updateErr)
-	chromiumVisible := host.showChromium("show")
-	if chromiumVisible {
-		host.syncWebViewBounds("show")
-	}
-	if showErr == nil && updateErr == nil && chromiumVisible && isWindowVisible(hwnd) {
+	if host.showOwnershipMatches(admission, browser, intent) && showErr == nil && updateErr == nil && host.parentVisible(hwnd) {
+		host.syncBoundsForWindowMessage("show")
+		if !host.showOwnershipMatches(admission, browser, intent) {
+			return showCancelled
+		}
 		host.recordStartupWindowVisible()
+		if !host.showOwnershipMatches(admission, browser, intent) {
+			return showCancelled
+		}
 		host.log.Info("mullion: window visible")
-		return true
+		return showVisible
 	}
 	host.log.Warn("mullion: show unexpected state")
-	return false
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return showCancelled
+	}
+	return host.rollbackShow(admission, browser, intent)
 }
 
-func (host *Host) showChromium(source string) bool {
+func (host *Host) showOwnershipMatches(admission runAdmission, browser *webview2.Browser, intent uint64) bool {
+	return host.runMatches(admission) && host.browser == browser && host.window() == admission.hwnd && host.visibilityIntentMatches(intent)
+}
+
+func (host *Host) rollbackShow(admission runAdmission, browser *webview2.Browser, intent uint64) showDisposition {
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return showCancelled
+	}
+	controllerErr := host.setControllerVisibility(false)
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return showCancelled
+	}
+	parentErr := host.setParentVisibility(admission.hwnd, swHide)
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return showCancelled
+	}
+	visible := host.parentVisible(admission.hwnd)
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return showCancelled
+	}
+	if controllerErr != nil || parentErr != nil || visible {
+		return showTerminal
+	}
+	return showRetryableHidden
+}
+
+func (host *Host) setControllerVisibility(visible bool) error {
+	if host.applyControllerVisibility != nil {
+		return host.applyControllerVisibility(visible)
+	}
 	if host.browser == nil {
-		host.log.Warn("mullion: webview unavailable during show, source=" + logsafe.Message(source))
-		return false
+		return errors.New("webview unavailable")
 	}
-	if err := host.browser.Show(); err != nil {
-		host.log.Warn("mullion: webview show failed, source=" + logsafe.Message(source) + ", reason=" + logsafe.Reason(err))
-		return false
+	if visible {
+		return host.browser.Show()
 	}
-	host.log.Debug("mullion: webview visible, source=" + logsafe.Message(source))
-	return true
+	return host.browser.Hide()
 }
 
-func (host *Host) hideFromMessage() {
+func (host *Host) setParentVisibility(hwnd windowHandle, command int32) error {
+	if host.applyParentVisibility != nil {
+		return host.applyParentVisibility(hwnd, command)
+	}
+	return showWindow(hwnd, command)
+}
+func (host *Host) parentVisible(hwnd windowHandle) bool {
+	if host.queryParentVisible != nil {
+		return host.queryParentVisible(hwnd)
+	}
+	return isWindowVisible(hwnd)
+}
+func (host *Host) updateParent(hwnd windowHandle) error {
+	if host.applyParentUpdate != nil {
+		return host.applyParentUpdate(hwnd)
+	}
+	return updateWindow(hwnd)
+}
+func (host *Host) setParentForeground(hwnd windowHandle) error {
+	if host.applyParentForeground != nil {
+		return host.applyParentForeground(hwnd)
+	}
+	return setForegroundWindow(hwnd)
+}
+
+func (host *Host) hideFromMessage(intent uint64) {
+	admission := host.currentRun()
+	hwnd := admission.hwnd
+	browser := host.browser
 	host.log.Debug("mullion: hide applying")
-	hwnd := host.window()
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return
+	}
 	if host.isWebViewDeferred() {
 		host.log.Debug("mullion: webview hide skipped, reason=deferred")
 	} else if host.browser == nil {
 		host.log.Warn("mullion: webview unavailable during hide")
-	} else if err := host.browser.Hide(); err != nil {
+	} else if err := host.setControllerVisibility(false); err != nil {
 		host.log.Warn("mullion: webview hide failed, reason=" + logsafe.Reason(err))
 	}
-	hideErr := showWindow(hwnd, swHide)
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return
+	}
+	hideErr := host.setParentVisibility(hwnd, swHide)
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return
+	}
 	host.warnIf("hide apply", hideErr)
-	if hideErr == nil && isWindowVisible(hwnd) {
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return
+	}
+	visible := host.parentVisible(hwnd)
+	if !host.showOwnershipMatches(admission, browser, intent) {
+		return
+	}
+	if hideErr == nil && visible {
 		host.log.Warn("mullion: hide unexpected state")
+		if !host.showOwnershipMatches(admission, browser, intent) {
+			return
+		}
 	}
 	host.logNativeWindowActionState("hide", hwnd)
 }

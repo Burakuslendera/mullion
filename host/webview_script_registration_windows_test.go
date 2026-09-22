@@ -269,7 +269,8 @@ func TestScriptRegistrationFailureHasOneShowTerminalReport(t *testing.T) {
 	failure := errors.New("completion failed")
 	var requiredRegistration, optionalTabStrip, watchdog, navigate, postEnsureHWNDAndController int
 
-	visible := host.showFromMessageWithEffects(func(string) error {
+	intent, _ := host.beginVisibilityShowIntent(false)
+	visible := host.showFromMessageWithEffects(intent, func(string) error {
 		return host.startWebViewFirstNavigation(
 			browser,
 			func(...string) error { requiredRegistration++; return failure },
@@ -277,11 +278,11 @@ func TestScriptRegistrationFailureHasOneShowTerminalReport(t *testing.T) {
 			func() { watchdog++ },
 			func() error { navigate++; return nil },
 		)
-	}, func() bool {
+	}, func(uint64) showDisposition {
 		postEnsureHWNDAndController++
-		return true
+		return showVisible
 	})
-	if visible {
+	if visible == showVisible {
 		t.Fatal("Show reported visibility after required registration failure")
 	}
 	if requiredRegistration != 1 || optionalTabStrip != 0 || watchdog != 0 || navigate != 0 || postEnsureHWNDAndController != 0 {
@@ -296,10 +297,11 @@ func TestScriptRegistrationFailureHasOneShowTerminalReport(t *testing.T) {
 	}
 
 	postEnsureHWNDAndController = 0
-	if visible := host.showFromMessageWithEffects(func(string) error { return nil }, func() bool {
+	intent, _ = host.beginVisibilityShowIntent(false)
+	if visible := host.showFromMessageWithEffects(intent, func(string) error { return nil }, func(uint64) showDisposition {
 		postEnsureHWNDAndController++
-		return true
-	}); !visible || postEnsureHWNDAndController != 1 {
+		return showVisible
+	}); visible != showVisible || postEnsureHWNDAndController != 1 {
 		t.Fatalf("successful Show apply visible=%v effects=%d, want true and one post-ensure effect", visible, postEnsureHWNDAndController)
 	}
 }
@@ -337,7 +339,7 @@ func TestShowProductionRouteCannotBypassPostEnsureEffectBoundary(t *testing.T) {
 		t.Fatalf("showFromMessage production delegation calls = %d, want 1", got)
 	}
 	delegations := calls(withEnsure, "host.showFromMessageWithEffects")
-	if len(delegations) != 1 || len(delegations[0].Args) != 2 || webViewASTSelectorPath(delegations[0].Args[1]) != "host.applyShowAfterEnsure" {
+	if len(delegations) != 1 || len(delegations[0].Args) != 3 || webViewASTSelectorPath(delegations[0].Args[2]) != "host.applyShowAfterEnsure" {
 		t.Fatal("showFromMessageWithEnsure must delegate exactly once with the production post-ensure apply effect")
 	}
 	applyCalls := calls(withEffects, "apply")

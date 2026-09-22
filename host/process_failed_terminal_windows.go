@@ -66,8 +66,9 @@ func (host *Host) applyBrowserProcessExitTeardown(hwnd windowHandle) {
 // cannot distinguish a user close from the terminal teardown by its exit code,
 // so the recorded cause decides: a session that ended because the browser
 // process died is returned as ErrBrowserProcessExited, one that ended because
-// the asset boundary escalated (issue #150) as ErrAssetBoundaryClosed - never
-// as success.
+// the asset boundary escalated (issue #150) as ErrAssetBoundaryClosed, and one
+// whose bounded startup visibility transaction failed (issue #160) as
+// ErrWindowVisibilityUnavailable - never as success.
 func (host *Host) terminalOutcome() error {
 	if host.browserExitTerminal {
 		return ErrBrowserProcessExited
@@ -75,5 +76,22 @@ func (host *Host) terminalOutcome() error {
 	if host.assetBoundaryTerminal {
 		return ErrAssetBoundaryClosed
 	}
+	if host.visibilityTerminal {
+		return ErrWindowVisibilityUnavailable
+	}
 	return nil
+}
+
+func (host *Host) applyVisibilityTerminalTeardown(hwnd windowHandle) {
+	if host.visibilityTerminal {
+		return
+	}
+	host.visibilityTerminal = true
+	host.beginVisibilityHideIntent()
+	if host.destroyNativeWindow != nil {
+		host.destroyNativeWindow(hwnd)
+	} else {
+		procDestroyWindow.Call(uintptr(hwnd))
+	}
+	host.log.Error("mullion: window visibility failed closed, action=host_close")
 }

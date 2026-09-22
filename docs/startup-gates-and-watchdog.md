@@ -25,6 +25,18 @@ release attempt. Queue failure, failed show application, and stopped/fired timer
 handling preserve the originating Run token across sequential runs. `StartHidden`
 continues to defer startup until an explicit `Show`.
 
+Visibility application is a controller-first transaction
+([decision 0055](./decisions/0055-startup-visibility-is-a-bounded-transaction.md)).
+The parent is exposed only after controller visibility succeeds for the current
+Run/HWND/Browser. Automatic startup may retry once, and only from a proven
+safe-hidden state; a failed rollback or second failure closes the host and makes
+`Run` return `ErrWindowVisibilityUnavailable`. Explicit `Show` never creates an
+automatic retry. Cancellation, stale ownership and destruction do not re-arm
+the gate. A per-Run visibility intent makes every newer explicit Show or Hide
+supersede an older operation; Hide also invalidates pending and already-posted
+automatic attempts, and an outer operation re-entered through Logger cannot
+roll back or publish over the nested intent.
+
 **Render watchdog.** Armed before `Navigate`, cancelled by `Host.MarkFrontendReady()` —
 the frontend's `ready()` call, made only after it has actually rendered. Timer
 identity is a lock-protected generation chosen before `time.AfterFunc`; even a
@@ -88,4 +100,4 @@ from the line itself:
 released: a re-entrant Logger callback would deadlock on the non-reentrant
 mutex (issue #140, [decision 0046](./decisions/0046-logger-never-runs-under-a-host-mutex.md)).
 
-> Last updated: 2026-09-02 | Editor: ZCode (GLM-5.3-Flash) | Change: note the startup-timing summary is snapshotted under startupMu and emitted after unlock (issue #140).
+> Last updated: 2026-09-22 | Editor: OpenAI (GPT-5.6) | Change: record the bounded controller-first visibility transaction and terminal outcome (issue #160).

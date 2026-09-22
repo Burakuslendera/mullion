@@ -32,6 +32,11 @@ var ErrBrowserProcessExited = errors.New("mullion: webview2 browser process exit
 // later Run.
 var ErrAssetBoundaryClosed = errors.New("mullion: embedded asset boundary failed closed")
 
+// ErrWindowVisibilityUnavailable is returned by Run when a visibility
+// transaction cannot make the parent and WebView2 controller visible or restore
+// a safe-hidden state. Automatic startup also returns it after its one retry.
+var ErrWindowVisibilityUnavailable = errors.New("mullion: window visibility unavailable")
+
 // Colour is an 8-bit-per-channel RGBA colour.
 type Colour struct{ R, G, B, A uint8 }
 

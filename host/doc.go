@@ -44,7 +44,9 @@
 // Run reports ErrBrowserProcessExited instead of a normal close when the
 // WebView2 browser process exited and the fail-closed terminal policy tore the
 // window down (issue #155), and ErrAssetBoundaryClosed when the embedded asset
-// boundary escalated for the same reason (issue #150); the Host remains
+// boundary escalated for the same reason (issue #150). It reports
+// ErrWindowVisibilityUnavailable when bounded startup visibility cannot reach
+// or restore a safe state (issue #160); the Host remains
 // reusable for a later Run.
 //
 // See docs/architecture.md for the bootstrap contract, docs/frame-and-dpi.md for
